@@ -11,4 +11,4 @@ numpy>=1.24.0
 pyarrow>=14.0.0
 
 # Kotak Neo API
-neo_api_client
+kotakneoapi>=3.0.0
