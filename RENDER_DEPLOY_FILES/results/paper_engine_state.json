@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-11",
+  "circuit_breaker_active": false,
+  "today_losses": 0,
+  "today_wins": 0,
+  "today_realized_gross_pnl": 0.0,
+  "today_total_charges": 0.0,
+  "today_realized_net_pnl": 0.0,
+  "active_position": null
+}

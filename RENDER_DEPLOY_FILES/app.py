@@ -24,6 +24,7 @@ from io import StringIO
 from flask import Flask, render_template, jsonify, request, Response, send_file
 import pandas as pd
 import numpy as np
+from scipy.stats import norm
 import pyotp
 from dotenv import load_dotenv
 
@@ -44,6 +45,60 @@ STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 def get_ist_now():
     """Returns exact current datetime in Indian Standard Time (IST, UTC+5:30)."""
     return datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+
+def calc_bs_greeks(spot, strike, dte_days=5, iv=0.135, r=0.07):
+    """
+    Computes analytical Black-Scholes Option Greeks:
+    Delta, Gamma, Theta (per day in Rs), Vega (per 1% IV in Rs).
+    """
+    try:
+        T = max(1.0, float(dte_days)) / 365.0
+        sigma = max(0.01, float(iv))
+        K = float(strike)
+        S = float(spot)
+
+        d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+
+        pdf_d1 = norm.pdf(d1)
+        cdf_d1 = norm.cdf(d1)
+        cdf_d2 = norm.cdf(d2)
+        cdf_neg_d2 = norm.cdf(-d2)
+
+        call_delta = round(float(cdf_d1), 2)
+        put_delta = round(float(cdf_d1 - 1.0), 2)
+
+        gamma = round(float(pdf_d1 / (S * sigma * np.sqrt(T))), 4)
+
+        # Theta per calendar day (/ 365)
+        call_theta = -(S * pdf_d1 * sigma / (2.0 * np.sqrt(T))) - r * K * np.exp(-r * T) * cdf_d2
+        put_theta = -(S * pdf_d1 * sigma / (2.0 * np.sqrt(T))) + r * K * np.exp(-r * T) * cdf_neg_d2
+        call_theta_day = round(float(call_theta / 365.0), 2)
+        put_theta_day = round(float(put_theta / 365.0), 2)
+
+        # Vega per 1% change in volatility (/ 100)
+        vega = round(float(S * np.sqrt(T) * pdf_d1 / 100.0), 2)
+
+        return {
+            "call_delta": call_delta,
+            "put_delta": put_delta,
+            "gamma": gamma,
+            "call_theta": call_theta_day,
+            "put_theta": put_theta_day,
+            "vega": vega,
+            "iv": round(sigma * 100.0, 1),
+        }
+    except Exception:
+        return {
+            "call_delta": 0.50,
+            "put_delta": -0.50,
+            "gamma": 0.0010,
+            "call_theta": -12.50,
+            "put_theta": -12.50,
+            "vega": 12.80,
+            "iv": 13.5,
+        }
 
 
 class MasterQuantEngine:
@@ -88,11 +143,11 @@ class MasterQuantEngine:
             "ema9": 25007.35,
             "ema20": 24988.33,
             "ema50": 24952.39,
-            "pcr": 1.15,
+            "pcr": None,
             "next_expiry": "2026-11-17",
-            "calls_count": 81,
-            "puts_count": 81,
-            "signal": "BULL_PUT_SPREAD",
+            "calls_count": 0,
+            "puts_count": 0,
+            "signal": "NEUTRAL_SCANNING",
             "option_chain": None,
         }
 
@@ -257,20 +312,22 @@ class MasterQuantEngine:
             e50 = self.pulse["ema50"]
             pcr = self.pulse["pcr"]
 
-            if (spot > d_ema) and (e9 > e20 > e50) and (pcr >= 1.05):
+            if pcr is not None and (spot > d_ema) and (e9 > e20 > e50) and (pcr >= 1.05):
                 self.pulse["signal"] = "BULL_PUT_SPREAD"
-            elif (spot < d_ema) and (e9 < e20 < e50) and (pcr <= 0.85):
+            elif pcr is not None and (spot < d_ema) and (e9 < e20 < e50) and (pcr <= 0.85):
                 self.pulse["signal"] = "BEAR_CALL_SPREAD"
             else:
                 self.pulse["signal"] = "NEUTRAL_SCANNING"
 
             # Autonomous Live Trigger (09:30 - 14:30 IST, strictly 1 trade/day)
+            # STRICT GUARD: Live Option Chain must be downloaded and PCR verified!
             if is_mkt_open and (not self.state.get("active_position")) and (not self.state.get("circuit_breaker_active")):
                 if self.state.get("today_wins", 0) == 0 and self.state.get("today_losses", 0) == 0:
                     t_time = now_dt.time()
                     if datetime.strptime("09:30", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
-                        if self.pulse["signal"] in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
-                            self.trigger_trade(force=False)
+                        if self.pulse.get("option_chain") is not None and pcr is not None:
+                            if self.pulse["signal"] in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
+                                self.trigger_trade(force=False)
 
             # Minute-by-Minute Live Archiving (Zero Data Gaps!)
             if (is_mkt_open or force) and (now - getattr(self, "last_archive_time", 0) >= 60):
@@ -368,17 +425,27 @@ class MasterQuantEngine:
 
     def get_clean_option_chain_table(self):
         """
-        Extracts strikes centered around ATM Strike, including the 350 OTM Hedge Wings.
-        Formats clean rows with calls, center strike, and puts.
+        Extracts 31 strikes centered around ATM Strike (15 ITM, ATM, 15 OTM: range -15 to +15).
+        Calculates analytical Option Greeks (Delta, Theta, Gamma, Vega).
+        Identifies Highest OI strikes for Call (Resistance) and Put (Support).
+        Marks active sold and bought spread legs with live LTP & execution status.
         """
         spot = self.pulse["spot"]
         atm_strike = int(round(spot / 50.0) * 50)
         wing_strike_pe = atm_strike - 350
         wing_strike_ce = atm_strike + 350
-        strikes = [atm_strike + (i * 50) for i in range(-8, 9)]
+        strikes = [atm_strike + (i * 50) for i in range(-15, 16)]
 
         chain = self.pulse.get("option_chain")
-        table_rows = []
+
+        # Calculate Days to Expiry (DTE)
+        expiry_str = self.pulse.get("next_expiry", "2026-11-17")
+        try:
+            exp_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
+            today_date = get_ist_now().date()
+            dte = max(1, (exp_date - today_date).days)
+        except Exception:
+            dte = 5
 
         call_map = {}
         put_map = {}
@@ -397,6 +464,19 @@ class MasterQuantEngine:
                 except Exception:
                     pass
 
+        # First pass: collect raw data and find Max Call OI and Max Put OI
+        raw_rows = []
+        max_c_oi = -1
+        max_p_oi = -1
+        max_c_strike = None
+        max_p_strike = None
+
+        pos = self.state.get("active_position")
+        sold_strike = pos.get("sell_strike") if pos else None
+        bought_strike = pos.get("buy_strike") if pos else None
+        sold_type = pos.get("sell_type") if pos else None
+        bought_type = pos.get("buy_type") if pos else None
+
         for s in strikes:
             # Calls
             c_data = call_map.get(s, {})
@@ -410,34 +490,68 @@ class MasterQuantEngine:
             p_oi = int(p_data.get("oi", {}).get("cur", p_data.get("oi", {}).get("oi", 0)))
             p_vol = int(p_data.get("quote", {}).get("vol", 0))
 
-            # Realistic fallbacks if market closed
             dist = s - spot
             if c_ltp == 0:
-                c_ltp = round(max(5.0, 115.0 - (dist * 0.45)), 2)
+                c_ltp = round(max(3.0, 115.0 - (dist * 0.45)), 2)
             if p_ltp == 0:
-                p_ltp = round(max(5.0, 110.0 + (dist * 0.45)), 2)
+                p_ltp = round(max(3.0, 110.0 + (dist * 0.45)), 2)
             if c_oi == 0:
-                c_oi = abs(int(100000 - dist * 50))
+                c_oi = abs(int(100000 - dist * 40))
             if p_oi == 0:
-                p_oi = abs(int(115000 + dist * 50))
+                p_oi = abs(int(115000 + dist * 40))
 
+            if c_oi > max_c_oi:
+                max_c_oi = c_oi
+                max_c_strike = s
+            if p_oi > max_p_oi:
+                max_p_oi = p_oi
+                max_p_strike = s
+
+            raw_rows.append((s, c_ltp, c_oi, c_vol, p_ltp, p_oi, p_vol))
+
+        table_rows = []
+        for s, c_ltp, c_oi, c_vol, p_ltp, p_oi, p_vol in raw_rows:
             is_atm = (s == atm_strike)
             is_hedge_wing = (s == wing_strike_pe or s == wing_strike_ce)
             wing_tag = "HEDGE WING (350 OTM)" if is_hedge_wing else None
+
+            # Calculate Greeks
+            greeks = calc_bs_greeks(spot, s, dte_days=dte, iv=0.135, r=0.07)
+
+            is_sold_leg = (pos is not None and s == sold_strike)
+            is_bought_leg = (pos is not None and s == bought_strike)
+            is_max_call_oi = (s == max_c_strike)
+            is_max_put_oi = (s == max_p_strike)
 
             table_rows.append({
                 "strike": s,
                 "is_atm": is_atm,
                 "is_hedge_wing": is_hedge_wing,
                 "wing_tag": wing_tag,
+                "is_sold_leg": is_sold_leg,
+                "is_bought_leg": is_bought_leg,
+                "sold_type": sold_type if is_sold_leg else None,
+                "bought_type": bought_type if is_bought_leg else None,
                 "call_ltp": c_ltp,
                 "call_oi": f"{c_oi:,}",
+                "call_oi_raw": c_oi,
                 "call_vol": f"{c_vol:,}",
+                "is_max_call_oi": is_max_call_oi,
                 "put_ltp": p_ltp,
                 "put_oi": f"{p_oi:,}",
+                "put_oi_raw": p_oi,
                 "put_vol": f"{p_vol:,}",
+                "is_max_put_oi": is_max_put_oi,
                 "call_moneyness": "ITM" if s < spot else ("ATM" if s == atm_strike else "OTM"),
                 "put_moneyness": "ITM" if s > spot else ("ATM" if s == atm_strike else "OTM"),
+                # Greeks
+                "call_delta": greeks["call_delta"],
+                "call_theta": greeks["call_theta"],
+                "put_delta": greeks["put_delta"],
+                "put_theta": greeks["put_theta"],
+                "gamma": greeks["gamma"],
+                "vega": greeks["vega"],
+                "iv": greeks["iv"],
             })
 
         return table_rows
@@ -496,28 +610,42 @@ class MasterQuantEngine:
         spot = self.pulse["spot"]
         atm_strike = int(round(spot / 50.0) * 50)
 
+        # Dynamic live market prices from Option Chain
+        chain_table = self.get_clean_option_chain_table()
+        strike_map = {r["strike"]: r for r in chain_table}
+
         if direction == "BULL_PUT_SPREAD":
             sell_strike = atm_strike
             buy_strike = atm_strike - 350
             opt_type = "PE"
-            sell_ltp = 114.50
-            buy_ltp = 29.80
+            sell_row = strike_map.get(sell_strike, {})
+            buy_row = strike_map.get(buy_strike, {})
+            sell_ltp = float(sell_row.get("put_ltp", 0.0)) or 213.0
+            buy_ltp = float(buy_row.get("put_ltp", 0.0)) or 89.0
         else:
             sell_strike = atm_strike
             buy_strike = atm_strike + 350
             opt_type = "CE"
-            sell_ltp = 118.00
-            buy_ltp = 31.50
+            sell_row = strike_map.get(sell_strike, {})
+            buy_row = strike_map.get(buy_strike, {})
+            sell_ltp = float(sell_row.get("call_ltp", 0.0)) or 255.0
+            buy_ltp = float(buy_row.get("call_ltp", 0.0)) or 115.0
 
         exec_buy = round(buy_ltp * 1.005, 2)
         exec_sell = round(sell_ltp * 0.995, 2)
         net_credit = round(exec_sell - exec_buy, 2)
 
+        # Symbol generation for Kotak Neo F&O
+        exp_str = self.pulse["next_expiry"]
+        exp_code = f"{exp_str[2:4]}{exp_str[5:7]}"  # YYMM format e.g. 2611
+        buy_symbol = f"NIFTY{exp_code}{buy_strike}{opt_type}"
+        sell_symbol = f"NIFTY{exp_code}{sell_strike}{opt_type}"
+
         # Real execution via Kotak Neo API if in LIVE mode
         order_status = "PAPER_VIRTUAL"
         if self.execution_mode == "LIVE" and self.authenticated and self.client:
             try:
-                # 1. Place BUY OTM Wing First
+                # 1. Place BUY OTM Wing First (Margin Benefit)
                 self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
@@ -525,7 +653,7 @@ class MasterQuantEngine:
                     order_type="L",
                     quantity=str(self.lot_size),
                     validity="DAY",
-                    trading_symbol=f"NIFTY{self.pulse['next_expiry'][2:4]}{self.pulse['next_expiry'][5:7]}{buy_strike}{opt_type}",
+                    trading_symbol=buy_symbol,
                     transaction_type="B",
                 )
                 # 2. Place SELL ATM Strike Second
@@ -536,7 +664,7 @@ class MasterQuantEngine:
                     order_type="L",
                     quantity=str(self.lot_size),
                     validity="DAY",
-                    trading_symbol=f"NIFTY{self.pulse['next_expiry'][2:4]}{self.pulse['next_expiry'][5:7]}{sell_strike}{opt_type}",
+                    trading_symbol=sell_symbol,
                     transaction_type="S",
                 )
                 order_status = "KOTAK_API_FILLED"
@@ -550,6 +678,8 @@ class MasterQuantEngine:
             "expiry": self.pulse["next_expiry"],
             "execution_mode": self.execution_mode,
             "order_status": order_status,
+            "sell_symbol": sell_symbol,
+            "buy_symbol": buy_symbol,
             "sell_strike": int(sell_strike),
             "sell_type": opt_type,
             "sell_price": exec_sell,
@@ -561,8 +691,10 @@ class MasterQuantEngine:
             "entry_timestamp_sec": time.time(),
             "entry_spot": round(spot, 2),
             "current_spread": net_credit,
-            "target_spread": round(net_credit * 0.50, 2),
-            "sl_spread": round(net_credit * 1.40, 2),
+            "target_spread": round(net_credit * 0.60, 2),
+            "sl_spread": round(min(net_credit * 1.60, net_credit + (2800.0 / self.lot_size)), 2),
+            "target_profit_inr": round((net_credit * 0.40) * self.lot_size, 2),
+            "max_risk_inr": round(min((net_credit * 0.60) * self.lot_size, 2800.0), 2),
             "breakeven_active": False,
             "mtm_gross_pnl": 0.0,
             "mtm_net_pnl": 0.0,
@@ -603,7 +735,7 @@ class MasterQuantEngine:
                     order_type="MKT",
                     quantity=str(self.lot_size),
                     validity="DAY",
-                    trading_symbol=f"NIFTY{pos['sell_strike']}{pos['sell_type']}",
+                    trading_symbol=pos.get("sell_symbol", f"NIFTY{pos['sell_strike']}{pos['sell_type']}"),
                     transaction_type="B",
                 )
                 # 2. Sell back long wing
@@ -614,7 +746,7 @@ class MasterQuantEngine:
                     order_type="MKT",
                     quantity=str(self.lot_size),
                     validity="DAY",
-                    trading_symbol=f"NIFTY{pos['buy_strike']}{pos['buy_type']}",
+                    trading_symbol=pos.get("buy_symbol", f"NIFTY{pos['buy_strike']}{pos['buy_type']}"),
                     transaction_type="S",
                 )
             except Exception:
@@ -679,10 +811,26 @@ class MasterQuantEngine:
         pos["holding_time_str"] = str(timedelta(seconds=holding_sec))
         pos["spot_move"] = round(spot - entry_spot, 2)
 
-        elapsed_mins = max(1, holding_sec // 60)
-        theta_decay = min(entry_credit * 0.40, (elapsed_mins / 60.0) * 2.5)
+        # Dynamic real market option spread from option chain table
+        chain_table = self.get_clean_option_chain_table()
+        strike_map = {r["strike"]: r for r in chain_table}
+        sell_row = strike_map.get(pos["sell_strike"], {})
+        buy_row = strike_map.get(pos["buy_strike"], {})
 
-        current_spread = np.clip(entry_credit - (spot_diff * 0.40) - theta_decay, 2.0, entry_credit * 2.5)
+        opt_col = "put_ltp" if pos["sell_type"] == "PE" else "call_ltp"
+        real_sell_ltp = float(sell_row.get(opt_col, 0.0))
+        real_buy_ltp = float(buy_row.get(opt_col, 0.0))
+
+        pos["current_sell_ltp"] = real_sell_ltp if real_sell_ltp > 0 else pos["sell_price"]
+        pos["current_buy_ltp"] = real_buy_ltp if real_buy_ltp > 0 else pos["buy_price"]
+
+        if real_sell_ltp > 0 and real_buy_ltp > 0:
+            current_spread = round(real_sell_ltp - real_buy_ltp, 2)
+        else:
+            elapsed_mins = max(1, holding_sec // 60)
+            theta_decay = min(entry_credit * 0.40, (elapsed_mins / 60.0) * 2.5)
+            current_spread = np.clip(entry_credit - (spot_diff * 0.40) - theta_decay, 2.0, entry_credit * 2.5)
+
         pos["current_spread"] = round(current_spread, 2)
 
         pts_gain = entry_credit - current_spread
@@ -702,7 +850,7 @@ class MasterQuantEngine:
 
         # Exit conditions
         if current_spread <= pos["target_spread"]:
-            self.square_off_position("TARGET_HIT (+50% DECAY)")
+            self.square_off_position("TARGET_HIT (+40% DECAY)")
         elif current_spread >= pos["sl_spread"]:
             self.square_off_position("BREAKEVEN_SL" if pos.get("breakeven_active") else "STOP_LOSS")
         else:
@@ -717,6 +865,17 @@ engine = MasterQuantEngine()
 
 @app.route("/")
 def index():
+    tpl_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    root_path = os.path.join(os.path.dirname(__file__), "index.html")
+    if os.path.exists(root_path) and os.path.exists(tpl_path):
+        if os.path.getmtime(root_path) > os.path.getmtime(tpl_path) or os.path.getsize(root_path) > os.path.getsize(tpl_path):
+            with open(root_path, "r", encoding="utf-8") as f:
+                return f.read()
+    if os.path.exists(tpl_path):
+        return render_template("index.html")
+    elif os.path.exists(root_path):
+        with open(root_path, "r", encoding="utf-8") as f:
+            return f.read()
     return render_template("index.html")
 
 
@@ -738,12 +897,24 @@ def get_status():
     audio_event = engine.pending_audio_event
     engine.pending_audio_event = None
 
-    # Capital Matrix
-    tot_net = engine.state["today_realized_net_pnl"]
-    cur_equity = engine.initial_capital + tot_net
+    # Capital Matrix (Real-Time Dynamic Tracking with Live MTM & Charges)
     pos = engine.state.get("active_position")
+    live_mtm_net = float(pos.get("mtm_net_pnl", 0.0)) if pos else 0.0
+    live_mtm_gross = float(pos.get("mtm_gross_pnl", 0.0)) if pos else 0.0
+    live_charges = float(pos.get("estimated_charges", 0.0)) if pos else 0.0
+
+    day_realized_net = float(engine.state.get("today_realized_net_pnl", 0.0))
+    day_realized_charges = float(engine.state.get("today_total_charges", 0.0))
+    day_realized_gross = float(engine.state.get("today_realized_gross_pnl", 0.0))
+
+    total_net_pnl = round(day_realized_net + live_mtm_net, 2)
+    total_charges = round(day_realized_charges + live_charges, 2)
+    total_gross_pnl = round(day_realized_gross + live_mtm_gross, 2)
+
+    cur_equity = round(engine.initial_capital + total_net_pnl, 2)
     margin_used = 45000.0 if pos else 0.0
-    free_cash = cur_equity - margin_used
+    free_cash = round(cur_equity - margin_used, 2)
+    roi_today_pct = round((total_net_pnl / engine.initial_capital) * 100.0, 2)
 
     # Option Chain & PCR table
     chain_table = engine.get_clean_option_chain_table()
@@ -949,7 +1120,10 @@ def get_status():
             "current_equity": cur_equity,
             "margin_used": margin_used,
             "free_cash": free_cash,
-            "roi_today_pct": round((tot_net / engine.initial_capital) * 100, 2),
+            "charges": total_charges,
+            "total_net_pnl": total_net_pnl,
+            "live_mtm_net": live_mtm_net,
+            "roi_today_pct": roi_today_pct,
         },
         "spot": {
             "ltp": spot,
@@ -976,9 +1150,9 @@ def get_status():
             "today_wins": engine.state["today_wins"],
             "today_losses": engine.state["today_losses"],
             "today_trades": engine.state["today_wins"] + engine.state["today_losses"],
-            "today_gross_pnl": engine.state["today_realized_gross_pnl"],
-            "today_charges": engine.state["today_total_charges"],
-            "today_net_pnl": engine.state["today_realized_net_pnl"],
+            "today_gross_pnl": total_gross_pnl,
+            "today_charges": total_charges,
+            "today_net_pnl": total_net_pnl,
             "circuit_breaker_active": engine.state["circuit_breaker_active"],
         },
     })
@@ -1054,22 +1228,28 @@ def api_reset_circuit_breaker():
 @app.route("/api/trades")
 def get_trades():
     if TRADES_FILE.exists():
-        df = pd.read_csv(TRADES_FILE)
-        return jsonify(df.to_dict(orient="records"))
+        try:
+            df = pd.read_csv(TRADES_FILE, on_bad_lines="skip")
+            return jsonify(df.to_dict(orient="records"))
+        except Exception:
+            return jsonify([])
     return jsonify([])
 
 
 @app.route("/api/export_csv")
 def export_csv():
     if TRADES_FILE.exists():
-        df = pd.read_csv(TRADES_FILE)
-        csv_buffer = StringIO()
-        df.to_csv(csv_buffer, index=False)
-        return Response(
-            csv_buffer.getvalue(),
-            mimetype="text/csv",
-            headers={"Content-Disposition": f"attachment;filename=nifty_quant_trades_ledger_{date.today().strftime('%Y%m%d')}.csv"}
-        )
+        try:
+            df = pd.read_csv(TRADES_FILE, on_bad_lines="skip")
+            csv_buffer = StringIO()
+            df.to_csv(csv_buffer, index=False)
+            return Response(
+                csv_buffer.getvalue(),
+                mimetype="text/csv",
+                headers={"Content-Disposition": f"attachment;filename=nifty_quant_trades_ledger_{date.today().strftime('%Y%m%d')}.csv"}
+            )
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
     return jsonify({"error": "No trades recorded yet."}), 404
 
 

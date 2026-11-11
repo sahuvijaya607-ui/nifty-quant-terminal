@@ -26,6 +26,9 @@
         .glow-blue {
             box-shadow: 0 0 25px -5px rgba(59, 130, 246, 0.35);
         }
+        .glow-amber {
+            box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.4);
+        }
         .pulse-dot {
             animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
@@ -104,6 +107,86 @@
                 </button>
             </div>
         </div>
+
+        <!-- 🚀 TOP STICKY RISK COCKPIT (DUAL STATE: SCANNING vs ACTIVE TRADE) -->
+        <div id="sticky-risk-cockpit" class="max-w-7xl mx-auto mt-2.5 pt-2.5 border-t border-slate-800/80">
+            <!-- STATE A: IDLE / SCANNING COCKPIT (When No Active Position) -->
+            <div id="cockpit-idle-state" class="flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div class="flex items-center space-x-2.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot"></span>
+                    <span class="text-slate-400 font-medium">Front-Runner Spread:</span>
+                    <strong id="cockpit-lead-spread" class="text-white font-bold tracking-wide">BULL PUT SPREAD</strong>
+                    <span id="cockpit-lead-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold mono uppercase bg-amber-500/20 text-amber-300 border border-amber-500/50 glow-amber">
+                        WAITING (5/6 TRUE)
+                    </span>
+                </div>
+
+                <div class="flex items-center space-x-3 text-[11px] mono">
+                    <div class="text-slate-400 hidden sm:block">
+                        <i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i>
+                        <span id="cockpit-missing-reason" class="text-slate-300">Waiting for: PCR >= 1.05</span>
+                    </div>
+                    <div class="h-3 w-px bg-slate-800 hidden sm:block"></div>
+                    <div>
+                        <span class="text-slate-500">Day PnL:</span>
+                        <strong id="cockpit-day-pnl" class="text-slate-300 ml-1">Rs 0.00</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-500">Circuit Breaker:</span>
+                        <strong id="cockpit-cb-status" class="text-emerald-400 ml-1">0/1 Loss</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STATE B: ACTIVE POSITION COCKPIT (Expands instantly when position is open) -->
+            <div id="cockpit-active-state" class="hidden flex flex-wrap items-center justify-between gap-3 text-xs">
+                <!-- Left: Strategy & Strikes -->
+                <div class="flex items-center space-x-3">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot"></span>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <strong id="cockpit-pos-title" class="text-white font-bold text-sm tracking-wide">BULL PUT SPREAD</strong>
+                            <span id="cockpit-pos-mode" class="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">PAPER</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mono" id="cockpit-pos-legs">Sold 25050 PE @ Rs 114 | Bought 24700 PE @ Rs 30</p>
+                    </div>
+                </div>
+
+                <!-- Middle: Live MTM & Visual Decay Slider -->
+                <div class="flex items-center space-x-4">
+                    <!-- Net MTM Display -->
+                    <div class="text-right">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider mono">Net MTM (True PnL)</div>
+                        <div id="cockpit-pos-mtm" class="text-base sm:text-lg font-black mono text-emerald-400 leading-tight">
+                            +Rs 0.00
+                        </div>
+                    </div>
+
+                    <!-- Visual SL vs Target Decay Bar -->
+                    <div class="w-36 sm:w-44 hidden sm:block space-y-1">
+                        <div class="flex justify-between text-[9px] mono text-slate-400">
+                            <span class="text-rose-400">SL -Rs 2800</span>
+                            <span class="text-emerald-400">Target +50%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden relative">
+                            <div id="cockpit-sl-target-fill" class="h-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-500 transition-all duration-300" style="width: 50%;"></div>
+                        </div>
+                        <div class="flex justify-between text-[9px] mono text-slate-500">
+                            <span id="cockpit-entry-credit">Net: Rs 84.2</span>
+                            <span id="cockpit-timer">00:00:00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Fast 1-Tap Emergency Square-Off Button -->
+                <div class="flex items-center space-x-2">
+                    <button id="cockpit-emergency-squareoff-btn" onclick="squareOff()" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black tracking-wider uppercase rounded-xl transition shadow-lg shadow-rose-600/30 flex items-center space-x-1.5 active:scale-95">
+                        <i class="fa-solid fa-power-off text-xs"></i>
+                        <span>Square-Off</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </header>
 
     <!-- Main Content Container -->
@@ -174,7 +257,10 @@
                 </div>
                 <div>
                     <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Account Wallet (₹1 Lakh Rule)</div>
-                    <div class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,00,000.00</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,00,000.00</span>
+                        <span class="text-xs font-bold mono" id="cap-pnl-pill">(+Rs 0.00)</span>
+                    </div>
                 </div>
             </div>
 
@@ -182,7 +268,7 @@
                 <div>
                     <span class="text-slate-400">Margin Used (Hedged):</span>
                     <strong class="text-cyan-400 ml-1.5" id="cap-margin">Rs 0.00</strong>
-                    <span class="text-[10px] text-slate-500">(Rs 45k when open)</span>
+                    <span class="text-[10px] text-slate-500" id="cap-margin-note">(Rs 45k when open)</span>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
@@ -197,7 +283,7 @@
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
                     <span class="text-slate-400">Net Day ROI:</span>
-                    <strong class="text-white ml-1.5" id="cap-roi">+0.00%</strong>
+                    <strong class="text-white ml-1.5 font-bold" id="cap-roi">+0.00%</strong>
                 </div>
             </div>
         </div>
@@ -259,6 +345,7 @@
                     <span id="pcr-val" class="text-3xl font-extrabold text-amber-400 mono">1.15</span>
                     <span class="text-xs text-slate-400">Put / Call Ratio</span>
                 </div>
+                <p class="text-[10px] text-slate-500 mono mb-2">Put OI: <strong id="pcr-put-oi" class="text-slate-300">--</strong> &bull; Call OI: <strong id="pcr-call-oi" class="text-slate-300">--</strong></p>
 
                 <!-- Visual PCR Gauge Bar -->
                 <div>
@@ -302,6 +389,88 @@
                 </div>
             </div>
 
+            <!-- ⚡ DUAL CANDIDATE SPREAD TRACKER (BULL PUT SPREAD vs BEAR CALL SPREAD) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="dual-spread-tracker">
+                <!-- Bull Put Spread Card -->
+                <div id="card-bull-spread" class="p-4 rounded-xl border border-slate-800 bg-slate-900/70 transition-all duration-300 flex flex-col justify-between space-y-3">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                                <i class="fa-solid fa-arrow-trend-up"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center space-x-2">
+                                    <h3 class="text-sm font-bold text-white tracking-wide">BULL PUT SPREAD</h3>
+                                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/20 font-bold">BULLISH CREDIT</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">1st Buy OTM Put (ATM-350) &rarr; 2nd Sell ATM Put</p>
+                            </div>
+                        </div>
+                        <span id="bull-badge" class="px-2.5 py-1 rounded text-[11px] font-extrabold mono uppercase bg-slate-800 text-slate-400 border border-slate-700">
+                            SCANNING
+                        </span>
+                    </div>
+
+                    <div class="space-y-1.5 pt-2 border-t border-slate-800/80">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-slate-400">Conditions Satisfied:</span>
+                            <span id="bull-score-text" class="font-bold text-emerald-400 mono">-- / 6 TRUE</span>
+                        </div>
+                        <div class="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
+                            <div id="bull-progress-bar" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <div class="text-[11px] text-slate-300 font-medium flex items-center space-x-1.5 pt-1">
+                            <i class="fa-solid fa-circle-info text-slate-400 text-[10px]"></i>
+                            <span id="bull-detail-text">Evaluating real-time indicators...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bear Call Spread Card -->
+                <div id="card-bear-spread" class="p-4 rounded-xl border border-slate-800 bg-slate-900/70 transition-all duration-300 flex flex-col justify-between space-y-3">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                                <i class="fa-solid fa-arrow-trend-down"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center space-x-2">
+                                    <h3 class="text-sm font-bold text-white tracking-wide">BEAR CALL SPREAD</h3>
+                                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 font-mono border border-rose-500/20 font-bold">BEARISH CREDIT</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">1st Buy OTM Call (ATM+350) &rarr; 2nd Sell ATM Call</p>
+                            </div>
+                        </div>
+                        <span id="bear-badge" class="px-2.5 py-1 rounded text-[11px] font-extrabold mono uppercase bg-slate-800 text-slate-400 border border-slate-700">
+                            SCANNING
+                        </span>
+                    </div>
+
+                    <div class="space-y-1.5 pt-2 border-t border-slate-800/80">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-slate-400">Conditions Satisfied:</span>
+                            <span id="bear-score-text" class="font-bold text-rose-400 mono">-- / 6 TRUE</span>
+                        </div>
+                        <div class="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
+                            <div id="bear-progress-bar" class="bg-rose-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <div class="text-[11px] text-slate-300 font-medium flex items-center space-x-1.5 pt-1">
+                            <i class="fa-solid fa-circle-info text-slate-400 text-[10px]"></i>
+                            <span id="bear-detail-text">Evaluating real-time indicators...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Target Banner -->
+            <div id="active-target-banner" class="flex flex-wrap items-center justify-between px-3.5 py-2 rounded-lg bg-slate-900/90 border border-slate-800 text-xs gap-2">
+                <div class="flex items-center space-x-2">
+                    <span class="text-slate-400">Condition Grid Target:</span>
+                    <strong id="active-target-name" class="text-emerald-400 font-bold">BULL PUT SPREAD (FRONT-RUNNER)</strong>
+                </div>
+                <span class="text-[11px] text-slate-500 mono">Auto-adapts to front-runner regime</span>
+            </div>
+
             <!-- Grid of 6 Strategy Conditions with TRUE/FALSE Badges -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5" id="strategy-conditions-grid">
                 <!-- Dynamically Populated by JS -->
@@ -324,29 +493,49 @@
                 <div class="flex items-center space-x-3 text-xs mono">
                     <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded bg-amber-400"></span><span class="text-amber-300">ATM Sold Strike</span></span>
                     <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded bg-cyan-400"></span><span class="text-cyan-300">350 OTM Bought Hedge Wing</span></span>
+                    <a href="/api/download_option_chain_archive" target="_blank" class="px-2.5 py-1 bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
+                        <i class="fa-solid fa-file-arrow-down"></i>
+                        <span>Download 1-Min Strikes (.CSV)</span>
+                    </a>
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-xs text-center mono">
+            <div class="overflow-x-auto rounded-xl border border-slate-800/80">
+                <table class="w-full text-sm text-center mono whitespace-nowrap">
                     <thead>
-                        <tr class="text-[10px] uppercase text-slate-400 border-b border-slate-800 tracking-wider">
-                            <th colspan="3" class="py-1.5 text-blue-400 bg-slate-900/40">CALLS (CE)</th>
-                            <th class="py-1.5 text-amber-300 bg-slate-900">STRIKE</th>
-                            <th colspan="3" class="py-1.5 text-emerald-400 bg-slate-900/40">PUTS (PE)</th>
+                        <tr class="text-xs uppercase font-extrabold tracking-wider border-b border-slate-800">
+                            <th colspan="7" class="py-2.5 px-3 text-blue-400 bg-blue-950/30 border-r border-slate-800">
+                                <i class="fa-solid fa-arrow-trend-up mr-1 text-blue-400"></i> CALLS (CE) - 15 STRIKES + GREEKS
+                            </th>
+                            <th class="py-2.5 px-6 text-amber-300 bg-slate-900 border-x border-slate-700">
+                                NIFTY 50 STRIKE
+                            </th>
+                            <th colspan="7" class="py-2.5 px-3 text-emerald-400 bg-emerald-950/30 border-l border-slate-800">
+                                <i class="fa-solid fa-arrow-trend-down mr-1 text-emerald-400"></i> PUTS (PE) - 15 STRIKES + GREEKS
+                            </th>
                         </tr>
-                        <tr class="text-[10px] text-slate-500 border-b border-slate-800">
-                            <th class="py-1.5 px-2">OI</th>
-                            <th class="py-1.5 px-2">Volume</th>
-                            <th class="py-1.5 px-2">LTP (₹)</th>
-                            <th class="py-1.5 px-4 font-bold text-white bg-slate-900/80">PRICE</th>
-                            <th class="py-1.5 px-2">LTP (₹)</th>
-                            <th class="py-1.5 px-2">Volume</th>
-                            <th class="py-1.5 px-2">OI</th>
+                        <tr class="text-[11px] text-slate-400 border-b border-slate-800 bg-slate-900/80 font-semibold mono">
+                            <th class="py-2 px-2 text-center text-blue-300" title="Delta: Price sensitivity per 1 pt Spot move">&Delta; Delta</th>
+                            <th class="py-2 px-2 text-center text-rose-300" title="Theta: Daily time decay in ₹/day">&Theta; Theta</th>
+                            <th class="py-2 px-2 text-center text-purple-300" title="Gamma: Rate of change of Delta">&Gamma; Gamma</th>
+                            <th class="py-2 px-2 text-center text-indigo-300" title="Vega: Sensitivity to 1% IV change">V Vega</th>
+                            <th class="py-2 px-3 text-center">Volume</th>
+                            <th class="py-2 px-3 text-center text-amber-200">OI</th>
+                            <th class="py-2 px-4 text-right border-r border-slate-800 font-bold text-white">LTP (₹)</th>
+
+                            <th class="py-2 px-6 font-black text-amber-300 bg-slate-900 border-x border-slate-700 text-sm">STRIKE</th>
+
+                            <th class="py-2 px-4 text-left border-l border-slate-800 font-bold text-white">LTP (₹)</th>
+                            <th class="py-2 px-3 text-center text-amber-200">OI</th>
+                            <th class="py-2 px-3 text-center">Volume</th>
+                            <th class="py-2 px-2 text-center text-indigo-300" title="Vega: Sensitivity to 1% IV change">V Vega</th>
+                            <th class="py-2 px-2 text-center text-purple-300" title="Gamma: Rate of change of Delta">&Gamma; Gamma</th>
+                            <th class="py-2 px-2 text-center text-rose-300" title="Theta: Daily time decay in ₹/day">&Theta; Theta</th>
+                            <th class="py-2 px-2 text-center text-emerald-300" title="Delta: Price sensitivity per 1 pt Spot move">&Delta; Delta</th>
                         </tr>
                     </thead>
-                    <tbody id="option-chain-body" class="divide-y divide-slate-800/40">
-                        <!-- 11 Clean Rows Populated by JS -->
+                    <tbody id="option-chain-body" class="divide-y divide-slate-800/60 text-xs sm:text-sm">
+                        <!-- Populated dynamically with 31 strikes, Greeks, Max OI badges, and SOLD/BOUGHT indicators -->
                     </tbody>
                 </table>
             </div>
@@ -434,25 +623,72 @@
                     </div>
 
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Sold Leg (2nd)</div>
-                            <div class="text-sm font-bold text-white mono mt-0.5" id="pos-sell-strike">25050 PE</div>
-                            <div class="text-xs text-slate-400 mono">@ Rs <span id="pos-sell-price">114.42</span></div>
+                        <!-- Sold Leg -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Sold Leg (2nd)</div>
+                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-sell-strike">25350 PE</div>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Entry (Jab Liya):</span>
+                                    <strong class="text-slate-200">Rs <span id="pos-sell-price">113.93</span></strong>
+                                </div>
+                                <div class="flex justify-between text-amber-400 font-bold">
+                                    <span>Live LTP:</span>
+                                    <span>Rs <span id="pos-sell-ltp">213.30</span></span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Bought Wing (1st)</div>
-                            <div class="text-sm font-bold text-white mono mt-0.5" id="pos-buy-strike">24700 PE</div>
-                            <div class="text-xs text-slate-400 mono">@ Rs <span id="pos-buy-price">30.15</span></div>
+
+                        <!-- Bought Wing -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Bought Wing (1st)</div>
+                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-buy-strike">25000 PE</div>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Entry (Jab Liya):</span>
+                                    <strong class="text-slate-200">Rs <span id="pos-buy-price">29.95</span></strong>
+                                </div>
+                                <div class="flex justify-between text-cyan-400 font-bold">
+                                    <span>Live LTP:</span>
+                                    <span>Rs <span id="pos-buy-ltp">89.65</span></span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Net Credit</div>
-                            <div class="text-sm font-bold text-cyan-400 mono mt-0.5">Rs <span id="pos-net-credit">84.27</span></div>
-                            <div class="text-xs text-slate-400 mono">Current: Rs <span id="pos-curr-spread">84.27</span></div>
+
+                        <!-- Net Credit & Current Spread -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Credit Spread</div>
+                                <div class="text-xs text-slate-300 mono mt-0.5 flex justify-between">
+                                    <span class="text-slate-500">Entry Credit:</span>
+                                    <strong class="text-cyan-400">Rs <span id="pos-net-credit">83.98</span></strong>
+                                </div>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Current Spread:</span>
+                                    <strong class="text-amber-300">Rs <span id="pos-curr-spread">79.39</span></strong>
+                                </div>
+                                <div class="flex justify-between text-emerald-400 font-bold">
+                                    <span>Captured:</span>
+                                    <span id="pos-pts-gain">+4.59 pts</span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Net MTM PnL</div>
-                            <div class="text-lg font-extrabold text-emerald-400 mono mt-0.5" id="pos-mtm-net">+Rs 0.00</div>
-                            <div class="text-[10px] text-slate-400 mono">After taxes & fees</div>
+
+                        <!-- Net MTM PnL -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Net MTM PnL</div>
+                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 0.00</div>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mono mt-2 pt-2 border-t border-slate-800/80">
+                                True Net (After Taxes & Brokerage)
+                            </div>
                         </div>
                     </div>
 
@@ -807,16 +1043,38 @@
                 document.getElementById('replay-progress').innerText = data.replay.progress;
             }
 
-            // Wallet & Charges Bar
+            // Wallet & Charges Bar (100% Dynamic Live Tracking)
             if (data.capital) {
-                document.getElementById('cap-current').innerText = `Rs ${Number(data.capital.current_equity).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                const curEq = Number(data.capital.current_equity);
+                const totNet = Number(data.capital.total_net_pnl !== undefined ? data.capital.total_net_pnl : (data.performance.today_net_pnl || 0));
+                const totCharges = Number(data.capital.charges !== undefined ? data.capital.charges : (data.performance.today_charges || 0));
+                const roiPct = Number(data.capital.roi_today_pct || 0);
+
+                const capCurEl = document.getElementById('cap-current');
+                capCurEl.innerText = `Rs ${curEq.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                if (totNet > 0) {
+                    capCurEl.className = 'text-lg font-extrabold text-emerald-400 mono';
+                } else if (totNet < 0) {
+                    capCurEl.className = 'text-lg font-extrabold text-rose-400 mono';
+                } else {
+                    capCurEl.className = 'text-lg font-extrabold text-white mono';
+                }
+
+                const pnlPill = document.getElementById('cap-pnl-pill');
+                if (pnlPill) {
+                    const pnlSign = totNet >= 0 ? '+' : '';
+                    pnlPill.innerText = `(${pnlSign}Rs ${totNet.toLocaleString('en-IN', {minimumFractionDigits: 2})})`;
+                    pnlPill.className = totNet >= 0 ? 'text-xs font-bold mono text-emerald-400' : 'text-xs font-bold mono text-rose-400';
+                }
+
                 document.getElementById('cap-margin').innerText = `Rs ${Number(data.capital.margin_used).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                 document.getElementById('cap-free').innerText = `Rs ${Number(data.capital.free_cash).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                document.getElementById('cap-charges').innerText = `Rs ${Number(data.performance.today_charges || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                const roiSign = data.capital.roi_today_pct >= 0 ? '+' : '';
+                document.getElementById('cap-charges').innerText = `Rs ${totCharges.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+
+                const roiSign = roiPct >= 0 ? '+' : '';
                 const roiEl = document.getElementById('cap-roi');
-                roiEl.innerText = `${roiSign}${data.capital.roi_today_pct}%`;
-                roiEl.className = data.capital.roi_today_pct >= 0 ? 'text-emerald-400 ml-1.5' : 'text-rose-400 ml-1.5';
+                roiEl.innerText = `${roiSign}${roiPct.toFixed(2)}%`;
+                roiEl.className = roiPct >= 0 ? 'text-emerald-400 font-extrabold ml-1.5' : 'text-rose-400 font-extrabold ml-1.5';
             }
 
             // Spot & Indicators
@@ -836,12 +1094,18 @@
             const dist = (data.spot.ltp - data.indicators.daily_ema20).toFixed(1);
             document.getElementById('ema-distance').innerText = `${dist >= 0 ? '+' : ''}${dist} pts`;
 
-            document.getElementById('ema-9').innerText = data.indicators.ema9;
-            document.getElementById('ema-20').innerText = data.indicators.ema20;
-            document.getElementById('ema-50').innerText = data.indicators.ema50;
+            document.getElementById('ema-9').innerText = Number(data.indicators.ema9).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('ema-20').innerText = Number(data.indicators.ema20).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('ema-50').innerText = Number(data.indicators.ema50).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-            // PCR Gauge
-            document.getElementById('pcr-val').innerText = data.indicators.pcr;
+            // PCR Gauge with 3-decimal precision & live OI contracts
+            document.getElementById('pcr-val').innerText = Number(data.indicators.pcr).toFixed(3);
+            if (document.getElementById('pcr-put-oi')) {
+                document.getElementById('pcr-put-oi').innerText = data.indicators.total_put_oi || '--';
+            }
+            if (document.getElementById('pcr-call-oi')) {
+                document.getElementById('pcr-call-oi').innerText = data.indicators.total_call_oi || '--';
+            }
             const pcrBadge = document.getElementById('pcr-sentiment-badge');
             pcrBadge.innerText = data.indicators.pcr_sentiment;
             if (data.indicators.pcr >= 1.05) {
@@ -863,6 +1127,75 @@
                     } else {
                         mBadge.innerText = `⏳ SCANNING: ${matrix.met_count}/${matrix.total_count} TRUE`;
                         mBadge.className = 'px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30';
+                    }
+                }
+
+                // Dual Candidate Spread Tracker Binding
+                if (matrix.bull_tracker && matrix.bear_tracker) {
+                    const bull = matrix.bull_tracker;
+                    const bear = matrix.bear_tracker;
+
+                    const bullCard = document.getElementById('card-bull-spread');
+                    const bearCard = document.getElementById('card-bear-spread');
+                    const bullBadge = document.getElementById('bull-badge');
+                    const bearBadge = document.getElementById('bear-badge');
+                    const bullScore = document.getElementById('bull-score-text');
+                    const bearScore = document.getElementById('bear-score-text');
+                    const bullBar = document.getElementById('bull-progress-bar');
+                    const bearBar = document.getElementById('bear-progress-bar');
+                    const bullDetail = document.getElementById('bull-detail-text');
+                    const bearDetail = document.getElementById('bear-detail-text');
+                    const targetName = document.getElementById('active-target-name');
+
+                    if (bullCard && bearCard) {
+                        if (bullScore) bullScore.innerText = `${bull.score} / 6 TRUE`;
+                        if (bullBar) bullBar.style.width = `${(bull.score / 6) * 100}%`;
+                        if (bullDetail) bullDetail.innerText = bull.detail;
+
+                        if (bearScore) bearScore.innerText = `${bear.score} / 6 TRUE`;
+                        if (bearBar) bearBar.style.width = `${(bear.score / 6) * 100}%`;
+                        if (bearDetail) bearDetail.innerText = bear.detail;
+
+                        if (bull.score === 6) {
+                            bullBadge.innerText = 'ENTRY TRIGGERED (6/6)';
+                            bullBadge.className = 'px-2.5 py-1 rounded text-[11px] font-extrabold mono uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 glow-green';
+                            bullCard.className = 'p-4 rounded-xl border border-emerald-500/50 bg-emerald-950/20 transition-all duration-300 flex flex-col justify-between space-y-3';
+                        } else if (bull.is_leader) {
+                            bullBadge.innerText = `WAITING (${bull.score}/6 TRUE)`;
+                            bullBadge.className = 'px-2.5 py-1 rounded text-[11px] font-extrabold mono uppercase bg-amber-500/25 text-amber-300 border border-amber-500/60 glow-amber';
+                            bullCard.className = 'p-4 rounded-xl border-2 border-amber-500/60 bg-amber-950/20 transition-all duration-300 flex flex-col justify-between space-y-3';
+                        } else {
+                            bullBadge.innerText = `NEUTRAL (${bull.score}/6)`;
+                            bullBadge.className = 'px-2.5 py-1 rounded text-[11px] font-semibold mono uppercase bg-slate-800 text-slate-400 border border-slate-700';
+                            bullCard.className = 'p-4 rounded-xl border border-slate-800/80 bg-slate-900/50 opacity-75 transition-all duration-300 flex flex-col justify-between space-y-3';
+                        }
+
+                        if (bear.score === 6) {
+                            bearBadge.innerText = 'ENTRY TRIGGERED (6/6)';
+                            bearBadge.className = 'px-2.5 py-1 rounded text-[11px] font-extrabold mono uppercase bg-rose-500/20 text-rose-400 border border-rose-500/50 glow-red';
+                            bearCard.className = 'p-4 rounded-xl border border-rose-500/50 bg-rose-950/20 transition-all duration-300 flex flex-col justify-between space-y-3';
+                        } else if (bear.is_leader) {
+                            bearBadge.innerText = `WAITING (${bear.score}/6 TRUE)`;
+                            bearBadge.className = 'px-2.5 py-1 rounded text-[11px] font-extrabold mono uppercase bg-amber-500/25 text-amber-300 border border-amber-500/60 glow-amber';
+                            bearCard.className = 'p-4 rounded-xl border-2 border-amber-500/60 bg-amber-950/20 transition-all duration-300 flex flex-col justify-between space-y-3';
+                        } else {
+                            bearBadge.innerText = `NEUTRAL (${bear.score}/6)`;
+                            bearBadge.className = 'px-2.5 py-1 rounded text-[11px] font-semibold mono uppercase bg-slate-800 text-slate-400 border border-slate-700';
+                            bearCard.className = 'p-4 rounded-xl border border-slate-800/80 bg-slate-900/50 opacity-75 transition-all duration-300 flex flex-col justify-between space-y-3';
+                        }
+
+                        if (targetName) {
+                            if (bull.is_leader) {
+                                targetName.innerText = `BULL PUT SPREAD (FRONT-RUNNER: ${bull.score}/6 TRUE)`;
+                                targetName.className = 'text-emerald-400 font-bold';
+                            } else if (bear.is_leader) {
+                                targetName.innerText = `BEAR CALL SPREAD (FRONT-RUNNER: ${bear.score}/6 TRUE)`;
+                                targetName.className = 'text-rose-400 font-bold';
+                            } else {
+                                targetName.innerText = 'MARKET NEUTRAL (BALANCED)';
+                                targetName.className = 'text-slate-400 font-bold';
+                            }
+                        }
                     }
                 }
 
@@ -905,32 +1238,77 @@
                 document.getElementById('chain-expiry').innerText = data.indicators.expiry;
                 const tbody = document.getElementById('option-chain-body');
                 tbody.innerHTML = data.option_chain_table.map(r => {
-                    let strikeClass = 'text-white font-semibold py-1.5';
+                    const pos = data.active_position;
+                    const isSoldLeg = pos && (r.strike === pos.sell_strike);
+                    const isBoughtLeg = pos && (r.strike === pos.buy_strike);
+
+                    let strikeClass = 'text-white font-extrabold py-3 text-sm sm:text-base';
                     let strikeTag = '';
                     let rowBg = '';
 
-                    if (r.is_atm) {
-                        strikeClass = 'bg-amber-400 text-slate-950 font-extrabold text-sm py-2 shadow-lg shadow-amber-400/20';
-                        strikeTag = '<span class="text-[9px] bg-slate-950 text-amber-400 px-1 rounded ml-1 font-bold">ATM (SOLD)</span>';
+                    let callSellTag = '';
+                    let callBuyTag = '';
+                    let putSellTag = '';
+                    let putBuyTag = '';
+
+                    if (isSoldLeg) {
+                        strikeClass = 'bg-rose-500/25 text-rose-300 font-black text-sm sm:text-base py-3 border-y-2 border-rose-500/60 glow-red';
+                        strikeTag = `<span class="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded ml-2 border border-rose-500/60 font-black uppercase">🔴 SOLD (SELL)</span>`;
+                        rowBg = 'bg-rose-500/15 border-y-2 border-rose-500/50';
+                        if (pos.sell_type === 'PE') {
+                            putSellTag = `<span class="bg-rose-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-rose-600/40">🔴 SOLD LEG</span>`;
+                        } else {
+                            callSellTag = `<span class="bg-rose-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-rose-600/40">🔴 SOLD LEG</span>`;
+                        }
+                    } else if (isBoughtLeg) {
+                        strikeClass = 'bg-emerald-500/25 text-emerald-300 font-black text-sm sm:text-base py-3 border-y-2 border-emerald-500/60 glow-green';
+                        strikeTag = `<span class="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded ml-2 border border-emerald-500/60 font-black uppercase">🟢 BOUGHT (BUY)</span>`;
+                        rowBg = 'bg-emerald-500/15 border-y-2 border-emerald-500/50';
+                        if (pos.buy_type === 'PE') {
+                            putBuyTag = `<span class="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-emerald-600/40">🟢 BOUGHT HEDGE</span>`;
+                        } else {
+                            callBuyTag = `<span class="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-emerald-600/40">🟢 BOUGHT HEDGE</span>`;
+                        }
+                    } else if (r.is_atm) {
+                        strikeClass = 'bg-amber-400 text-slate-950 font-black text-sm sm:text-base py-3 shadow-lg shadow-amber-400/20';
+                        strikeTag = '<span class="text-[9px] bg-slate-950 text-amber-400 px-1.5 py-0.5 rounded ml-1.5 font-bold">ATM (SELL TARGET)</span>';
                         rowBg = 'bg-amber-400/10 border-y border-amber-400/30';
                     } else if (r.is_hedge_wing) {
-                        strikeClass = 'bg-cyan-500/20 text-cyan-300 font-extrabold text-xs py-1.5 border border-cyan-500/40 glow-blue';
-                        strikeTag = '<span class="text-[9px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded ml-1 border border-cyan-500/40 font-bold">HEDGE WING (350 OTM)</span>';
+                        strikeClass = 'bg-cyan-500/25 text-cyan-300 font-extrabold text-sm py-3 border border-cyan-500/40 glow-blue';
+                        strikeTag = '<span class="text-[9px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded ml-1.5 border border-cyan-500/40 font-bold">HEDGE WING (BUY TARGET)</span>';
                         rowBg = 'bg-cyan-500/10 border-y border-cyan-500/20';
                     }
 
-                    const cLtpClass = r.call_moneyness === 'ITM' ? 'text-blue-300 font-bold bg-blue-500/5' : 'text-slate-300';
-                    const pLtpClass = r.put_moneyness === 'ITM' ? 'text-emerald-300 font-bold bg-emerald-500/5' : 'text-slate-300';
+                    const cLtpClass = r.call_moneyness === 'ITM' ? 'text-blue-300 font-black bg-blue-500/10 text-sm sm:text-base' : 'text-slate-200 font-bold text-sm sm:text-base';
+                    const pLtpClass = r.put_moneyness === 'ITM' ? 'text-emerald-300 font-black bg-emerald-500/10 text-sm sm:text-base' : 'text-slate-200 font-bold text-sm sm:text-base';
+
+                    const callOiDisplay = r.is_max_call_oi
+                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-amber-300 bg-amber-500/25 px-2 py-0.5 rounded border border-amber-500/50 glow-amber">${r.call_oi}</span><span class="text-[9px] text-amber-300 font-black uppercase mt-0.5 tracking-tight">★ MAX CALL OI (RESISTANCE)</span></div>`
+                        : `<span class="text-slate-300">${r.call_oi}</span>`;
+
+                    const putOiDisplay = r.is_max_put_oi
+                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-emerald-300 bg-emerald-500/25 px-2 py-0.5 rounded border border-emerald-500/50 glow-green">${r.put_oi}</span><span class="text-[9px] text-emerald-300 font-black uppercase mt-0.5 tracking-tight">★ MAX PUT OI (SUPPORT)</span></div>`
+                        : `<span class="text-slate-300">${r.put_oi}</span>`;
 
                     return `
-                        <tr class="hover:bg-slate-800/40 transition ${rowBg}">
-                            <td class="px-2 text-slate-400">${r.call_oi}</td>
-                            <td class="px-2 text-slate-500">${r.call_vol}</td>
-                            <td class="px-2 text-right ${cLtpClass}">₹${r.call_ltp}</td>
-                            <td class="px-4 ${strikeClass}">${r.strike} ${strikeTag}</td>
-                            <td class="px-2 text-left ${pLtpClass}">₹${r.put_ltp}</td>
-                            <td class="px-2 text-slate-500">${r.put_vol}</td>
-                            <td class="px-2 text-slate-400">${r.put_oi}</td>
+                        <tr class="hover:bg-slate-800/60 transition ${rowBg}">
+                            <td class="px-2 py-3 text-center mono text-blue-300 font-semibold">${r.call_delta}</td>
+                            <td class="px-2 py-3 text-center mono text-rose-300 font-semibold">${r.call_theta}</td>
+                            <td class="px-2 py-3 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
+                            <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
+                            <td class="px-2 py-3 text-slate-400 mono text-xs">${r.call_vol}</td>
+                            <td class="px-2 py-3 text-center mono text-xs">${callOiDisplay}</td>
+                            <td class="px-3 py-3 text-right mono ${cLtpClass} border-r border-slate-800">₹${r.call_ltp} ${callSellTag} ${callBuyTag}</td>
+
+                            <td class="px-5 py-3 ${strikeClass}">${r.strike} ${strikeTag}</td>
+
+                            <td class="px-3 py-3 text-left mono ${pLtpClass} border-l border-slate-800">₹${r.put_ltp} ${putSellTag} ${putBuyTag}</td>
+                            <td class="px-2 py-3 text-center mono text-xs">${putOiDisplay}</td>
+                            <td class="px-2 py-3 text-slate-400 mono text-xs">${r.put_vol}</td>
+                            <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
+                            <td class="px-2 py-3 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
+                            <td class="px-2 py-3 text-center mono text-rose-300 font-semibold">${r.put_theta}</td>
+                            <td class="px-2 py-3 text-center mono text-emerald-300 font-semibold">${r.put_delta}</td>
                         </tr>
                     `;
                 }).join('');
@@ -939,9 +1317,17 @@
             // Active Position Monitor
             const openCard = document.getElementById('position-open-card');
             const emptyCard = document.getElementById('position-empty-card');
+
+            // 🚀 Top Sticky Risk Cockpit Elements
+            const cockpitIdle = document.getElementById('cockpit-idle-state');
+            const cockpitActive = document.getElementById('cockpit-active-state');
+
             if (data.active_position) {
                 openCard.classList.remove('hidden');
                 emptyCard.classList.add('hidden');
+
+                if (cockpitIdle) cockpitIdle.classList.add('hidden');
+                if (cockpitActive) cockpitActive.classList.remove('hidden');
 
                 const pos = data.active_position;
                 document.getElementById('pos-strategy-title').innerText = `${pos.direction} (ACTIVE)`;
@@ -952,10 +1338,21 @@
 
                 document.getElementById('pos-sell-strike').innerText = `${pos.sell_strike} ${pos.sell_type}`;
                 document.getElementById('pos-sell-price').innerText = pos.sell_price;
+                const sellLtpEl = document.getElementById('pos-sell-ltp');
+                if (sellLtpEl) sellLtpEl.innerText = pos.current_sell_ltp || pos.sell_price;
+
                 document.getElementById('pos-buy-strike').innerText = `${pos.buy_strike} ${pos.buy_type}`;
                 document.getElementById('pos-buy-price').innerText = pos.buy_price;
+                const buyLtpEl = document.getElementById('pos-buy-ltp');
+                if (buyLtpEl) buyLtpEl.innerText = pos.current_buy_ltp || pos.buy_price;
+
                 document.getElementById('pos-net-credit').innerText = pos.net_credit;
                 document.getElementById('pos-curr-spread').innerText = pos.current_spread || pos.net_credit;
+                const ptsGainEl = document.getElementById('pos-pts-gain');
+                if (ptsGainEl) {
+                    const diff = Number(pos.net_credit) - Number(pos.current_spread || pos.net_credit);
+                    ptsGainEl.innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)} pts`;
+                }
 
                 document.getElementById('pos-timer').innerText = pos.holding_time_str || '00:00:00';
                 const sMove = pos.spot_move || 0;
@@ -978,9 +1375,81 @@
                 document.getElementById('pos-target-val').innerText = pos.target_spread;
                 document.getElementById('pos-sl-val').innerText = pos.sl_spread;
 
+                // Bind Sticky Cockpit Active Values
+                const cTitle = document.getElementById('cockpit-pos-title');
+                const cMode = document.getElementById('cockpit-pos-mode');
+                const cLegs = document.getElementById('cockpit-pos-legs');
+                const cMtm = document.getElementById('cockpit-pos-mtm');
+                const cTimer = document.getElementById('cockpit-timer');
+                const cCredit = document.getElementById('cockpit-entry-credit');
+                const cBar = document.getElementById('cockpit-sl-target-fill');
+
+                if (cTitle) cTitle.innerText = `${pos.direction || 'CREDIT SPREAD'}`;
+                if (cMode) {
+                    cMode.innerText = pos.execution_mode || 'PAPER';
+                    cMode.className = pos.execution_mode === 'LIVE' ?
+                        'px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/40 glow-red' :
+                        'px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+                }
+                if (cLegs) cLegs.innerText = `Sold ${pos.sell_strike}${pos.sell_type} @ Rs ${pos.sell_price} | Bought ${pos.buy_strike}${pos.buy_type} @ Rs ${pos.buy_price}`;
+                
+                if (cMtm) {
+                    cMtm.innerText = `${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    cMtm.className = netPnl >= 0 ? 
+                        'text-base sm:text-lg font-black mono text-emerald-400 leading-tight glow-green' : 
+                        'text-base sm:text-lg font-black mono text-rose-400 leading-tight glow-red';
+                }
+
+                if (cTimer) cTimer.innerText = pos.holding_time_str || '00:00:00';
+                if (cCredit) cCredit.innerText = `Net: Rs ${pos.net_credit}`;
+
+                if (cBar) {
+                    let pct = 50;
+                    if (netPnl >= 0) {
+                        pct = Math.min(100, 50 + (netPnl / 1500) * 50);
+                    } else {
+                        pct = Math.max(0, 50 + (netPnl / 2800) * 50);
+                    }
+                    cBar.style.width = `${pct}%`;
+                }
+
             } else {
                 openCard.classList.add('hidden');
                 emptyCard.classList.remove('hidden');
+
+                if (cockpitIdle) cockpitIdle.classList.remove('hidden');
+                if (cockpitActive) cockpitActive.classList.add('hidden');
+
+                // Update Cockpit Idle State with Front-runner spread
+                if (data.strategy_matrix && data.strategy_matrix.bull_tracker && data.strategy_matrix.bear_tracker) {
+                    const sm = data.strategy_matrix;
+                    const leader = (sm.lead_spread === 'BEAR_CALL_SPREAD') ? sm.bear_tracker : sm.bull_tracker;
+                    
+                    const cLeadSpread = document.getElementById('cockpit-lead-spread');
+                    const cLeadBadge = document.getElementById('cockpit-lead-badge');
+                    const cMissing = document.getElementById('cockpit-missing-reason');
+                    const cDayPnl = document.getElementById('cockpit-day-pnl');
+                    const cCbStatus = document.getElementById('cockpit-cb-status');
+
+                    if (cLeadSpread) cLeadSpread.innerText = leader.name;
+                    if (cLeadBadge) {
+                        cLeadBadge.innerText = leader.badge;
+                        cLeadBadge.className = leader.is_leader ? 
+                            'px-2 py-0.5 rounded text-[10px] font-extrabold mono uppercase bg-amber-500/20 text-amber-300 border border-amber-500/50 glow-amber' : 
+                            'px-2 py-0.5 rounded text-[10px] font-semibold mono uppercase bg-slate-800 text-slate-400 border border-slate-700';
+                    }
+                    if (cMissing) cMissing.innerText = leader.detail;
+
+                    if (cDayPnl && data.performance) {
+                        const dPnl = Number(data.performance.today_net_pnl || 0);
+                        cDayPnl.innerText = `${dPnl >= 0 ? '+' : ''}Rs ${dPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                        cDayPnl.className = dPnl >= 0 ? 'text-emerald-400 font-bold ml-1' : 'text-rose-400 font-bold ml-1';
+                    }
+                    if (cCbStatus && data.performance) {
+                        cCbStatus.innerText = `${data.performance.today_losses}/1 Loss`;
+                        cCbStatus.className = (data.performance.today_losses === 0) ? 'text-emerald-400 ml-1' : 'text-rose-400 ml-1 font-bold';
+                    }
+                }
             }
 
             // Summary Stats
@@ -1036,6 +1505,14 @@
         }
 
         async function squareOff() {
+            if (audioEnabled) {
+                initAudio();
+                playTone(660, 0.12, 'sine');
+                setTimeout(() => playTone(440, 0.2, 'sine'), 100);
+            }
+            const btn = document.getElementById('cockpit-emergency-squareoff-btn');
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Exiting...';
+
             try {
                 const res = await fetch('/api/square_off', {method: 'POST'});
                 const data = await res.json();

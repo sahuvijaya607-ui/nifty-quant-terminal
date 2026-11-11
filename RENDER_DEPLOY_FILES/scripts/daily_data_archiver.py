@@ -34,17 +34,20 @@ logger.setLevel(logging.INFO)
 class DailyDataArchiver:
     def __init__(self, kotak_client=None):
         self.client = kotak_client
-        self.today_str = date.today().strftime("%Y-%m-%d")
+        ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+        self.today_str = ist_now.strftime("%Y-%m-%d")
         self.live_buffer = []
+        self.options_buffer = []
 
     def set_client(self, client):
         self.client = client
 
     def record_minute_tick(self, spot_price, option_chain=None):
-        """Records live 1-minute snapshot during market hours."""
-        now = datetime.now()
+        """Records live 1-minute snapshot during market hours for both Spot and Strike-level Options."""
+        now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+        ts_str = now.strftime("%Y-%m-%d %H:%M:00")
         tick = {
-            "timestamp": now.strftime("%Y-%m-%d %H:%M:00"),
+            "timestamp": ts_str,
             "spot": float(spot_price),
         }
         
@@ -57,31 +60,80 @@ class DailyDataArchiver:
             tick["put_oi"] = total_put_oi
             tick["pcr"] = round(total_put_oi / total_call_oi, 2) if total_call_oi > 0 else 1.0
 
+            # Strike-by-strike recording for every strike in the chain
+            call_by_strike = {float(c.get("strikePrice", 0)): c for c in calls if c.get("strikePrice")}
+            put_by_strike = {float(p.get("strikePrice", 0)): p for p in puts if p.get("strikePrice")}
+            all_strikes = sorted(set(call_by_strike.keys()) | set(put_by_strike.keys()))
+
+            for s in all_strikes:
+                c_item = call_by_strike.get(s, {})
+                p_item = put_by_strike.get(s, {})
+
+                c_oi = int(c_item.get("oi", {}).get("cur", c_item.get("oi", {}).get("oi", 0)))
+                p_oi = int(p_item.get("oi", {}).get("cur", p_item.get("oi", {}).get("oi", 0)))
+                c_ltp = float(c_item.get("ltp", 0.0))
+                p_ltp = float(p_item.get("ltp", 0.0))
+                c_vol = int(c_item.get("volume", c_item.get("vol", 0)))
+                p_vol = int(p_item.get("volume", p_item.get("vol", 0)))
+
+                self.options_buffer.append({
+                    "timestamp": ts_str,
+                    "strike": s,
+                    "call_ltp": c_ltp,
+                    "call_oi": c_oi,
+                    "call_vol": c_vol,
+                    "put_ltp": p_ltp,
+                    "put_oi": p_oi,
+                    "put_vol": p_vol,
+                    "spot": float(spot_price),
+                })
+
         self.live_buffer.append(tick)
 
-        # Save buffer to daily parquet periodically (every 5 mins)
-        if len(self.live_buffer) >= 5:
+        # Save buffer to daily parquet and CSV every single minute (instant persistence)
+        if len(self.live_buffer) >= 1:
             self.flush_live_buffer()
 
     def flush_live_buffer(self):
-        if not self.live_buffer:
-            return
-        
-        file_path = ARCHIVE_DIR / f"nifty_live_{self.today_str}.parquet"
-        df_new = pd.DataFrame(self.live_buffer)
-        df_new["timestamp"] = pd.to_datetime(df_new["timestamp"])
+        # 1. Flush Spot & Total PCR Summary
+        if self.live_buffer:
+            file_path = ARCHIVE_DIR / f"nifty_live_{self.today_str}.parquet"
+            df_new = pd.DataFrame(self.live_buffer)
+            df_new["timestamp"] = pd.to_datetime(df_new["timestamp"])
 
-        if file_path.exists():
-            try:
-                df_old = pd.read_parquet(file_path)
-                df_comb = pd.concat([df_old, df_new]).drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
-                df_comb.to_parquet(file_path, index=False)
-            except Exception:
+            if file_path.exists():
+                try:
+                    df_old = pd.read_parquet(file_path)
+                    df_comb = pd.concat([df_old, df_new]).drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+                    df_comb.to_parquet(file_path, index=False)
+                except Exception:
+                    df_new.to_parquet(file_path, index=False)
+            else:
                 df_new.to_parquet(file_path, index=False)
-        else:
-            df_new.to_parquet(file_path, index=False)
 
-        self.live_buffer = []
+            self.live_buffer = []
+
+        # 2. Flush Strike-by-Strike Option Chain History
+        if hasattr(self, "options_buffer") and self.options_buffer:
+            opt_file_path = ARCHIVE_DIR / f"nifty_options_strikes_{self.today_str}.parquet"
+            opt_csv_path = ARCHIVE_DIR / f"nifty_options_strikes_{self.today_str}.csv"
+            df_opt_new = pd.DataFrame(self.options_buffer)
+            df_opt_new["timestamp"] = pd.to_datetime(df_opt_new["timestamp"])
+
+            if opt_file_path.exists():
+                try:
+                    df_opt_old = pd.read_parquet(opt_file_path)
+                    df_opt_comb = pd.concat([df_opt_old, df_opt_new]).drop_duplicates(subset=["timestamp", "strike"]).sort_values(["timestamp", "strike"])
+                    df_opt_comb.to_parquet(opt_file_path, index=False)
+                    df_opt_comb.to_csv(opt_csv_path, index=False)
+                except Exception:
+                    df_opt_new.to_parquet(opt_file_path, index=False)
+                    df_opt_new.to_csv(opt_csv_path, index=False)
+            else:
+                df_opt_new.to_parquet(opt_file_path, index=False)
+                df_opt_new.to_csv(opt_csv_path, index=False)
+
+            self.options_buffer = []
 
     def reconcile_eod_spot(self, target_date=None):
         """

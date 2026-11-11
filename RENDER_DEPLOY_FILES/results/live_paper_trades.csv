@@ -1,0 +1,3 @@
+date,entry_time,exit_time,mode,direction,strikes,net_credit,exit_spread,points,spot_move,gross_pnl,brokerage_taxes,net_pnl,exit_reason
+2026-11-10,2026-11-10 23:50:06,2026-11-10 23:50:18,PAPER,BULL_PUT_SPREAD,Sell 25050PE / Buy 24700PE,84.27,84.23,0.04,0.0,2.60,106.47,-103.87,EOD_EXIT
+2026-11-11,2026-11-11 00:42:49,2026-11-11 00:42:55,PAPER,BULL_PUT_SPREAD,Sell 25050PE / Buy 24700PE,83.98,83.94,0.04,0.0,2.60,106.47,-103.87,MANUAL_WEB_EXIT
