@@ -21,7 +21,7 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 from io import StringIO
 
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request, Response, send_file
 import pandas as pd
 import numpy as np
 import pyotp
@@ -39,6 +39,11 @@ STATE_FILE = Path("results/paper_engine_state.json")
 TRADES_FILE = Path("results/live_paper_trades.csv")
 MASTER_SPOT_PARQUET = Path("data/nifty_1min_5yr.parquet")
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+
+def get_ist_now():
+    """Returns exact current datetime in Indian Standard Time (IST, UTC+5:30)."""
+    return datetime.utcnow() + timedelta(hours=5, minutes=30)
 
 
 class MasterQuantEngine:
@@ -106,6 +111,10 @@ class MasterQuantEngine:
         # Background thread for off-market replay loop
         self.replay_thread = threading.Thread(target=self._replay_loop, daemon=True)
         self.replay_thread.start()
+
+        # Dedicated 100% Autonomous Background Worker (Auto-Downloads 1-Min Options & Auto-Executes Trades)
+        self.live_daemon_thread = threading.Thread(target=self._live_engine_loop, daemon=True)
+        self.live_daemon_thread.start()
 
     def authenticate(self):
         if not self.consumer_key or not self.ucc:
@@ -182,10 +191,12 @@ class MasterQuantEngine:
         """Fetches live market data if market is open, or snapshot on init if forced."""
         now = time.time()
         if not self.authenticated or not self.client:
-            return
+            self.authenticate()
+            if not self.authenticated or not self.client:
+                return
 
-        # Check market hours
-        now_dt = datetime.now()
+        # Check market hours in IST (09:15 - 15:30 IST)
+        now_dt = get_ist_now()
         is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
 
         if not is_mkt_open and not force and (self.pulse.get("option_chain") is not None):
@@ -195,7 +206,7 @@ class MasterQuantEngine:
         if is_mkt_open:
             self.feeder_mode = "LIVE"
 
-        if not force and (now - self.last_api_poll < 5):
+        if not force and (now - self.last_api_poll < 2):
             return
 
         try:
@@ -241,11 +252,12 @@ class MasterQuantEngine:
                             self.trigger_trade(force=False)
 
             # Minute-by-Minute Live Archiving (Zero Data Gaps!)
-            if is_mkt_open and (now - getattr(self, "last_archive_time", 0) >= 60):
+            if (is_mkt_open or force) and (now - getattr(self, "last_archive_time", 0) >= 60):
                 if hasattr(self, "archiver") and self.archiver:
                     self.archiver.record_minute_tick(spot, chain)
                     self.last_archive_time = now
-                    self.pulse["ticks_archived"] = len(self.archiver.live_buffer)
+                    self.total_ticks_archived = getattr(self, "total_ticks_archived", 0) + 1
+                    self.pulse["ticks_archived"] = self.total_ticks_archived
 
             # EOD Reconcile at 15:35 IST
             if now_dt.time() >= datetime.strptime("15:35", "%H:%M").time() and not getattr(self, "eod_reconciled_today", False):
@@ -255,8 +267,29 @@ class MasterQuantEngine:
                     self.status_message = f"EOD Archive: {msg}"
 
             self.last_api_poll = now
-        except Exception:
-            pass
+        except Exception as e:
+            err_str = str(e).lower()
+            if "401" in err_str or "token" in err_str or "session" in err_str or "unauth" in err_str:
+                self.authenticate()
+
+    def _live_engine_loop(self):
+        """
+        100% Autonomous Hands-Free Background Engine:
+        Runs 24/7 in background even when browser or phone is closed:
+        1. Continuously downloads 1-minute strike-by-strike Option Chain & Spot to parquet/csv.
+        2. Evaluates the 6 Champion Model 4 rules in real-time.
+        3. Autonomously triggers margin-safe trade (09:30 - 14:30 IST).
+        4. Autonomously manages Trailing Breakeven, Target, SL, and 15:15 PM Intraday exit.
+        5. At 15:35 IST, auto-reconciles full 375 candles into master database.
+        Zero user intervention required!
+        """
+        while True:
+            try:
+                self.poll_kotak_neo(force=False)
+                self.update_position_dynamics()
+            except Exception:
+                pass
+            time.sleep(2)
 
     def _replay_loop(self):
         """Background thread executing replay candles at selected speed."""
@@ -653,7 +686,7 @@ class MasterQuantEngine:
             self.square_off_position("BREAKEVEN_SL" if pos.get("breakeven_active") else "STOP_LOSS")
         else:
             # Time Exit at 15:15 PM IST (Zero Overnight Risk)
-            now_t = datetime.now().time()
+            now_t = get_ist_now().time()
             if datetime.strptime("15:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time():
                 self.square_off_position("TIME_EXIT (15:15 PM INTRADAY CLOSE)")
 
@@ -671,7 +704,7 @@ def get_status():
     engine.poll_kotak_neo()
     engine.update_position_dynamics()
 
-    now_dt = datetime.now()
+    now_dt = get_ist_now()
     now_t = now_dt.time()
     is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
 
@@ -923,6 +956,86 @@ def export_csv():
             headers={"Content-Disposition": f"attachment;filename=nifty_quant_trades_ledger_{date.today().strftime('%Y%m%d')}.csv"}
         )
     return jsonify({"error": "No trades recorded yet."}), 404
+
+
+@app.route("/api/download_option_chain_archive")
+def download_option_chain_archive():
+    today_str = date.today().strftime("%Y-%m-%d")
+    opt_csv_path = Path("data") / "daily_archive" / f"nifty_options_strikes_{today_str}.csv"
+    opt_parquet_path = Path("data") / "daily_archive" / f"nifty_options_strikes_{today_str}.parquet"
+    
+    # Flush current buffer to disk first
+    if hasattr(engine, "archiver") and engine.archiver:
+        engine.archiver.flush_live_buffer()
+        
+    if opt_csv_path.exists():
+        return send_file(opt_csv_path, as_attachment=True, download_name=f"nifty_options_strikes_1min_{today_str}.csv")
+    elif opt_parquet_path.exists():
+        df = pd.read_parquet(opt_parquet_path)
+        csv_buf = StringIO()
+        df.to_csv(csv_buf, index=False)
+        return Response(
+            csv_buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment;filename=nifty_options_strikes_1min_{today_str}.csv"}
+        )
+    else:
+        # Generate current chain snapshot table as fallback CSV
+        chain_table = engine.get_clean_option_chain_table()
+        df = pd.DataFrame(chain_table)
+        csv_buf = StringIO()
+        df.to_csv(csv_buf, index=False)
+        return Response(
+            csv_buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment;filename=nifty_options_chain_snapshot_{today_str}.csv"}
+        )
+
+
+@app.route("/api/export_historical_options")
+def export_historical_options():
+    target_date = request.args.get("date", "2026-03-05")
+    strike = request.args.get("strike", None)
+    opt_type = request.args.get("type", None)
+    
+    master_file = Path("data/nifty_options_master_2020_2026_1min.parquet")
+    if not master_file.exists():
+        return jsonify({"error": "Master options parquet not found"}), 404
+        
+    import pyarrow.dataset as ds
+    start_ts = pd.Timestamp(f"{target_date} 00:00:00")
+    end_ts = pd.Timestamp(f"{target_date} 23:59:59")
+    dataset = ds.dataset(str(master_file))
+    
+    filter_expr = (ds.field("timestamp") >= start_ts) & (ds.field("timestamp") <= end_ts)
+    if strike:
+        try:
+            filter_expr = filter_expr & (ds.field("strike_price") == float(strike))
+        except Exception:
+            pass
+    if opt_type:
+        filter_expr = filter_expr & (ds.field("option_type") == opt_type.upper())
+        
+    table = dataset.to_table(filter=filter_expr)
+    if table.num_rows == 0:
+        return jsonify({"error": f"No 1-minute option rows found for {target_date} (strike={strike})"}), 404
+        
+    df = table.to_pandas().sort_values(["timestamp", "strike_price", "option_type"])
+    csv_buf = StringIO()
+    df.to_csv(csv_buf, index=False)
+    
+    filename = f"nifty_1min_options_{target_date}"
+    if strike:
+        filename += f"_strike_{strike}"
+    if opt_type:
+        filename += f"_{opt_type.upper()}"
+    filename += ".csv"
+    
+    return Response(
+        csv_buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment;filename={filename}"}
+    )
 
 
 if __name__ == "__main__":
