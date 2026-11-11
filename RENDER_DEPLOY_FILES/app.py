@@ -222,14 +222,35 @@ class MasterQuantEngine:
                 self.pulse["mkt_lot"] = int(chain["common_data"].get("mktLot", 65))
                 self.lot_size = self.pulse["mkt_lot"]
 
+            spot = self.pulse["spot"]
+
+            # Dynamic Real-Time EMA Calculations based on live Spot movement
+            a9 = 2.0 / 10.0
+            a20 = 2.0 / 21.0
+            a50 = 2.0 / 51.0
+            adaily = 2.0 / 21.0
+
+            base_e9 = getattr(self, "base_ema9", 25007.35)
+            base_e20 = getattr(self, "base_ema20", 24988.33)
+            base_e50 = getattr(self, "base_ema50", 24952.39)
+            base_daily = getattr(self, "base_daily20", 23677.11)
+
+            self.pulse["ema9"] = round(spot * a9 + base_e9 * (1.0 - a9), 2)
+            self.pulse["ema20"] = round(spot * a20 + base_e20 * (1.0 - a20), 2)
+            self.pulse["ema50"] = round(spot * a50 + base_e50 * (1.0 - a50), 2)
+            self.pulse["daily_ema20"] = round(spot * adaily + base_daily * (1.0 - adaily), 2)
+
+            # Live Option Chain OI & High-Precision PCR (3 decimal places)
             total_call_oi = sum(int(c.get("oi", {}).get("cur", c.get("oi", {}).get("oi", 0))) for c in chain.get("call", []))
             total_put_oi = sum(int(p.get("oi", {}).get("cur", p.get("oi", {}).get("oi", 0))) for p in chain.get("put", []))
+            self.pulse["total_call_oi"] = total_call_oi
+            self.pulse["total_put_oi"] = total_put_oi
             if total_call_oi > 0:
-                self.pulse["pcr"] = round(total_put_oi / total_call_oi, 2)
+                self.pulse["pcr"] = round(total_put_oi / total_call_oi, 3)
+
             self.pulse["calls_count"] = len(chain.get("call", []))
             self.pulse["puts_count"] = len(chain.get("put", []))
 
-            spot = self.pulse["spot"]
             d_ema = self.pulse["daily_ema20"]
             e9 = self.pulse["ema9"]
             e20 = self.pulse["ema20"]
@@ -750,49 +771,125 @@ def get_status():
 
     eval_time = datetime.strptime(engine.pulse.get("replay_time", "10:30"), "%H:%M").time() if (not is_mkt_open and engine.replay_active) else now_t
     is_time_window = (datetime.strptime("09:30", "%H:%M").time() <= eval_time <= datetime.strptime("14:30", "%H:%M").time())
-
-    cond_daily_regime = bool(spot > d_ema)
-    cond_ema_cascade = bool(e9 > e20 > e50)
-    cond_pcr_bullish = bool(pcr >= 1.05)
-    cond_time_window = bool(is_time_window)
     cond_circuit_breaker = bool(losses_today == 0 and not cb_active)
     cond_margin_safety = True  # Always enforced: 1st BUY OTM Wing -> 2nd SELL ATM Strike
 
-    met_count = sum([cond_daily_regime, cond_ema_cascade, cond_pcr_bullish, cond_time_window, cond_circuit_breaker, cond_margin_safety])
-    all_met = (met_count == 6)
+    # 1. Bull Put Spread Evaluation (Bullish Credit)
+    bull_c1 = bool(spot > d_ema)
+    bull_c2 = bool(e9 > e20 > e50)
+    bull_c3 = bool(pcr >= 1.05)
+    bull_score = sum([bull_c1, bull_c2, bull_c3, is_time_window, cond_circuit_breaker, cond_margin_safety])
+
+    # 2. Bear Call Spread Evaluation (Bearish Credit)
+    bear_c1 = bool(spot < d_ema)
+    bear_c2 = bool(e9 < e20 < e50)
+    bear_c3 = bool(pcr <= 0.85)
+    bear_score = sum([bear_c1, bear_c2, bear_c3, is_time_window, cond_circuit_breaker, cond_margin_safety])
+
+    # Determine front-runner spread and waiting status
+    if bull_score == 6:
+        active_spread = "BULL_PUT_SPREAD"
+        lead_spread = "BULL_PUT_SPREAD"
+        bull_badge = "ENTRY TRIGGERED (6/6)"
+        bear_badge = "INACTIVE"
+        bull_detail = "All 6 Conditions MET -> Bull Put Spread Triggered!"
+        bear_detail = "Inactive (Market is Bullish)"
+        verdict_text = "ENTRY TRIGGERED: BULL PUT SPREAD"
+    elif bear_score == 6:
+        active_spread = "BEAR_CALL_SPREAD"
+        lead_spread = "BEAR_CALL_SPREAD"
+        bear_badge = "ENTRY TRIGGERED (6/6)"
+        bull_badge = "INACTIVE"
+        bear_detail = "All 6 Conditions MET -> Bear Call Spread Triggered!"
+        bull_detail = "Inactive (Market is Bearish)"
+        verdict_text = "ENTRY TRIGGERED: BEAR CALL SPREAD"
+    else:
+        active_spread = "NEUTRAL"
+        if bull_score >= bear_score:
+            lead_spread = "BULL_PUT_SPREAD"
+            missing_bull = []
+            if not bull_c1: missing_bull.append("Spot > Daily EMA")
+            if not bull_c2: missing_bull.append("5m Momentum (9>20>50)")
+            if not bull_c3: missing_bull.append("PCR >= 1.05")
+            if not is_time_window: missing_bull.append("Time 09:30-14:30")
+            if not cond_circuit_breaker: missing_bull.append("0 Loss Circuit Breaker")
+            
+            missing_text = ", ".join(missing_bull) if missing_bull else "All Conditions Met"
+            bull_badge = f"WAITING ({bull_score}/6 TRUE)"
+            bear_badge = f"NEUTRAL ({bear_score}/6)"
+            bull_detail = f"Front-Runner! Waiting for: {missing_text}"
+            bear_detail = "Inactive (Macro/Momentum is Bullish)"
+            verdict_text = f"NEUTRAL (WAITING: BULL PUT SPREAD - {bull_score}/6 TRUE)"
+        else:
+            lead_spread = "BEAR_CALL_SPREAD"
+            missing_bear = []
+            if not bear_c1: missing_bear.append("Spot < Daily EMA")
+            if not bear_c2: missing_bear.append("5m Momentum (9<20<50)")
+            if not bear_c3: missing_bear.append("PCR <= 0.85")
+            if not is_time_window: missing_bear.append("Time 09:30-14:30")
+            if not cond_circuit_breaker: missing_bear.append("0 Loss Circuit Breaker")
+
+            missing_text = ", ".join(missing_bear) if missing_bear else "All Conditions Met"
+            bear_badge = f"WAITING ({bear_score}/6 TRUE)"
+            bull_badge = f"NEUTRAL ({bull_score}/6)"
+            bear_detail = f"Front-Runner! Waiting for: {missing_text}"
+            bull_detail = "Inactive (Macro/Momentum is Bearish)"
+            verdict_text = f"NEUTRAL (WAITING: BEAR CALL SPREAD - {bear_score}/6 TRUE)"
+
+    # Grid conditions reflect the active leader spread
+    if lead_spread == "BEAR_CALL_SPREAD":
+        cond_daily_regime = bear_c1
+        cond_ema_cascade = bear_c2
+        cond_pcr_sentiment = bear_c3
+        c1_rule = "Spot < Daily 20 EMA (Bearish Macro Filter)"
+        c1_metric = f"Spot: {spot:,.2f} < EMA: {d_ema:,.2f}"
+        c2_rule = "EMA 9 < EMA 20 < EMA 50 (Downward Momentum)"
+        c2_metric = f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f}"
+        c3_rule = "PCR <= 0.85 (Heavy Call Writing Ceiling)"
+        c3_metric = f"PCR: {pcr:.3f} (Required: <= 0.85)"
+    else:
+        cond_daily_regime = bull_c1
+        cond_ema_cascade = bull_c2
+        cond_pcr_sentiment = bull_c3
+        c1_rule = "Spot > Daily 20 EMA (Bullish Macro Filter)"
+        c1_metric = f"Spot: {spot:,.2f} > EMA: {d_ema:,.2f}"
+        c2_rule = "EMA 9 > EMA 20 > EMA 50 (Upward Momentum)"
+        c2_metric = f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f}"
+        c3_rule = "PCR >= 1.05 (Heavy Put Writing Floor)"
+        c3_metric = f"PCR: {pcr:.3f} (Required: >= 1.05)"
 
     strategy_conditions = [
         {
             "id": "daily_regime",
             "name": "1. Daily 20 EMA Macro Regime",
-            "rule": "Spot > Daily 20 EMA (Bullish Macro Filter)",
-            "metric": f"Spot: {spot:,.2f} > EMA: {d_ema:,.2f}",
+            "rule": c1_rule,
+            "metric": c1_metric,
             "status": cond_daily_regime,
             "badge": "TRUE" if cond_daily_regime else "FALSE",
         },
         {
             "id": "ema_cascade",
             "name": "2. 5-Min Momentum Alignment",
-            "rule": "EMA 9 > EMA 20 > EMA 50 (Upward Momentum Cascade)",
-            "metric": f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f}",
+            "rule": c2_rule,
+            "metric": c2_metric,
             "status": cond_ema_cascade,
             "badge": "TRUE" if cond_ema_cascade else "FALSE",
         },
         {
             "id": "pcr_sentiment",
             "name": "3. PCR Sentiment Confirmation",
-            "rule": "PCR >= 1.05 (Heavy Put Writing Floor)",
-            "metric": f"PCR: {pcr:.2f} (Required: >= 1.05)",
-            "status": cond_pcr_bullish,
-            "badge": "TRUE" if cond_pcr_bullish else "FALSE",
+            "rule": c3_rule,
+            "metric": c3_metric,
+            "status": cond_pcr_sentiment,
+            "badge": "TRUE" if cond_pcr_sentiment else "FALSE",
         },
         {
             "id": "time_window",
             "name": "4. Execution Time Window",
             "rule": "09:30 AM - 02:30 PM IST (Avoid Opening & Closing Noise)",
             "metric": f"Time: {eval_time.strftime('%H:%M')} IST",
-            "status": cond_time_window,
-            "badge": "TRUE" if cond_time_window else "FALSE",
+            "status": is_time_window,
+            "badge": "TRUE" if is_time_window else "FALSE",
         },
         {
             "id": "circuit_breaker",
@@ -825,11 +922,26 @@ def get_status():
         "audio_event": audio_event,
         "replay": replay_info,
         "strategy_matrix": {
-            "all_conditions_met": all_met,
-            "met_count": met_count,
+            "all_conditions_met": (bull_score == 6 or bear_score == 6),
+            "met_count": bull_score if lead_spread == "BULL_PUT_SPREAD" else bear_score,
             "total_count": 6,
-            "verdict": "READY FOR ENTRY" if all_met else f"SCANNING ({met_count}/6 TRUE)",
-            "signal": engine.pulse["signal"],
+            "verdict": verdict_text,
+            "signal": active_spread,
+            "lead_spread": lead_spread,
+            "bull_tracker": {
+                "name": "BULL PUT SPREAD",
+                "score": bull_score,
+                "badge": bull_badge,
+                "is_leader": (lead_spread == "BULL_PUT_SPREAD"),
+                "detail": bull_detail
+            },
+            "bear_tracker": {
+                "name": "BEAR CALL SPREAD",
+                "score": bear_score,
+                "badge": bear_badge,
+                "is_leader": (lead_spread == "BEAR_CALL_SPREAD"),
+                "detail": bear_detail
+            },
             "conditions": strategy_conditions,
         },
         "capital": {
@@ -852,6 +964,8 @@ def get_status():
             "ema20": engine.pulse["ema20"],
             "ema50": engine.pulse["ema50"],
             "pcr": engine.pulse["pcr"],
+            "total_call_oi": f"{engine.pulse.get('total_call_oi', 0):,}",
+            "total_put_oi": f"{engine.pulse.get('total_put_oi', 0):,}",
             "pcr_sentiment": "BULLISH (>1.05)" if engine.pulse["pcr"] >= 1.05 else ("BEARISH (<0.85)" if engine.pulse["pcr"] <= 0.85 else "NEUTRAL (0.85-1.05)"),
             "signal": engine.pulse["signal"],
             "expiry": engine.pulse["next_expiry"],
@@ -931,9 +1045,10 @@ def api_square_off():
 @app.route("/api/reset_circuit_breaker", methods=["POST"])
 def api_reset_circuit_breaker():
     engine.state["circuit_breaker_active"] = False
+    engine.state["today_losses"] = 0
     engine.save_state()
-    engine.status_message = "Circuit Breaker Manually Reset."
-    return jsonify({"success": True, "message": "Circuit Breaker Reset."})
+    engine.status_message = "Circuit Breaker & Losses Reset (0 Losses Today)."
+    return jsonify({"success": True, "message": "Circuit Breaker & Losses Reset."})
 
 
 @app.route("/api/trades")
