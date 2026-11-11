@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.class
+*.env
+.env
+*.bat
+cloudflared.exe
+data/nifty_options_master_2020_2026_1min.parquet

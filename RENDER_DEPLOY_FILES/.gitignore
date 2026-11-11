@@ -1,0 +1,36 @@
+# Python Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Environment Variables & Secrets (CRITICAL FOR GITHUB)
+.env
+*.key
+*.token
+*.pem
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Cloudflare Tunnel Binary (55 MB)
+cloudflared.exe
+*.exe
+
+# Massive Backtest Datasets (800 MB+ Exceeds GitHub 100MB limit)
+data/nifty_options_master_2020_2026_1min.parquet
+data/nifty_spot_master_2020_2026_1min.parquet
+data/*.parquet.tmp
+
+# Logs & Temporary Files
+logs/*.log
+*.log
+
+# System Files
+.DS_Store
+Thumbs.db

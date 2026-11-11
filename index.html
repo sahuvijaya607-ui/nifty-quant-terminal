@@ -166,7 +166,7 @@
                     <div class="w-36 sm:w-44 hidden sm:block space-y-1">
                         <div class="flex justify-between text-[9px] mono text-slate-400">
                             <span class="text-rose-400">SL -Rs 2800</span>
-                            <span class="text-emerald-400">Target +50%</span>
+                            <span class="text-emerald-400">Target +40% Decay</span>
                         </div>
                         <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden relative">
                             <div id="cockpit-sl-target-fill" class="h-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-500 transition-all duration-300" style="width: 50%;"></div>
@@ -257,7 +257,10 @@
                 </div>
                 <div>
                     <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Account Wallet (₹1 Lakh Rule)</div>
-                    <div class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,00,000.00</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,00,000.00</span>
+                        <span class="text-xs font-bold mono" id="cap-pnl-pill">(+Rs 0.00)</span>
+                    </div>
                 </div>
             </div>
 
@@ -265,7 +268,7 @@
                 <div>
                     <span class="text-slate-400">Margin Used (Hedged):</span>
                     <strong class="text-cyan-400 ml-1.5" id="cap-margin">Rs 0.00</strong>
-                    <span class="text-[10px] text-slate-500">(Rs 45k when open)</span>
+                    <span class="text-[10px] text-slate-500" id="cap-margin-note">(Rs 45k when open)</span>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
@@ -280,7 +283,7 @@
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
                     <span class="text-slate-400">Net Day ROI:</span>
-                    <strong class="text-white ml-1.5" id="cap-roi">+0.00%</strong>
+                    <strong class="text-white ml-1.5 font-bold" id="cap-roi">+0.00%</strong>
                 </div>
             </div>
         </div>
@@ -497,26 +500,42 @@
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-xs text-center mono">
+            <div class="overflow-x-auto rounded-xl border border-slate-800/80">
+                <table class="w-full text-sm text-center mono whitespace-nowrap">
                     <thead>
-                        <tr class="text-[10px] uppercase text-slate-400 border-b border-slate-800 tracking-wider">
-                            <th colspan="3" class="py-1.5 text-blue-400 bg-slate-900/40">CALLS (CE)</th>
-                            <th class="py-1.5 text-amber-300 bg-slate-900">STRIKE</th>
-                            <th colspan="3" class="py-1.5 text-emerald-400 bg-slate-900/40">PUTS (PE)</th>
+                        <tr class="text-xs uppercase font-extrabold tracking-wider border-b border-slate-800">
+                            <th colspan="7" class="py-2.5 px-3 text-blue-400 bg-blue-950/30 border-r border-slate-800">
+                                <i class="fa-solid fa-arrow-trend-up mr-1 text-blue-400"></i> CALLS (CE) - 15 STRIKES + GREEKS
+                            </th>
+                            <th class="py-2.5 px-6 text-amber-300 bg-slate-900 border-x border-slate-700">
+                                NIFTY 50 STRIKE
+                            </th>
+                            <th colspan="7" class="py-2.5 px-3 text-emerald-400 bg-emerald-950/30 border-l border-slate-800">
+                                <i class="fa-solid fa-arrow-trend-down mr-1 text-emerald-400"></i> PUTS (PE) - 15 STRIKES + GREEKS
+                            </th>
                         </tr>
-                        <tr class="text-[10px] text-slate-500 border-b border-slate-800">
-                            <th class="py-1.5 px-2">OI</th>
-                            <th class="py-1.5 px-2">Volume</th>
-                            <th class="py-1.5 px-2">LTP (₹)</th>
-                            <th class="py-1.5 px-4 font-bold text-white bg-slate-900/80">PRICE</th>
-                            <th class="py-1.5 px-2">LTP (₹)</th>
-                            <th class="py-1.5 px-2">Volume</th>
-                            <th class="py-1.5 px-2">OI</th>
+                        <tr class="text-[11px] text-slate-400 border-b border-slate-800 bg-slate-900/80 font-semibold mono">
+                            <th class="py-2 px-2 text-center text-blue-300" title="Delta: Price sensitivity per 1 pt Spot move">&Delta; Delta</th>
+                            <th class="py-2 px-2 text-center text-rose-300" title="Theta: Daily time decay in ₹/day">&Theta; Theta</th>
+                            <th class="py-2 px-2 text-center text-purple-300" title="Gamma: Rate of change of Delta">&Gamma; Gamma</th>
+                            <th class="py-2 px-2 text-center text-indigo-300" title="Vega: Sensitivity to 1% IV change">V Vega</th>
+                            <th class="py-2 px-3 text-center">Volume</th>
+                            <th class="py-2 px-3 text-center text-amber-200">OI</th>
+                            <th class="py-2 px-4 text-right border-r border-slate-800 font-bold text-white">LTP (₹)</th>
+
+                            <th class="py-2 px-6 font-black text-amber-300 bg-slate-900 border-x border-slate-700 text-sm">STRIKE</th>
+
+                            <th class="py-2 px-4 text-left border-l border-slate-800 font-bold text-white">LTP (₹)</th>
+                            <th class="py-2 px-3 text-center text-amber-200">OI</th>
+                            <th class="py-2 px-3 text-center">Volume</th>
+                            <th class="py-2 px-2 text-center text-indigo-300" title="Vega: Sensitivity to 1% IV change">V Vega</th>
+                            <th class="py-2 px-2 text-center text-purple-300" title="Gamma: Rate of change of Delta">&Gamma; Gamma</th>
+                            <th class="py-2 px-2 text-center text-rose-300" title="Theta: Daily time decay in ₹/day">&Theta; Theta</th>
+                            <th class="py-2 px-2 text-center text-emerald-300" title="Delta: Price sensitivity per 1 pt Spot move">&Delta; Delta</th>
                         </tr>
                     </thead>
-                    <tbody id="option-chain-body" class="divide-y divide-slate-800/40">
-                        <!-- 11 Clean Rows Populated by JS -->
+                    <tbody id="option-chain-body" class="divide-y divide-slate-800/60 text-xs sm:text-sm">
+                        <!-- Populated dynamically with 31 strikes, Greeks, Max OI badges, and SOLD/BOUGHT indicators -->
                     </tbody>
                 </table>
             </div>
@@ -604,25 +623,72 @@
                     </div>
 
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Sold Leg (2nd)</div>
-                            <div class="text-sm font-bold text-white mono mt-0.5" id="pos-sell-strike">25050 PE</div>
-                            <div class="text-xs text-slate-400 mono">@ Rs <span id="pos-sell-price">114.42</span></div>
+                        <!-- Sold Leg -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Sold Leg (2nd)</div>
+                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-sell-strike">25350 PE</div>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Entry (Jab Liya):</span>
+                                    <strong class="text-slate-200">Rs <span id="pos-sell-price">113.93</span></strong>
+                                </div>
+                                <div class="flex justify-between text-amber-400 font-bold">
+                                    <span>Live LTP:</span>
+                                    <span>Rs <span id="pos-sell-ltp">213.30</span></span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Bought Wing (1st)</div>
-                            <div class="text-sm font-bold text-white mono mt-0.5" id="pos-buy-strike">24700 PE</div>
-                            <div class="text-xs text-slate-400 mono">@ Rs <span id="pos-buy-price">30.15</span></div>
+
+                        <!-- Bought Wing -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Bought Wing (1st)</div>
+                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-buy-strike">25000 PE</div>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Entry (Jab Liya):</span>
+                                    <strong class="text-slate-200">Rs <span id="pos-buy-price">29.95</span></strong>
+                                </div>
+                                <div class="flex justify-between text-cyan-400 font-bold">
+                                    <span>Live LTP:</span>
+                                    <span>Rs <span id="pos-buy-ltp">89.65</span></span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Net Credit</div>
-                            <div class="text-sm font-bold text-cyan-400 mono mt-0.5">Rs <span id="pos-net-credit">84.27</span></div>
-                            <div class="text-xs text-slate-400 mono">Current: Rs <span id="pos-curr-spread">84.27</span></div>
+
+                        <!-- Net Credit & Current Spread -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Credit Spread</div>
+                                <div class="text-xs text-slate-300 mono mt-0.5 flex justify-between">
+                                    <span class="text-slate-500">Entry Credit:</span>
+                                    <strong class="text-cyan-400">Rs <span id="pos-net-credit">83.98</span></strong>
+                                </div>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Current Spread:</span>
+                                    <strong class="text-amber-300">Rs <span id="pos-curr-spread">79.39</span></strong>
+                                </div>
+                                <div class="flex justify-between text-emerald-400 font-bold">
+                                    <span>Captured:</span>
+                                    <span id="pos-pts-gain">+4.59 pts</span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <div class="text-[11px] text-slate-400 uppercase tracking-wider">Net MTM PnL</div>
-                            <div class="text-lg font-extrabold text-emerald-400 mono mt-0.5" id="pos-mtm-net">+Rs 0.00</div>
-                            <div class="text-[10px] text-slate-400 mono">After taxes & fees</div>
+
+                        <!-- Net MTM PnL -->
+                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Net MTM PnL</div>
+                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 0.00</div>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mono mt-2 pt-2 border-t border-slate-800/80">
+                                True Net (After Taxes & Brokerage)
+                            </div>
                         </div>
                     </div>
 
@@ -977,16 +1043,38 @@
                 document.getElementById('replay-progress').innerText = data.replay.progress;
             }
 
-            // Wallet & Charges Bar
+            // Wallet & Charges Bar (100% Dynamic Live Tracking)
             if (data.capital) {
-                document.getElementById('cap-current').innerText = `Rs ${Number(data.capital.current_equity).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                const curEq = Number(data.capital.current_equity);
+                const totNet = Number(data.capital.total_net_pnl !== undefined ? data.capital.total_net_pnl : (data.performance.today_net_pnl || 0));
+                const totCharges = Number(data.capital.charges !== undefined ? data.capital.charges : (data.performance.today_charges || 0));
+                const roiPct = Number(data.capital.roi_today_pct || 0);
+
+                const capCurEl = document.getElementById('cap-current');
+                capCurEl.innerText = `Rs ${curEq.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                if (totNet > 0) {
+                    capCurEl.className = 'text-lg font-extrabold text-emerald-400 mono';
+                } else if (totNet < 0) {
+                    capCurEl.className = 'text-lg font-extrabold text-rose-400 mono';
+                } else {
+                    capCurEl.className = 'text-lg font-extrabold text-white mono';
+                }
+
+                const pnlPill = document.getElementById('cap-pnl-pill');
+                if (pnlPill) {
+                    const pnlSign = totNet >= 0 ? '+' : '';
+                    pnlPill.innerText = `(${pnlSign}Rs ${totNet.toLocaleString('en-IN', {minimumFractionDigits: 2})})`;
+                    pnlPill.className = totNet >= 0 ? 'text-xs font-bold mono text-emerald-400' : 'text-xs font-bold mono text-rose-400';
+                }
+
                 document.getElementById('cap-margin').innerText = `Rs ${Number(data.capital.margin_used).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                 document.getElementById('cap-free').innerText = `Rs ${Number(data.capital.free_cash).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                document.getElementById('cap-charges').innerText = `Rs ${Number(data.performance.today_charges || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                const roiSign = data.capital.roi_today_pct >= 0 ? '+' : '';
+                document.getElementById('cap-charges').innerText = `Rs ${totCharges.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+
+                const roiSign = roiPct >= 0 ? '+' : '';
                 const roiEl = document.getElementById('cap-roi');
-                roiEl.innerText = `${roiSign}${data.capital.roi_today_pct}%`;
-                roiEl.className = data.capital.roi_today_pct >= 0 ? 'text-emerald-400 ml-1.5' : 'text-rose-400 ml-1.5';
+                roiEl.innerText = `${roiSign}${roiPct.toFixed(2)}%`;
+                roiEl.className = roiPct >= 0 ? 'text-emerald-400 font-extrabold ml-1.5' : 'text-rose-400 font-extrabold ml-1.5';
             }
 
             // Spot & Indicators
@@ -1150,32 +1238,77 @@
                 document.getElementById('chain-expiry').innerText = data.indicators.expiry;
                 const tbody = document.getElementById('option-chain-body');
                 tbody.innerHTML = data.option_chain_table.map(r => {
-                    let strikeClass = 'text-white font-semibold py-1.5';
+                    const pos = data.active_position;
+                    const isSoldLeg = pos && (r.strike === pos.sell_strike);
+                    const isBoughtLeg = pos && (r.strike === pos.buy_strike);
+
+                    let strikeClass = 'text-white font-extrabold py-3 text-sm sm:text-base';
                     let strikeTag = '';
                     let rowBg = '';
 
-                    if (r.is_atm) {
-                        strikeClass = 'bg-amber-400 text-slate-950 font-extrabold text-sm py-2 shadow-lg shadow-amber-400/20';
-                        strikeTag = '<span class="text-[9px] bg-slate-950 text-amber-400 px-1 rounded ml-1 font-bold">ATM (SOLD)</span>';
+                    let callSellTag = '';
+                    let callBuyTag = '';
+                    let putSellTag = '';
+                    let putBuyTag = '';
+
+                    if (isSoldLeg) {
+                        strikeClass = 'bg-rose-500/25 text-rose-300 font-black text-sm sm:text-base py-3 border-y-2 border-rose-500/60 glow-red';
+                        strikeTag = `<span class="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded ml-2 border border-rose-500/60 font-black uppercase">🔴 SOLD (SELL)</span>`;
+                        rowBg = 'bg-rose-500/15 border-y-2 border-rose-500/50';
+                        if (pos.sell_type === 'PE') {
+                            putSellTag = `<span class="bg-rose-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-rose-600/40">🔴 SOLD LEG</span>`;
+                        } else {
+                            callSellTag = `<span class="bg-rose-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-rose-600/40">🔴 SOLD LEG</span>`;
+                        }
+                    } else if (isBoughtLeg) {
+                        strikeClass = 'bg-emerald-500/25 text-emerald-300 font-black text-sm sm:text-base py-3 border-y-2 border-emerald-500/60 glow-green';
+                        strikeTag = `<span class="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded ml-2 border border-emerald-500/60 font-black uppercase">🟢 BOUGHT (BUY)</span>`;
+                        rowBg = 'bg-emerald-500/15 border-y-2 border-emerald-500/50';
+                        if (pos.buy_type === 'PE') {
+                            putBuyTag = `<span class="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-emerald-600/40">🟢 BOUGHT HEDGE</span>`;
+                        } else {
+                            callBuyTag = `<span class="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase ml-1.5 shadow-md shadow-emerald-600/40">🟢 BOUGHT HEDGE</span>`;
+                        }
+                    } else if (r.is_atm) {
+                        strikeClass = 'bg-amber-400 text-slate-950 font-black text-sm sm:text-base py-3 shadow-lg shadow-amber-400/20';
+                        strikeTag = '<span class="text-[9px] bg-slate-950 text-amber-400 px-1.5 py-0.5 rounded ml-1.5 font-bold">ATM (SELL TARGET)</span>';
                         rowBg = 'bg-amber-400/10 border-y border-amber-400/30';
                     } else if (r.is_hedge_wing) {
-                        strikeClass = 'bg-cyan-500/20 text-cyan-300 font-extrabold text-xs py-1.5 border border-cyan-500/40 glow-blue';
-                        strikeTag = '<span class="text-[9px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded ml-1 border border-cyan-500/40 font-bold">HEDGE WING (350 OTM)</span>';
+                        strikeClass = 'bg-cyan-500/25 text-cyan-300 font-extrabold text-sm py-3 border border-cyan-500/40 glow-blue';
+                        strikeTag = '<span class="text-[9px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded ml-1.5 border border-cyan-500/40 font-bold">HEDGE WING (BUY TARGET)</span>';
                         rowBg = 'bg-cyan-500/10 border-y border-cyan-500/20';
                     }
 
-                    const cLtpClass = r.call_moneyness === 'ITM' ? 'text-blue-300 font-bold bg-blue-500/5' : 'text-slate-300';
-                    const pLtpClass = r.put_moneyness === 'ITM' ? 'text-emerald-300 font-bold bg-emerald-500/5' : 'text-slate-300';
+                    const cLtpClass = r.call_moneyness === 'ITM' ? 'text-blue-300 font-black bg-blue-500/10 text-sm sm:text-base' : 'text-slate-200 font-bold text-sm sm:text-base';
+                    const pLtpClass = r.put_moneyness === 'ITM' ? 'text-emerald-300 font-black bg-emerald-500/10 text-sm sm:text-base' : 'text-slate-200 font-bold text-sm sm:text-base';
+
+                    const callOiDisplay = r.is_max_call_oi
+                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-amber-300 bg-amber-500/25 px-2 py-0.5 rounded border border-amber-500/50 glow-amber">${r.call_oi}</span><span class="text-[9px] text-amber-300 font-black uppercase mt-0.5 tracking-tight">★ MAX CALL OI (RESISTANCE)</span></div>`
+                        : `<span class="text-slate-300">${r.call_oi}</span>`;
+
+                    const putOiDisplay = r.is_max_put_oi
+                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-emerald-300 bg-emerald-500/25 px-2 py-0.5 rounded border border-emerald-500/50 glow-green">${r.put_oi}</span><span class="text-[9px] text-emerald-300 font-black uppercase mt-0.5 tracking-tight">★ MAX PUT OI (SUPPORT)</span></div>`
+                        : `<span class="text-slate-300">${r.put_oi}</span>`;
 
                     return `
-                        <tr class="hover:bg-slate-800/40 transition ${rowBg}">
-                            <td class="px-2 text-slate-400">${r.call_oi}</td>
-                            <td class="px-2 text-slate-500">${r.call_vol}</td>
-                            <td class="px-2 text-right ${cLtpClass}">₹${r.call_ltp}</td>
-                            <td class="px-4 ${strikeClass}">${r.strike} ${strikeTag}</td>
-                            <td class="px-2 text-left ${pLtpClass}">₹${r.put_ltp}</td>
-                            <td class="px-2 text-slate-500">${r.put_vol}</td>
-                            <td class="px-2 text-slate-400">${r.put_oi}</td>
+                        <tr class="hover:bg-slate-800/60 transition ${rowBg}">
+                            <td class="px-2 py-3 text-center mono text-blue-300 font-semibold">${r.call_delta}</td>
+                            <td class="px-2 py-3 text-center mono text-rose-300 font-semibold">${r.call_theta}</td>
+                            <td class="px-2 py-3 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
+                            <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
+                            <td class="px-2 py-3 text-slate-400 mono text-xs">${r.call_vol}</td>
+                            <td class="px-2 py-3 text-center mono text-xs">${callOiDisplay}</td>
+                            <td class="px-3 py-3 text-right mono ${cLtpClass} border-r border-slate-800">₹${r.call_ltp} ${callSellTag} ${callBuyTag}</td>
+
+                            <td class="px-5 py-3 ${strikeClass}">${r.strike} ${strikeTag}</td>
+
+                            <td class="px-3 py-3 text-left mono ${pLtpClass} border-l border-slate-800">₹${r.put_ltp} ${putSellTag} ${putBuyTag}</td>
+                            <td class="px-2 py-3 text-center mono text-xs">${putOiDisplay}</td>
+                            <td class="px-2 py-3 text-slate-400 mono text-xs">${r.put_vol}</td>
+                            <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
+                            <td class="px-2 py-3 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
+                            <td class="px-2 py-3 text-center mono text-rose-300 font-semibold">${r.put_theta}</td>
+                            <td class="px-2 py-3 text-center mono text-emerald-300 font-semibold">${r.put_delta}</td>
                         </tr>
                     `;
                 }).join('');
@@ -1205,10 +1338,21 @@
 
                 document.getElementById('pos-sell-strike').innerText = `${pos.sell_strike} ${pos.sell_type}`;
                 document.getElementById('pos-sell-price').innerText = pos.sell_price;
+                const sellLtpEl = document.getElementById('pos-sell-ltp');
+                if (sellLtpEl) sellLtpEl.innerText = pos.current_sell_ltp || pos.sell_price;
+
                 document.getElementById('pos-buy-strike').innerText = `${pos.buy_strike} ${pos.buy_type}`;
                 document.getElementById('pos-buy-price').innerText = pos.buy_price;
+                const buyLtpEl = document.getElementById('pos-buy-ltp');
+                if (buyLtpEl) buyLtpEl.innerText = pos.current_buy_ltp || pos.buy_price;
+
                 document.getElementById('pos-net-credit').innerText = pos.net_credit;
                 document.getElementById('pos-curr-spread').innerText = pos.current_spread || pos.net_credit;
+                const ptsGainEl = document.getElementById('pos-pts-gain');
+                if (ptsGainEl) {
+                    const diff = Number(pos.net_credit) - Number(pos.current_spread || pos.net_credit);
+                    ptsGainEl.innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)} pts`;
+                }
 
                 document.getElementById('pos-timer').innerText = pos.holding_time_str || '00:00:00';
                 const sMove = pos.spot_move || 0;
@@ -1261,10 +1405,12 @@
 
                 if (cBar) {
                     let pct = 50;
+                    const tgt = pos.target_profit_inr || 2500;
+                    const rsk = pos.max_risk_inr || 2800;
                     if (netPnl >= 0) {
-                        pct = Math.min(100, 50 + (netPnl / 1500) * 50);
+                        pct = Math.min(100, 50 + (netPnl / tgt) * 50);
                     } else {
-                        pct = Math.max(0, 50 + (netPnl / 2800) * 50);
+                        pct = Math.max(0, 50 + (netPnl / rsk) * 50);
                     }
                     cBar.style.width = `${pct}%`;
                 }
