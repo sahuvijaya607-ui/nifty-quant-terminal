@@ -254,15 +254,12 @@ class MasterQuantEngine:
         now_dt = get_ist_now()
         is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
 
-        if not is_mkt_open and not force and (self.pulse.get("option_chain") is not None):
-            self.feeder_mode = "REPLAY"
+        # In market hours poll every 2s; outside market hours poll every 30s to keep official closing settlement price fresh
+        min_poll_interval = 2 if is_mkt_open else 30
+        if not force and (now - self.last_api_poll < min_poll_interval):
             return
 
-        if is_mkt_open:
-            self.feeder_mode = "LIVE"
-
-        if not force and (now - self.last_api_poll < 2):
-            return
+        self.feeder_mode = "LIVE" if is_mkt_open else "CLOSED"
 
         try:
             chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
