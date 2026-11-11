@@ -61,20 +61,38 @@ class DailyDataArchiver:
             tick["pcr"] = round(total_put_oi / total_call_oi, 2) if total_call_oi > 0 else 1.0
 
             # Strike-by-strike recording for every strike in the chain
-            call_by_strike = {float(c.get("strikePrice", 0)): c for c in calls if c.get("strikePrice")}
-            put_by_strike = {float(p.get("strikePrice", 0)): p for p in puts if p.get("strikePrice")}
+            def _get_strike(x):
+                inst = x.get("inst", {}) if isinstance(x.get("inst"), dict) else {}
+                return float(inst.get("strkPrc", x.get("strikePrice", x.get("strike", 0))))
+
+            def _get_ltp(x):
+                quote = x.get("quote", {}) if isinstance(x.get("quote"), dict) else {}
+                return float(quote.get("ltp", x.get("ltp", 0.0)))
+
+            def _get_oi(x):
+                oi_obj = x.get("oi", {})
+                if isinstance(oi_obj, dict):
+                    return int(oi_obj.get("cur", oi_obj.get("oi", 0)))
+                return int(oi_obj) if oi_obj else 0
+
+            def _get_vol(x):
+                quote = x.get("quote", {}) if isinstance(x.get("quote"), dict) else {}
+                return int(quote.get("vol", x.get("volume", x.get("vol", 0))))
+
+            call_by_strike = {_get_strike(c): c for c in calls if _get_strike(c) > 0}
+            put_by_strike = {_get_strike(p): p for p in puts if _get_strike(p) > 0}
             all_strikes = sorted(set(call_by_strike.keys()) | set(put_by_strike.keys()))
 
             for s in all_strikes:
                 c_item = call_by_strike.get(s, {})
                 p_item = put_by_strike.get(s, {})
 
-                c_oi = int(c_item.get("oi", {}).get("cur", c_item.get("oi", {}).get("oi", 0)))
-                p_oi = int(p_item.get("oi", {}).get("cur", p_item.get("oi", {}).get("oi", 0)))
-                c_ltp = float(c_item.get("ltp", 0.0))
-                p_ltp = float(p_item.get("ltp", 0.0))
-                c_vol = int(c_item.get("volume", c_item.get("vol", 0)))
-                p_vol = int(p_item.get("volume", p_item.get("vol", 0)))
+                c_oi = _get_oi(c_item)
+                p_oi = _get_oi(p_item)
+                c_ltp = _get_ltp(c_item)
+                p_ltp = _get_ltp(p_item)
+                c_vol = _get_vol(c_item)
+                p_vol = _get_vol(p_item)
 
                 self.options_buffer.append({
                     "timestamp": ts_str,
