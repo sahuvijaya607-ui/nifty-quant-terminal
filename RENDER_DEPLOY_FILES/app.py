@@ -22,6 +22,7 @@ from pathlib import Path
 from io import StringIO
 
 from flask import Flask, render_template, jsonify, request, Response, send_file
+import requests
 import pandas as pd
 import numpy as np
 from scipy.stats import norm
@@ -31,6 +32,26 @@ from dotenv import load_dotenv
 from scripts.daily_data_archiver import DailyDataArchiver
 
 load_dotenv()
+
+
+def send_telegram_alert(message):
+    """Sends real-time trade alerts to user's Telegram if configured."""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not bot_token or not chat_id:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        requests.post(url, json=payload, timeout=4)
+        return True
+    except Exception:
+        return False
 
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
@@ -715,6 +736,17 @@ class MasterQuantEngine:
         self.save_state()
         self.pending_audio_event = "ENTRY"
         self.status_message = f"[{self.execution_mode}] Trade Triggered: Bought {buy_strike}{opt_type} -> Sold {sell_strike}{opt_type}"
+
+        send_telegram_alert(
+            f"🚀 <b>NIFTY QUANT DESK — TRADE FIRED</b>\n\n"
+            f"• Strategy: <b>{direction}</b> [{self.execution_mode}]\n"
+            f"• Sold Leg: <b>{sell_strike}{opt_type}</b> @ Rs {exec_sell}\n"
+            f"• Bought Leg: <b>{buy_strike}{opt_type}</b> @ Rs {exec_buy}\n"
+            f"• Net Credit: Rs {net_credit} pts (Rs {round(net_credit * self.lot_size, 2):,})\n"
+            f"• Target Profit (+40%): +Rs {new_pos['target_profit_inr']:,}\n"
+            f"• Hard Stop Loss: -Rs {new_pos['max_risk_inr']:,} Cap\n"
+            f"• Nifty Spot Entry: {spot}"
+        )
         return True, "Trade executed safely."
 
     def square_off_position(self, reason="MANUAL_WEB_EXIT"):
@@ -771,10 +803,22 @@ class MasterQuantEngine:
             self.state["today_wins"] += 1
             self.state["circuit_breaker_active"] = True  # Golden Rule: Profit aate hi daily quota lock, no second trade!
             self.pending_audio_event = "TARGET"
+            outcome_tag = "🎯 TARGET ACHIEVED (+40% DECAY)"
         else:
             self.state["today_losses"] += 1
             self.state["circuit_breaker_active"] = True  # 1-Loss Circuit Breaker
             self.pending_audio_event = "STOP_LOSS"
+            outcome_tag = "🛑 STOP LOSS / EXIT"
+
+        send_telegram_alert(
+            f"{outcome_tag} — <b>NIFTY QUANT DESK</b>\n\n"
+            f"• Reason: <b>{reason}</b>\n"
+            f"• Gross PnL: Rs {gross_pnl:+,.2f}\n"
+            f"• Kotak Taxes & Charges: -Rs {charges['total_charges']:.2f}\n"
+            f"• <b>Net Realized PnL: Rs {net_pnl:+,.2f}</b>\n"
+            f"• Exit Spot: {exit_spot}\n"
+            f"• Ending Day Account Balance: Rs {self.initial_capital + self.state['today_realized_net_pnl']:,.2f}"
+        )
 
         trade_rec = {
             "date": date.today().strftime("%Y-%m-%d"),
@@ -871,6 +915,24 @@ class MasterQuantEngine:
 
 
 engine = MasterQuantEngine()
+
+
+@app.route("/api/health")
+def health():
+    now_ts = time.time()
+    last_poll_sec = round(now_ts - getattr(engine, "last_api_poll", 0), 1)
+    return jsonify({
+        "status": "UP",
+        "engine": "MasterQuantEngine",
+        "authenticated": engine.authenticated,
+        "feeder_mode": engine.feeder_mode,
+        "spot": engine.pulse.get("spot"),
+        "pcr": engine.pulse.get("pcr"),
+        "pcr_oi_change": engine.pulse.get("pcr_oi_change"),
+        "last_poll_sec_ago": last_poll_sec,
+        "has_active_position": bool(engine.state.get("active_position")),
+        "telegram_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID")),
+    }), 200
 
 
 @app.route("/")
