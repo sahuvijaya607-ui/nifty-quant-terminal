@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Upgrade 8: TradingView Lightweight Charts v4.1.3 -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
@@ -65,10 +67,13 @@
                         <h1 class="text-lg font-bold text-white tracking-tight">NIFTY CHAMPION MODEL 4</h1>
                         <span class="px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">MASTER QUANT DESK</span>
                     </div>
-                    <p class="text-xs text-slate-400 flex items-center space-x-2">
+                    <p class="text-xs text-slate-400 flex flex-wrap items-center gap-2">
                         <span>Trader: <strong id="trader-name" class="text-slate-200">RAHUL</strong></span>
                         <span>&bull;</span>
                         <span id="auth-status" class="text-emerald-400"><i class="fa-solid fa-circle-check"></i> Kotak Neo Live</span>
+                        <span id="hdr-vix-badge" class="px-2 py-0.5 text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full mono"><i class="fa-solid fa-gauge mr-1"></i>VIX: 13.5 (350w)</span>
+                        <span id="hdr-lots-badge" class="px-2 py-0.5 text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full mono"><i class="fa-solid fa-cubes mr-1"></i>Lots: 1 (65 Qty)</span>
+                        <span id="hdr-watchdog-pill" class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full mono"><i class="fa-solid fa-heart-pulse mr-1"></i>Watchdog: Optimal</span>
                     </p>
                 </div>
             </div>
@@ -83,12 +88,18 @@
                 <div class="text-xs text-slate-400 mono" id="clock-display">--:--:-- IST</div>
             </div>
 
-            <!-- Right Controls: Audio + Safety Toggle (PAPER <-> LIVE) -->
+            <!-- Right Controls: Audio + EOD Report + Safety Toggle (PAPER <-> LIVE) -->
             <div class="flex items-center space-x-3">
                 
                 <!-- Audio Mute/Unmute -->
                 <button onclick="toggleAudio()" id="audio-toggle-btn" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition border border-slate-700" title="Audio Chimes Enabled">
                     <i class="fa-solid fa-volume-high text-emerald-400"></i>
+                </button>
+
+                <!-- Upgrade 7: EOD Daily Performance Report Modal Button -->
+                <button onclick="openEodReportModal()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition border border-slate-700 flex items-center space-x-1" title="15:35 Daily Performance Report">
+                    <i class="fa-solid fa-file-invoice text-amber-400"></i>
+                    <span class="hidden sm:inline">EOD Report</span>
                 </button>
 
                 <!-- SAFETY TOGGLE: PAPER TRADING <-> LIVE EXECUTION -->
@@ -371,6 +382,45 @@
                 </div>
             </div>
 
+        </div>
+
+        <!-- 📈 UPGRADE 8: TRADINGVIEW LIGHTWEIGHT CANDLESTICK CHART & LIVE TRADE OVERLAYS -->
+        <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-5 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                        <i class="fa-solid fa-chart-line"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider">NIFTY 50 REAL-TIME 1-MIN CANDLESTICK CHART</h3>
+                            <span class="px-2 py-0.5 rounded text-[9px] font-extrabold bg-blue-500/10 text-blue-400 border border-blue-500/20 mono">TRADINGVIEW ENGINE</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400">Institutional 1-Minute Candlesticks &bull; Live Spread Price Overlays (Entry Spot, Target +40%, Hard SL, Trailing Breakeven)</p>
+                    </div>
+                </div>
+
+                <!-- Chart Legend / Active Overlays Indicator -->
+                <div class="flex flex-wrap items-center gap-3 text-[11px] mono">
+                    <span class="flex items-center space-x-1.5"><span class="w-3 h-1 bg-blue-500 rounded"></span><span class="text-slate-300">Entry Spot</span></span>
+                    <span class="flex items-center space-x-1.5"><span class="w-3 h-1 bg-emerald-400 rounded"></span><span class="text-emerald-400">Target (+40%)</span></span>
+                    <span class="flex items-center space-x-1.5"><span class="w-3 h-1 bg-rose-500 rounded"></span><span class="text-rose-400">Hard SL</span></span>
+                    <span class="flex items-center space-x-1.5"><span class="w-3 h-1 bg-amber-400 rounded"></span><span class="text-amber-400">Trailing BE</span></span>
+                    <button onclick="refreshChart()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 text-xs border border-slate-700 transition" title="Refresh Chart"><i class="fa-solid fa-arrows-rotate"></i></button>
+                </div>
+            </div>
+
+            <!-- Canvas Container -->
+            <div id="tv-chart-wrapper" class="relative w-full rounded-xl overflow-hidden bg-[#080c14] border border-slate-800/80" style="height: 380px;">
+                <div id="tv-chart-container" style="width: 100%; height: 100%;"></div>
+                <!-- Live Hover Tooltip -->
+                <div id="chart-ohlc-legend" class="absolute top-2 left-3 text-[11px] mono text-slate-400 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 pointer-events-none z-10 flex space-x-3">
+                    <span>O: <strong id="leg-o" class="text-white">--</strong></span>
+                    <span>H: <strong id="leg-h" class="text-emerald-400">--</strong></span>
+                    <span>L: <strong id="leg-l" class="text-rose-400">--</strong></span>
+                    <span>C: <strong id="leg-c" class="text-cyan-400">--</strong></span>
+                </div>
+            </div>
         </div>
 
         <!-- 🎯 STRATEGY CONDITIONS MATRIX (LIVE TRUTH ENGINE: TRUE/FALSE INDICATORS) -->
@@ -843,6 +893,29 @@
         </div>
     </div>
 
+    <!-- UPGRADE 7: EOD DAILY REPORT MODAL -->
+    <div id="eod-report-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#101726] border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-file-invoice text-amber-400"></i>
+                    <h3 class="text-sm font-bold text-white uppercase tracking-wider">EOD Performance Dossier</h3>
+                </div>
+                <button onclick="closeEodReportModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="eod-report-body" class="space-y-3 text-xs mono">
+                <div class="text-center py-6 text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading official daily report...</div>
+            </div>
+            <div class="flex items-center justify-between border-t border-slate-800 pt-3">
+                <a id="eod-report-view-link" href="/api/daily_report?format=html" target="_blank" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center space-x-1.5">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                    <span>Open Full HTML Scorecard</span>
+                </a>
+                <button onclick="closeEodReportModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="border-t border-slate-800 bg-[#0d131f] px-6 py-3 text-center text-xs text-slate-500">
         NIFTY 50 Champion Model 4 &bull; Dual-Mode Feeder &bull; Clean 11-Strike Option Chain &bull; SEBI Margin-Safe Execution
@@ -1129,6 +1202,32 @@
                 pcrBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20';
             } else {
                 pcrBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20';
+            }
+
+            // Upgrades 4 & 5: VIX, Wing Distance & Auto-Compounding Lots Badges
+            const vixBadge = document.getElementById('hdr-vix-badge');
+            if (vixBadge && data.indicators && data.indicators.india_vix) {
+                vixBadge.innerHTML = `<i class="fa-solid fa-gauge mr-1"></i>VIX: ${data.indicators.india_vix} (${data.indicators.wing_distance || 350}w)`;
+            }
+            const lotsBadge = document.getElementById('hdr-lots-badge');
+            if (lotsBadge && data.indicators && data.indicators.active_lots) {
+                const totalQ = data.indicators.active_lots * (data.lot_size || 65);
+                lotsBadge.innerHTML = `<i class="fa-solid fa-cubes mr-1"></i>Lots: ${data.indicators.active_lots} (${totalQ} Qty)`;
+            }
+            const watchdogPill = document.getElementById('hdr-watchdog-pill');
+            if (watchdogPill) {
+                if (data.indicators && data.indicators.proximity_polling) {
+                    watchdogPill.className = "px-2 py-0.5 text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full mono glow-amber";
+                    watchdogPill.innerHTML = `<i class="fa-solid fa-bolt mr-1"></i>Proximity 1s Fast-Tick`;
+                } else {
+                    watchdogPill.className = "px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full mono";
+                    watchdogPill.innerHTML = `<i class="fa-solid fa-heart-pulse mr-1"></i>Watchdog: Optimal`;
+                }
+            }
+
+            // Upgrade 8: Update TradingView Chart overlays with live spot & active trade lines
+            if (typeof updateChartOverlays === 'function') {
+                updateChartOverlays(data.active_position, data.spot ? data.spot.ltp : null);
             }
 
             // Strategy Conditions Matrix Rendering
@@ -1540,11 +1639,212 @@
             }
         }
 
-        // Live polling loops
+        // 📈 UPGRADE 8: TRADINGVIEW LIGHTWEIGHT CHARTS INTEGRATION
+        let tvChart = null;
+        let candleSeries = null;
+        let chartEntryLine = null;
+        let chartTargetLine = null;
+        let chartSlLine = null;
+        let chartBeLine = null;
+
+        function initTradingViewChart() {
+            const container = document.getElementById('tv-chart-container');
+            if (!container || !window.LightweightCharts) return;
+
+            tvChart = LightweightCharts.createChart(container, {
+                width: container.clientWidth || 900,
+                height: 380,
+                layout: {
+                    background: { color: '#080c14' },
+                    textColor: '#94a3b8',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(30, 41, 59, 0.4)' },
+                    horzLines: { color: 'rgba(30, 41, 59, 0.4)' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: false,
+                    borderColor: '#1e293b',
+                },
+                rightPriceScale: {
+                    borderColor: '#1e293b',
+                },
+            });
+
+            candleSeries = tvChart.addCandlestickSeries({
+                upColor: '#10b981',
+                downColor: '#ef4444',
+                borderDownColor: '#ef4444',
+                borderUpColor: '#10b981',
+                wickDownColor: '#ef4444',
+                wickUpColor: '#10b981',
+            });
+
+            tvChart.subscribeCrosshairMove(param => {
+                if (!param || !param.time || !candleSeries) return;
+                const ohlc = param.seriesData.get(candleSeries);
+                if (ohlc) {
+                    const elO = document.getElementById('leg-o');
+                    const elH = document.getElementById('leg-h');
+                    const elL = document.getElementById('leg-l');
+                    const elC = document.getElementById('leg-c');
+                    if (elO) elO.innerText = ohlc.open.toFixed(2);
+                    if (elH) elH.innerText = ohlc.high.toFixed(2);
+                    if (elL) elL.innerText = ohlc.low.toFixed(2);
+                    if (elC) elC.innerText = ohlc.close.toFixed(2);
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (tvChart && container) {
+                    tvChart.applyOptions({ width: container.clientWidth });
+                }
+            });
+
+            loadChartCandles();
+        }
+
+        async function loadChartCandles() {
+            try {
+                const res = await fetch('/api/chart_data');
+                const json = await res.json();
+                if (json.success && json.candles && candleSeries) {
+                    candleSeries.setData(json.candles);
+                    const last = json.candles[json.candles.length - 1];
+                    if (last) {
+                        const elO = document.getElementById('leg-o');
+                        const elH = document.getElementById('leg-h');
+                        const elL = document.getElementById('leg-l');
+                        const elC = document.getElementById('leg-c');
+                        if (elO) elO.innerText = last.open.toFixed(2);
+                        if (elH) elH.innerText = last.high.toFixed(2);
+                        if (elL) elL.innerText = last.low.toFixed(2);
+                        if (elC) elC.innerText = last.close.toFixed(2);
+                    }
+                }
+            } catch (e) {
+                console.error("Error loading chart data", e);
+            }
+        }
+
+        function updateChartOverlays(pos, currentSpot) {
+            if (!candleSeries) return;
+
+            // Update active candle with live spot
+            if (currentSpot) {
+                const nowTs = Math.floor(Date.now() / 1000);
+                candleSeries.update({
+                    time: Math.floor(nowTs / 60) * 60,
+                    close: currentSpot,
+                });
+            }
+
+            // Clear old price lines
+            if (chartEntryLine) { candleSeries.removePriceLine(chartEntryLine); chartEntryLine = null; }
+            if (chartTargetLine) { candleSeries.removePriceLine(chartTargetLine); chartTargetLine = null; }
+            if (chartSlLine) { candleSeries.removePriceLine(chartSlLine); chartSlLine = null; }
+            if (chartBeLine) { candleSeries.removePriceLine(chartBeLine); chartBeLine = null; }
+
+            if (!pos) return;
+
+            const entrySpot = Number(pos.entry_spot || currentSpot);
+            const dir = pos.direction;
+
+            // Draw Entry Spot line (Blue)
+            chartEntryLine = candleSeries.createPriceLine({
+                price: entrySpot,
+                color: '#3b82f6',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Solid,
+                axisLabelVisible: true,
+                title: 'ENTRY SPOT',
+            });
+
+            // Target (+40% decay) Spot Level (Green)
+            const targetOffset = (dir === 'BULL_PUT_SPREAD') ? 45.0 : -45.0;
+            const slOffset = (dir === 'BULL_PUT_SPREAD') ? -65.0 : 65.0;
+
+            chartTargetLine = candleSeries.createPriceLine({
+                price: entrySpot + targetOffset,
+                color: '#10b981',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: 'TARGET (+40% DECAY)',
+            });
+
+            // Hard SL Spot Level (Red)
+            chartSlLine = candleSeries.createPriceLine({
+                price: entrySpot + slOffset,
+                color: '#ef4444',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: 'HARD SL (-Rs 2800)',
+            });
+
+            if (pos.breakeven_active) {
+                chartBeLine = candleSeries.createPriceLine({
+                    price: entrySpot,
+                    color: '#f59e0b',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: true,
+                    title: 'BREAKEVEN LOCKED',
+                });
+            }
+        }
+
+        function refreshChart() {
+            loadChartCandles();
+        }
+
+        // 📋 UPGRADE 7: EOD DAILY REPORT MODAL HANDLER
+        async function openEodReportModal() {
+            const modal = document.getElementById('eod-report-modal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            const body = document.getElementById('eod-report-body');
+            body.innerHTML = '<div class="text-center py-6 text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading official daily report...</div>';
+            try {
+                const res = await fetch('/api/daily_report');
+                const d = await res.json();
+                const pnlSign = d.realized_net_pnl >= 0 ? '+' : '';
+                const pnlColor = d.realized_net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                body.innerHTML = `
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 text-center space-y-1">
+                        <div class="text-[10px] text-slate-500 uppercase tracking-widest">Net Realized PnL (${d.date})</div>
+                        <div class="text-2xl font-black ${pnlColor}">${pnlSign}Rs ${Number(d.realized_net_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
+                        <div class="text-[11px] ${pnlColor} font-bold">ROI: ${pnlSign}${d.roi_pct}%</div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-[11px]">
+                        <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400">Starting Capital:</span> <strong class="text-white block mt-0.5">Rs ${Number(d.starting_capital).toLocaleString('en-IN', {minimumFractionDigits: 2})}</strong></div>
+                        <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400">Ending Balance:</span> <strong class="text-white block mt-0.5">Rs ${Number(d.ending_capital).toLocaleString('en-IN', {minimumFractionDigits: 2})}</strong></div>
+                        <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400">Total Trades:</span> <strong class="text-white block mt-0.5">${d.total_trades} (Wins: ${d.today_wins}, Losses: ${d.today_losses})</strong></div>
+                        <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80"><span class="text-slate-400">Kotak Taxes:</span> <strong class="text-rose-400 block mt-0.5">-Rs ${Number(d.total_charges).toFixed(2)}</strong></div>
+                    </div>
+                `;
+            } catch (e) {
+                body.innerHTML = `<div class="text-rose-400 text-center py-4">Failed to load report: ${e}</div>`;
+            }
+        }
+
+        function closeEodReportModal() {
+            const modal = document.getElementById('eod-report-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        // Live polling loops & Chart Initialization
+        setTimeout(initTradingViewChart, 300);
         fetchStatus();
         fetchTrades();
         setInterval(fetchStatus, 2000);
         setInterval(fetchTrades, 5000);
+        setInterval(loadChartCandles, 30000); // 30s background candle sync
     </script>
 </body>
 </html>

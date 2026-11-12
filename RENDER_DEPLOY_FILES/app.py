@@ -58,9 +58,13 @@ app.config["JSON_SORT_KEYS"] = False
 
 # Persistence paths
 STATE_FILE = Path("results/paper_engine_state.json")
+STATE_BACKUP_FILE = Path("results/paper_engine_state_backup.json")
+EQUITY_CURVE_FILE = Path("results/equity_curve_history.json")
 TRADES_FILE = Path("results/live_paper_trades.csv")
 MASTER_SPOT_PARQUET = Path("data/nifty_1min_5yr.parquet")
+REPORTS_DIR = Path("results/daily_reports")
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_ist_now():
@@ -135,6 +139,9 @@ class MasterQuantEngine:
         self.authenticated = False
         self.greeting = "RAHUL"
         self.lot_size = 65
+        self.mkt_lot = 65
+        self.active_lots = 1
+        self.capital_per_lot = 75000.0
 
         # Safety Execution Mode: 'PAPER' (default) or 'LIVE'
         self.execution_mode = "PAPER"
@@ -154,6 +161,9 @@ class MasterQuantEngine:
         self.last_replay_tick_time = time.time()
 
         self.last_api_poll = 0
+        self.start_time = time.time()
+        self.self_heal_count = 0
+        self.proximity_polling = False
         self.status_message = "Master Quant Desk Initialized."
 
         # Latest Market Pulse
@@ -165,6 +175,11 @@ class MasterQuantEngine:
             "ema20": 24988.33,
             "ema50": 24952.39,
             "pcr": None,
+            "pcr_oi_change": 1.0,
+            "pcr_core_atm": 1.0,
+            "india_vix": 13.5,
+            "vix_regime": "NORMAL_VOLATILITY (Champion)",
+            "wing_distance": 350,
             "next_expiry": "2026-11-17",
             "calls_count": 0,
             "puts_count": 0,
@@ -191,6 +206,10 @@ class MasterQuantEngine:
         # Dedicated 100% Autonomous Background Worker (Auto-Downloads 1-Min Options & Auto-Executes Trades)
         self.live_daemon_thread = threading.Thread(target=self._live_engine_loop, daemon=True)
         self.live_daemon_thread.start()
+
+        # Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Thread
+        self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+        self.watchdog_thread.start()
 
     def authenticate(self):
         if not self.consumer_key or not self.ucc:
@@ -219,6 +238,7 @@ class MasterQuantEngine:
             return False
 
     def load_state(self):
+        """Upgrade 3: Crash-Proof State Loader with automatic backup recovery."""
         today_str = date.today().strftime("%Y-%m-%d")
         default_state = {
             "date": today_str,
@@ -230,19 +250,248 @@ class MasterQuantEngine:
             "today_realized_net_pnl": 0.0,
             "active_position": None,
         }
-        if STATE_FILE.exists():
-            try:
-                with open(STATE_FILE, "r") as f:
-                    saved = json.load(f)
-                    if saved.get("date") == today_str:
-                        return saved
-            except Exception:
-                pass
+        for state_path in [STATE_FILE, STATE_BACKUP_FILE]:
+            if state_path.exists():
+                try:
+                    with open(state_path, "r", encoding="utf-8") as f:
+                        saved = json.load(f)
+                        if isinstance(saved, dict) and saved.get("date") == today_str:
+                            return saved
+                except Exception:
+                    continue
         return default_state
 
     def save_state(self):
-        with open(STATE_FILE, "w") as f:
-            json.dump(self.state, f, indent=2)
+        """Upgrade 3: Crash-Proof Atomic State Persistence with Secondary Backup Mirror."""
+        try:
+            tmp_file = STATE_FILE.with_suffix(".tmp")
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(self.state, f, indent=2)
+            tmp_file.replace(STATE_FILE)
+            with open(STATE_BACKUP_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.state, f, indent=2)
+        except Exception as e:
+            try:
+                with open(STATE_FILE, "w", encoding="utf-8") as f:
+                    json.dump(self.state, f, indent=2)
+            except Exception:
+                pass
+
+    def record_equity_point(self, net_pnl, reason="TRADE_CLOSED"):
+        """Upgrade 3: Tracks continuous equity curve and realized PnL trajectory."""
+        try:
+            cur_equity = round(self.initial_capital + float(self.state.get("today_realized_net_pnl", 0.0)), 2)
+            record = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "date": date.today().strftime("%Y-%m-%d"),
+                "equity": cur_equity,
+                "net_pnl": net_pnl,
+                "reason": reason,
+            }
+            history = []
+            if EQUITY_CURVE_FILE.exists():
+                try:
+                    with open(EQUITY_CURVE_FILE, "r", encoding="utf-8") as f:
+                        history = json.load(f)
+                except Exception:
+                    history = []
+            history.append(record)
+            with open(EQUITY_CURVE_FILE, "w", encoding="utf-8") as f:
+                json.dump(history, f, indent=2)
+        except Exception:
+            pass
+
+    def get_compounding_lot_sizing(self):
+        """Upgrade 4: Dynamic Auto-Compounding Lot Sizing (Rs 75k per lot scaling)."""
+        cur_equity = self.initial_capital + float(self.state.get("today_realized_net_pnl", 0.0))
+        pos = self.state.get("active_position")
+        if pos:
+            cur_equity += float(pos.get("mtm_net_pnl", 0.0))
+        calculated_lots = max(1, int(cur_equity // self.capital_per_lot))
+        mkt_lot = int(self.pulse.get("mkt_lot", 65))
+        self.active_lots = calculated_lots
+        self.lot_size = calculated_lots * mkt_lot
+        return calculated_lots, self.lot_size
+
+    def get_adaptive_wing_distance(self):
+        """Upgrade 5: India VIX-Adaptive Wing Distance (300/350/450 pts)."""
+        vix = float(self.pulse.get("india_vix", 13.5))
+        if vix < 13.0:
+            regime = "LOW_VOLATILITY (Rangebound)"
+            wing_dist = 300
+        elif vix <= 17.0:
+            regime = "NORMAL_VOLATILITY (Champion)"
+            wing_dist = 350
+        else:
+            regime = "HIGH_VOLATILITY (Buffer Expansion)"
+            wing_dist = 450
+        self.pulse["vix_regime"] = regime
+        self.pulse["wing_distance"] = wing_dist
+        return wing_dist, regime
+
+    def check_bull_pcr(self):
+        """Upgrade 1: Dual-PCR Bullish Evaluation (Weekly Cumulative OR Today Fresh OI Surge)."""
+        pcr = self.pulse.get("pcr")
+        if pcr is None:
+            return False, "PCR Loading..."
+        pcr_oi_chg = float(self.pulse.get("pcr_oi_change", 1.0))
+        pcr_core = float(self.pulse.get("pcr_core_atm", 1.0))
+        if pcr >= 1.05:
+            return True, f"Weekly PCR ({pcr:.3f} >= 1.05)"
+        elif pcr >= 0.75 and pcr_oi_chg >= 2.0 and pcr_core >= 0.75:
+            return True, f"Fresh Intraday OI Surge (Today OI Chg {pcr_oi_chg}x >= 2.0x, ATM Core {pcr_core:.2f})"
+        return False, f"PCR: {pcr:.3f} (Required: >= 1.05 or Fresh OI >= 2.0x)"
+
+    def check_bear_pcr(self):
+        """Upgrade 1: Dual-PCR Bearish Evaluation (Weekly Cumulative OR Today Fresh Call Surge)."""
+        pcr = self.pulse.get("pcr")
+        if pcr is None:
+            return False, "PCR Loading..."
+        pcr_oi_chg = float(self.pulse.get("pcr_oi_change", 1.0))
+        pcr_core = float(self.pulse.get("pcr_core_atm", 1.0))
+        if pcr <= 0.85:
+            return True, f"Weekly PCR ({pcr:.3f} <= 0.85)"
+        elif pcr <= 1.25 and pcr_oi_chg <= 0.50 and pcr_core <= 1.25:
+            return True, f"Fresh Intraday Call Surge (Today OI Chg {pcr_oi_chg}x <= 0.5x, ATM Core {pcr_core:.2f})"
+        return False, f"PCR: {pcr:.3f} (Required: <= 0.85 or Fresh Call OI <= 0.5x)"
+
+    def _watchdog_loop(self):
+        """Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Daemon."""
+        while True:
+            try:
+                time.sleep(10)
+                now = time.time()
+                now_dt = get_ist_now()
+                is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+
+                # Check if live worker loop thread is alive
+                if hasattr(self, "live_daemon_thread") and not self.live_daemon_thread.is_alive():
+                    self.self_heal_count += 1
+                    self.status_message = f"[WATCHDOG] Reviving Live Engine Worker Loop (Heal #{self.self_heal_count})..."
+                    self.live_daemon_thread = threading.Thread(target=self._live_engine_loop, daemon=True)
+                    self.live_daemon_thread.start()
+
+                # Check if market hours polling stalled (>45s)
+                if is_mkt_open and (now - self.last_api_poll > 45):
+                    self.self_heal_count += 1
+                    self.status_message = f"[WATCHDOG] Stalled poller ({int(now - self.last_api_poll)}s). Soft-healing connection..."
+                    self.authenticate()
+                    self.poll_kotak_neo(force=True)
+            except Exception:
+                pass
+
+    def generate_daily_report(self):
+        """Upgrade 7: Automated 15:35 IST EOD Daily Performance Report Generator."""
+        today_str = date.today().strftime("%Y-%m-%d")
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ending_capital = round(self.initial_capital + float(self.state.get("today_realized_net_pnl", 0.0)), 2)
+        roi_pct = round((float(self.state.get("today_realized_net_pnl", 0.0)) / self.initial_capital) * 100.0, 2)
+
+        trades_list = []
+        if TRADES_FILE.exists():
+            try:
+                df = pd.read_csv(TRADES_FILE, on_bad_lines="skip")
+                df_today = df[df["date"] == today_str]
+                trades_list = df_today.to_dict(orient="records")
+            except Exception:
+                pass
+
+        report_data = {
+            "date": today_str,
+            "generated_at": now_str,
+            "status": "COMPLETED",
+            "starting_capital": self.initial_capital,
+            "ending_capital": ending_capital,
+            "realized_gross_pnl": self.state.get("today_realized_gross_pnl", 0.0),
+            "total_charges": self.state.get("today_total_charges", 0.0),
+            "realized_net_pnl": self.state.get("today_realized_net_pnl", 0.0),
+            "roi_pct": roi_pct,
+            "today_wins": self.state.get("today_wins", 0),
+            "today_losses": self.state.get("today_losses", 0),
+            "total_trades": self.state.get("today_wins", 0) + self.state.get("today_losses", 0),
+            "circuit_breaker_triggered": self.state.get("circuit_breaker_active", False),
+            "active_position": self.state.get("active_position"),
+            "spot_close": self.pulse.get("spot"),
+            "weekly_pcr": self.pulse.get("pcr"),
+            "trades": trades_list,
+        }
+
+        # Save JSON scorecard
+        json_path = REPORTS_DIR / f"daily_report_{today_str}.json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(report_data, f, indent=2)
+
+        # Generate standalone HTML scorecard
+        pnl_color = "#10b981" if report_data["realized_net_pnl"] >= 0 else "#ef4444"
+        pnl_sign = "+" if report_data["realized_net_pnl"] >= 0 else ""
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>EOD Performance Report - {today_str}</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #080c14; color: #e2e8f0; margin: 0; padding: 24px; }}
+        .card {{ max-width: 720px; margin: 0 auto; background: #101726; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }}
+        .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; }}
+        .badge {{ background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); padding: 4px 12px; border-radius: 9999px; font-weight: 700; font-size: 12px; }}
+        .pnl-hero {{ text-align: center; margin: 28px 0; }}
+        .pnl-value {{ font-size: 42px; font-weight: 900; color: {pnl_color}; font-family: monospace; }}
+        .grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 24px 0; }}
+        .stat-box {{ background: #0d131f; border: 1px solid #1e293b; border-radius: 12px; padding: 14px 18px; }}
+        .stat-label {{ font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }}
+        .stat-val {{ font-size: 18px; font-weight: 700; color: #f8fafc; font-family: monospace; margin-top: 4px; }}
+        .footer {{ border-top: 1px solid #1e293b; padding-top: 16px; font-size: 12px; color: #64748b; text-align: center; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <div>
+                <h2 style="margin: 0; color: #fff;">NIFTY Champion Model 4</h2>
+                <p style="margin: 4px 0 0; color: #94a3b8; font-size: 13px;">EOD Performance Dossier &bull; {today_str}</p>
+            </div>
+            <span class="badge">OFFICIAL EOD AUDIT</span>
+        </div>
+        <div class="pnl-hero">
+            <div style="font-size: 13px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;">Net Realized PnL</div>
+            <div class="pnl-value">{pnl_sign}Rs {report_data['realized_net_pnl']:,.2f}</div>
+            <div style="font-size: 14px; color: {pnl_color}; font-weight: 600; margin-top: 6px;">Day ROI: {pnl_sign}{roi_pct}%</div>
+        </div>
+        <div class="grid">
+            <div class="stat-box">
+                <div class="stat-label">Starting Capital</div>
+                <div class="stat-val">Rs {report_data['starting_capital']:,.2f}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Ending Account Balance</div>
+                <div class="stat-val">Rs {report_data['ending_capital']:,.2f}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Gross PnL</div>
+                <div class="stat-val">Rs {report_data['realized_gross_pnl']:,.2f}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Kotak Neo Taxes & Brokerage</div>
+                <div class="stat-val" style="color: #f87171;">-Rs {report_data['total_charges']:,.2f}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Trades Executed</div>
+                <div class="stat-val">{report_data['total_trades']} (Wins: {report_data['today_wins']}, Losses: {report_data['today_losses']})</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Nifty Spot Settlement</div>
+                <div class="stat-val">{report_data['spot_close']}</div>
+            </div>
+        </div>
+        <div class="footer">Generated Autonomously by Nifty Quant Terminal &bull; {now_str} IST</div>
+    </div>
+</body>
+</html>"""
+        html_path = REPORTS_DIR / f"daily_report_{today_str}.html"
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+        return report_data
 
     def init_replay_data(self, target_date="2026-11-09"):
         """Loads historical 1-minute candles for off-market replay."""
@@ -334,6 +583,20 @@ class MasterQuantEngine:
             p_oi_core = sum(int(p.get("oi", {}).get("cur", 0)) for p in chain.get("put", []) if abs(float(p.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
             self.pulse["pcr_core_atm"] = round(p_oi_core / c_oi_core, 3) if c_oi_core > 0 else 1.0
 
+            # Upgrade 5: Calculate India VIX & Adaptive Wing Distance
+            atm_call = next((c for c in chain.get("call", []) if abs(float(c.get("inst", {}).get("strkPrc", 0)) - atm) < 25), None)
+            atm_put = next((p for p in chain.get("put", []) if abs(float(p.get("inst", {}).get("strkPrc", 0)) - atm) < 25), None)
+            if atm_call and atm_put:
+                c_ltp = float(atm_call.get("quote", {}).get("ltp", 0.0))
+                p_ltp = float(atm_put.get("quote", {}).get("ltp", 0.0))
+                straddle = c_ltp + p_ltp
+                # Straddle approx IV: IV ~ (Straddle / Spot) / sqrt(DTE/365) * sqrt(2*pi) * 100
+                vix_est = round((straddle / spot) * np.sqrt(365.0 / 5.0) * np.sqrt(np.pi / 2.0) * 100.0, 1)
+                self.pulse["india_vix"] = max(9.5, min(vix_est, 35.0))
+            else:
+                self.pulse["india_vix"] = 13.5
+            self.get_adaptive_wing_distance()
+
             self.pulse["calls_count"] = len(chain.get("call", []))
             self.pulse["puts_count"] = len(chain.get("put", []))
 
@@ -341,11 +604,14 @@ class MasterQuantEngine:
             e9 = self.pulse["ema9"]
             e20 = self.pulse["ema20"]
             e50 = self.pulse["ema50"]
-            pcr = self.pulse["pcr"]
 
-            if pcr is not None and (spot > d_ema) and (e9 > e20 > e50) and (pcr >= 1.05):
+            # Upgrade 1: Dual-PCR Adaptive Signal Engine
+            bull_pcr_ok, bull_pcr_desc = self.check_bull_pcr()
+            bear_pcr_ok, bear_pcr_desc = self.check_bear_pcr()
+
+            if bull_pcr_ok and (spot > d_ema) and (e9 > e20 > e50):
                 self.pulse["signal"] = "BULL_PUT_SPREAD"
-            elif pcr is not None and (spot < d_ema) and (e9 < e20 < e50) and (pcr <= 0.85):
+            elif bear_pcr_ok and (spot < d_ema) and (e9 < e20 < e50):
                 self.pulse["signal"] = "BEAR_CALL_SPREAD"
             else:
                 self.pulse["signal"] = "NEUTRAL_SCANNING"
@@ -356,7 +622,7 @@ class MasterQuantEngine:
                 if self.state.get("today_wins", 0) == 0 and self.state.get("today_losses", 0) == 0:
                     t_time = now_dt.time()
                     if datetime.strptime("09:30", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
-                        if self.pulse.get("option_chain") is not None and pcr is not None:
+                        if self.pulse.get("option_chain") is not None and (bull_pcr_ok or bear_pcr_ok):
                             if self.pulse["signal"] in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
                                 self.trigger_trade(force=False)
 
@@ -368,12 +634,13 @@ class MasterQuantEngine:
                     self.total_ticks_archived = getattr(self, "total_ticks_archived", 0) + 1
                     self.pulse["ticks_archived"] = self.total_ticks_archived
 
-            # EOD Reconcile at 15:35 IST
+            # Upgrade 7: Automated EOD Reconcile & Daily Performance Report at 15:35 IST
             if now_dt.time() >= datetime.strptime("15:35", "%H:%M").time() and not getattr(self, "eod_reconciled_today", False):
                 if hasattr(self, "archiver") and self.archiver:
                     ok, msg = self.archiver.reconcile_eod_spot()
                     self.eod_reconciled_today = True
                     self.status_message = f"EOD Archive: {msg}"
+                self.generate_daily_report()
 
             self.last_api_poll = now
         except Exception as e:
@@ -386,10 +653,11 @@ class MasterQuantEngine:
         100% Autonomous Hands-Free Background Engine:
         Runs 24/7 in background even when browser or phone is closed:
         1. Continuously downloads 1-minute strike-by-strike Option Chain & Spot to parquet/csv.
-        2. Evaluates the 6 Champion Model 4 rules in real-time.
-        3. Autonomously triggers margin-safe trade (09:30 - 14:30 IST).
+        2. Evaluates the 6 Champion Model 4 rules in real-time with Dual-PCR confirmation.
+        3. Autonomously triggers margin-safe trade (09:30 - 14:30 IST) with dynamic compounding lot sizing.
         4. Autonomously manages Trailing Breakeven, Target, SL, and 15:15 PM Intraday exit.
-        5. At 15:35 IST, auto-reconciles full 375 candles into master database.
+        5. Upgrade 6: Adaptive Proximity Polling (1s high-frequency tick polling near target/SL).
+        6. Upgrade 7: At 15:35 IST, auto-generates comprehensive Daily Performance Report.
         Zero user intervention required!
         """
         while True:
@@ -398,7 +666,9 @@ class MasterQuantEngine:
                 self.update_position_dynamics()
             except Exception:
                 pass
-            time.sleep(2)
+            # Upgrade 6: Adaptive Fast-Tick Proximity Sleep
+            sleep_sec = 1.0 if getattr(self, "proximity_polling", False) else 2.0
+            time.sleep(sleep_sec)
 
     def _replay_loop(self):
         """Background thread executing replay candles at selected speed."""
@@ -463,8 +733,9 @@ class MasterQuantEngine:
         """
         spot = self.pulse["spot"]
         atm_strike = int(round(spot / 50.0) * 50)
-        wing_strike_pe = atm_strike - 350
-        wing_strike_ce = atm_strike + 350
+        wing_dist = int(self.pulse.get("wing_distance", 350))
+        wing_strike_pe = atm_strike - wing_dist
+        wing_strike_ce = atm_strike + wing_dist
         strikes = [atm_strike + (i * 50) for i in range(-15, 16)]
 
         chain = self.pulse.get("option_chain")
@@ -641,13 +912,19 @@ class MasterQuantEngine:
         spot = self.pulse["spot"]
         atm_strike = int(round(spot / 50.0) * 50)
 
+        # Upgrade 5: VIX-Adaptive Wing Distance (300 / 350 / 450)
+        wing_dist, vix_regime = self.get_adaptive_wing_distance()
+
+        # Upgrade 4: Dynamic Auto-Compounding Lot Sizing
+        active_lots, total_qty = self.get_compounding_lot_sizing()
+
         # Dynamic live market prices from Option Chain
         chain_table = self.get_clean_option_chain_table()
         strike_map = {r["strike"]: r for r in chain_table}
 
         if direction == "BULL_PUT_SPREAD":
             sell_strike = atm_strike
-            buy_strike = atm_strike - 350
+            buy_strike = atm_strike - wing_dist
             opt_type = "PE"
             sell_row = strike_map.get(sell_strike, {})
             buy_row = strike_map.get(buy_strike, {})
@@ -655,14 +932,29 @@ class MasterQuantEngine:
             buy_ltp = float(buy_row.get("put_ltp", 0.0)) or 89.0
         else:
             sell_strike = atm_strike
-            buy_strike = atm_strike + 350
+            buy_strike = atm_strike + wing_dist
             opt_type = "CE"
             sell_row = strike_map.get(sell_strike, {})
             buy_row = strike_map.get(buy_strike, {})
             sell_ltp = float(sell_row.get("call_ltp", 0.0)) or 255.0
             buy_ltp = float(buy_row.get("call_ltp", 0.0)) or 115.0
 
-        exec_buy = round(buy_ltp * 1.005, 2)
+        # Upgrade 2: Smart Limit Order & Bid-Ask Spread Guard
+        # If retail wing spread > Rs 1.50, place Mid-Price Limit Order to eliminate retail slippage
+        buy_ask = float(buy_row.get("ask", buy_ltp * 1.005))
+        buy_bid = float(buy_row.get("bid", buy_ltp * 0.995))
+        wing_spread = round(buy_ask - buy_bid, 2)
+
+        if wing_spread > 1.50 and buy_bid > 0:
+            mid_price = round((buy_bid + buy_ask) / 2.0, 2)
+            exec_buy = min(buy_ltp, round(mid_price + 0.15, 2))
+            slippage_saved = round(max(0.0, (buy_ltp * 1.005) - exec_buy), 2)
+            exec_type = "SMART_MID_LIMIT"
+        else:
+            exec_buy = round(buy_ltp * 1.005, 2)
+            slippage_saved = 0.0
+            exec_type = "TIGHT_LIMIT"
+
         exec_sell = round(sell_ltp * 0.995, 2)
         net_credit = round(exec_sell - exec_buy, 2)
 
@@ -682,7 +974,7 @@ class MasterQuantEngine:
                     product="NRML",
                     price=str(exec_buy),
                     order_type="L",
-                    quantity=str(self.lot_size),
+                    quantity=str(total_qty),
                     validity="DAY",
                     trading_symbol=buy_symbol,
                     transaction_type="B",
@@ -693,7 +985,7 @@ class MasterQuantEngine:
                     product="NRML",
                     price=str(exec_sell),
                     order_type="L",
-                    quantity=str(self.lot_size),
+                    quantity=str(total_qty),
                     validity="DAY",
                     trading_symbol=sell_symbol,
                     transaction_type="S",
@@ -709,6 +1001,13 @@ class MasterQuantEngine:
             "expiry": self.pulse["next_expiry"],
             "execution_mode": self.execution_mode,
             "order_status": order_status,
+            "execution_type": exec_type,
+            "slippage_saved_pts": slippage_saved,
+            "slippage_saved_inr": round(slippage_saved * total_qty, 2),
+            "lot_count": active_lots,
+            "lot_size": total_qty,
+            "wing_distance": wing_dist,
+            "vix_regime": vix_regime,
             "sell_symbol": sell_symbol,
             "buy_symbol": buy_symbol,
             "sell_strike": int(sell_strike),
@@ -723,9 +1022,9 @@ class MasterQuantEngine:
             "entry_spot": round(spot, 2),
             "current_spread": net_credit,
             "target_spread": round(net_credit * 0.60, 2),
-            "sl_spread": round(min(net_credit * 1.60, net_credit + (2800.0 / self.lot_size)), 2),
-            "target_profit_inr": round((net_credit * 0.40) * self.lot_size, 2),
-            "max_risk_inr": round(min((net_credit * 0.60) * self.lot_size, 2800.0), 2),
+            "sl_spread": round(min(net_credit * 1.60, net_credit + ((2800.0 * active_lots) / total_qty)), 2),
+            "target_profit_inr": round((net_credit * 0.40) * total_qty, 2),
+            "max_risk_inr": round(min((net_credit * 0.60) * total_qty, 2800.0 * active_lots), 2),
             "breakeven_active": False,
             "mtm_gross_pnl": 0.0,
             "mtm_net_pnl": 0.0,
@@ -735,16 +1034,19 @@ class MasterQuantEngine:
         self.state["active_position"] = new_pos
         self.save_state()
         self.pending_audio_event = "ENTRY"
-        self.status_message = f"[{self.execution_mode}] Trade Triggered: Bought {buy_strike}{opt_type} -> Sold {sell_strike}{opt_type}"
+        self.status_message = f"[{self.execution_mode}] Trade Triggered ({active_lots} Lots, {total_qty} Qty): Bought {buy_strike}{opt_type} -> Sold {sell_strike}{opt_type}"
 
         send_telegram_alert(
             f"🚀 <b>NIFTY QUANT DESK — TRADE FIRED</b>\n\n"
             f"• Strategy: <b>{direction}</b> [{self.execution_mode}]\n"
+            f"• Lots Executed: <b>{active_lots} Lots ({total_qty} Qty)</b>\n"
             f"• Sold Leg: <b>{sell_strike}{opt_type}</b> @ Rs {exec_sell}\n"
-            f"• Bought Leg: <b>{buy_strike}{opt_type}</b> @ Rs {exec_buy}\n"
-            f"• Net Credit: Rs {net_credit} pts (Rs {round(net_credit * self.lot_size, 2):,})\n"
+            f"• Bought Leg: <b>{buy_strike}{opt_type}</b> @ Rs {exec_buy} [{exec_type}]\n"
+            f"• Wing Distance: <b>{wing_dist} pts ({vix_regime})</b>\n"
+            f"• Net Credit: Rs {net_credit} pts (Rs {round(net_credit * total_qty, 2):,})\n"
             f"• Target Profit (+40%): +Rs {new_pos['target_profit_inr']:,}\n"
             f"• Hard Stop Loss: -Rs {new_pos['max_risk_inr']:,} Cap\n"
+            f"• Slippage Guard Saved: Rs {new_pos['slippage_saved_inr']:.2f}\n"
             f"• Nifty Spot Entry: {spot}"
         )
         return True, "Trade executed safely."
@@ -756,11 +1058,13 @@ class MasterQuantEngine:
 
         exit_spread = pos.get("current_spread", pos["net_credit"])
         entry_credit = pos["net_credit"]
+        pos_lots = pos.get("lot_count", 1)
+        total_qty = pos.get("lot_size", self.lot_size)
         points_gain = entry_credit - exit_spread
-        gross_pnl = round(points_gain * self.lot_size, 2)
+        gross_pnl = round(points_gain * total_qty, 2)
 
-        # Exact Kotak Neo Charges calculation
-        charges = self.calculate_kotak_charges(entry_credit, exit_spread, self.lot_size)
+        # Exact Kotak Neo Charges calculation for total executed quantity
+        charges = self.calculate_kotak_charges(entry_credit, exit_spread, total_qty)
         net_pnl = round(gross_pnl - charges["total_charges"], 2)
 
         exit_spot = self.pulse["spot"]
@@ -775,7 +1079,7 @@ class MasterQuantEngine:
                     product="NRML",
                     price="0",
                     order_type="MKT",
-                    quantity=str(self.lot_size),
+                    quantity=str(total_qty),
                     validity="DAY",
                     trading_symbol=pos.get("sell_symbol", f"NIFTY{pos['sell_strike']}{pos['sell_type']}"),
                     transaction_type="B",
@@ -786,7 +1090,7 @@ class MasterQuantEngine:
                     product="NRML",
                     price="0",
                     order_type="MKT",
-                    quantity=str(self.lot_size),
+                    quantity=str(total_qty),
                     validity="DAY",
                     trading_symbol=pos.get("buy_symbol", f"NIFTY{pos['buy_strike']}{pos['buy_type']}"),
                     transaction_type="S",
@@ -813,6 +1117,7 @@ class MasterQuantEngine:
         send_telegram_alert(
             f"{outcome_tag} — <b>NIFTY QUANT DESK</b>\n\n"
             f"• Reason: <b>{reason}</b>\n"
+            f"• Sizing: <b>{pos_lots} Lots ({total_qty} Qty)</b>\n"
             f"• Gross PnL: Rs {gross_pnl:+,.2f}\n"
             f"• Kotak Taxes & Charges: -Rs {charges['total_charges']:.2f}\n"
             f"• <b>Net Realized PnL: Rs {net_pnl:+,.2f}</b>\n"
@@ -827,6 +1132,8 @@ class MasterQuantEngine:
             "mode": pos.get("execution_mode", "PAPER"),
             "direction": pos["direction"],
             "strikes": f"Sell {pos['sell_strike']}{pos['sell_type']} / Buy {pos['buy_strike']}{pos['buy_type']}",
+            "lots": pos_lots,
+            "quantity": total_qty,
             "net_credit": pos["net_credit"],
             "exit_spread": exit_spread,
             "points": round(points_gain, 2),
@@ -842,20 +1149,29 @@ class MasterQuantEngine:
         else:
             df_new.to_csv(TRADES_FILE, index=False)
 
+        # Upgrade 3: Track continuous equity curve point
+        self.record_equity_point(net_pnl, reason)
+
+        # Upgrade 7: Update daily report
+        self.generate_daily_report()
+
         self.state["active_position"] = None
+        self.proximity_polling = False
         self.save_state()
-        self.status_message = f"Closed ({reason}): Net PnL Rs {net_pnl:+,.2f} (Charges: Rs {charges['total_charges']})"
+        self.status_message = f"Closed ({reason}): Net PnL Rs {net_pnl:+,.2f} ({pos_lots} Lots, Charges: Rs {charges['total_charges']})"
         return True, f"Closed with Net PnL Rs {net_pnl:+,.2f}"
 
     def update_position_dynamics(self):
         pos = self.state.get("active_position")
         if not pos:
+            self.proximity_polling = False
             return
 
         spot = self.pulse["spot"]
         entry_spot = pos["entry_spot"]
         entry_credit = pos["net_credit"]
         direction = pos["direction"]
+        pos_qty = pos.get("lot_size", self.lot_size)
 
         spot_diff = (spot - entry_spot) if direction == "BULL_PUT_SPREAD" else (entry_spot - spot)
         
@@ -888,13 +1204,24 @@ class MasterQuantEngine:
         pos["current_spread"] = round(current_spread, 2)
 
         pts_gain = entry_credit - current_spread
-        gross_pnl = round(pts_gain * self.lot_size, 2)
+        gross_pnl = round(pts_gain * pos_qty, 2)
         pos["mtm_gross_pnl"] = gross_pnl
 
-        # Net MTM after estimated charges (~Rs 110 round-trip)
-        charges = self.calculate_kotak_charges(entry_credit, current_spread, self.lot_size)
+        # Net MTM after estimated charges
+        charges = self.calculate_kotak_charges(entry_credit, current_spread, pos_qty)
         pos["estimated_charges"] = charges["total_charges"]
         pos["mtm_net_pnl"] = round(gross_pnl - charges["total_charges"], 2)
+
+        # Upgrade 6: Adaptive Fast-Tick Proximity Detection
+        target_spread = pos.get("target_spread", entry_credit * 0.60)
+        sl_spread = pos.get("sl_spread", entry_credit * 1.60)
+        proximity_threshold = max(2.0, entry_credit * 0.12)
+        if abs(current_spread - target_spread) <= proximity_threshold or abs(current_spread - sl_spread) <= proximity_threshold:
+            self.proximity_polling = True
+            pos["proximity_fast_polling"] = True
+        else:
+            self.proximity_polling = False
+            pos["proximity_fast_polling"] = False
 
         # Trailing Breakeven Trigger
         if not pos.get("breakeven_active") and (pts_gain >= entry_credit * 0.25):
@@ -921,15 +1248,31 @@ engine = MasterQuantEngine()
 def health():
     now_ts = time.time()
     last_poll_sec = round(now_ts - getattr(engine, "last_api_poll", 0), 1)
+    uptime_sec = int(now_ts - getattr(engine, "start_time", now_ts))
+    worker_alive = bool(hasattr(engine, "live_daemon_thread") and engine.live_daemon_thread.is_alive())
+    watchdog_alive = bool(hasattr(engine, "watchdog_thread") and engine.watchdog_thread.is_alive())
+
     return jsonify({
-        "status": "UP",
+        "status": "HEALTHY",
+        "system_health": "OPTIMAL (Self-Healing Active)",
+        "uptime_sec": uptime_sec,
+        "worker_alive": worker_alive,
+        "watchdog_alive": watchdog_alive,
+        "self_heals_triggered": getattr(engine, "self_heal_count", 0),
         "engine": "MasterQuantEngine",
         "authenticated": engine.authenticated,
         "feeder_mode": engine.feeder_mode,
         "spot": engine.pulse.get("spot"),
+        "india_vix": engine.pulse.get("india_vix", 13.5),
+        "vix_regime": engine.pulse.get("vix_regime", "NORMAL_VOLATILITY"),
+        "wing_distance": engine.pulse.get("wing_distance", 350),
+        "active_lots": getattr(engine, "active_lots", 1),
+        "lot_size": engine.lot_size,
         "pcr": engine.pulse.get("pcr"),
         "pcr_oi_change": engine.pulse.get("pcr_oi_change"),
+        "pcr_core_atm": engine.pulse.get("pcr_core_atm"),
         "last_poll_sec_ago": last_poll_sec,
+        "proximity_polling": getattr(engine, "proximity_polling", False),
         "has_active_position": bool(engine.state.get("active_position")),
         "telegram_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID")),
     }), 200
@@ -1017,16 +1360,20 @@ def get_status():
     cond_circuit_breaker = bool(losses_today == 0 and not cb_active)
     cond_margin_safety = True  # Always enforced: 1st BUY OTM Wing -> 2nd SELL ATM Strike
 
-    # 1. Bull Put Spread Evaluation (Bullish Credit)
+    # Upgrade 1: Dual-PCR Evaluation (Weekly Cumulative OR Fresh Intraday Surge)
+    bull_pcr_ok, bull_pcr_desc = engine.check_bull_pcr()
+    bear_pcr_ok, bear_pcr_desc = engine.check_bear_pcr()
+
+    # 1. Bull Put Spread Evaluation (Bullish Credit with Dual-PCR)
     bull_c1 = bool(spot > d_ema)
     bull_c2 = bool(e9 > e20 > e50)
-    bull_c3 = bool(pcr >= 1.05)
+    bull_c3 = bool(bull_pcr_ok)
     bull_score = sum([bull_c1, bull_c2, bull_c3, is_time_window, cond_circuit_breaker, cond_margin_safety])
 
-    # 2. Bear Call Spread Evaluation (Bearish Credit)
+    # 2. Bear Call Spread Evaluation (Bearish Credit with Dual-PCR)
     bear_c1 = bool(spot < d_ema)
     bear_c2 = bool(e9 < e20 < e50)
-    bear_c3 = bool(pcr <= 0.85)
+    bear_c3 = bool(bear_pcr_ok)
     bear_score = sum([bear_c1, bear_c2, bear_c3, is_time_window, cond_circuit_breaker, cond_margin_safety])
 
     # Determine front-runner spread and waiting status
@@ -1053,7 +1400,7 @@ def get_status():
             missing_bull = []
             if not bull_c1: missing_bull.append("Spot > Daily EMA")
             if not bull_c2: missing_bull.append("5m Momentum (9>20>50)")
-            if not bull_c3: missing_bull.append("PCR >= 1.05")
+            if not bull_c3: missing_bull.append("Dual-PCR Confirmation")
             if not is_time_window: missing_bull.append("Time 09:30-14:30")
             if not cond_circuit_breaker: missing_bull.append("0 Loss Circuit Breaker")
             
@@ -1068,7 +1415,7 @@ def get_status():
             missing_bear = []
             if not bear_c1: missing_bear.append("Spot < Daily EMA")
             if not bear_c2: missing_bear.append("5m Momentum (9<20<50)")
-            if not bear_c3: missing_bear.append("PCR <= 0.85")
+            if not bear_c3: missing_bear.append("Dual-PCR Confirmation")
             if not is_time_window: missing_bear.append("Time 09:30-14:30")
             if not cond_circuit_breaker: missing_bear.append("0 Loss Circuit Breaker")
 
@@ -1088,8 +1435,8 @@ def get_status():
         c1_metric = f"Spot: {spot:,.2f} < EMA: {d_ema:,.2f}"
         c2_rule = "EMA 9 < EMA 20 < EMA 50 (Downward Momentum)"
         c2_metric = f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f}"
-        c3_rule = "PCR <= 0.85 (Heavy Call Writing Ceiling)"
-        c3_metric = f"PCR: {pcr:.3f} (Required: <= 0.85)"
+        c3_rule = "Dual-PCR <= 0.85 (Weekly) OR Today Call Writing Surge (<= 0.50x)"
+        c3_metric = bear_pcr_desc
     else:
         cond_daily_regime = bull_c1
         cond_ema_cascade = bull_c2
@@ -1098,8 +1445,8 @@ def get_status():
         c1_metric = f"Spot: {spot:,.2f} > EMA: {d_ema:,.2f}"
         c2_rule = "EMA 9 > EMA 20 > EMA 50 (Upward Momentum)"
         c2_metric = f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f}"
-        c3_rule = "PCR >= 1.05 (Heavy Put Writing Floor)"
-        c3_metric = f"PCR: {pcr:.3f} (Required: >= 1.05)"
+        c3_rule = "Dual-PCR >= 1.05 (Weekly) OR Today Put Writing Surge (>= 2.0x)"
+        c3_metric = bull_pcr_desc
 
     strategy_conditions = [
         {
@@ -1212,6 +1559,11 @@ def get_status():
             "pcr": engine.pulse["pcr"],
             "pcr_oi_change": engine.pulse.get("pcr_oi_change", 1.0),
             "pcr_core_atm": engine.pulse.get("pcr_core_atm", 1.0),
+            "india_vix": engine.pulse.get("india_vix", 13.5),
+            "vix_regime": engine.pulse.get("vix_regime", "NORMAL_VOLATILITY (Champion)"),
+            "wing_distance": engine.pulse.get("wing_distance", 350),
+            "active_lots": getattr(engine, "active_lots", 1),
+            "proximity_polling": getattr(engine, "proximity_polling", False),
             "total_call_oi": f"{engine.pulse.get('total_call_oi', 0):,}",
             "total_put_oi": f"{engine.pulse.get('total_put_oi', 0):,}",
             "call_oi_chg": f"{engine.pulse.get('call_oi_chg', 0):+,}",
@@ -1407,6 +1759,68 @@ def export_historical_options():
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment;filename={filename}"}
     )
+
+
+@app.route("/api/chart_data")
+def api_chart_data():
+    """
+    Upgrade 8: TradingView Lightweight Charts endpoint.
+    Returns the latest 200 1-minute OHLC candles from parquet + today's live minutes.
+    """
+    try:
+        candles = []
+        if MASTER_SPOT_PARQUET.exists():
+            df = pd.read_parquet(MASTER_SPOT_PARQUET)
+            tail_df = df.tail(200).reset_index()
+            for _, row in tail_df.iterrows():
+                ts = row.get("timestamp") or row.get("index")
+                if hasattr(ts, "timestamp"):
+                    unix_time = int(ts.timestamp())
+                else:
+                    unix_time = int(pd.to_datetime(ts).timestamp())
+                candles.append({
+                    "time": unix_time,
+                    "open": round(float(row["open"]), 2),
+                    "high": round(float(row["high"]), 2),
+                    "low": round(float(row["low"]), 2),
+                    "close": round(float(row["close"]), 2),
+                })
+
+        # Append or update with live spot tick
+        spot = engine.pulse.get("spot")
+        if spot and candles:
+            now_unix = int(time.time())
+            last_c = candles[-1]
+            if now_unix - last_c["time"] < 60:
+                last_c["high"] = max(last_c["high"], spot)
+                last_c["low"] = min(last_c["low"], spot)
+                last_c["close"] = spot
+            else:
+                candles.append({
+                    "time": now_unix,
+                    "open": spot,
+                    "high": spot,
+                    "low": spot,
+                    "close": spot,
+                })
+        return jsonify({"success": True, "candles": candles})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "candles": []})
+
+
+@app.route("/api/daily_report")
+def api_daily_report():
+    """
+    Upgrade 7: Automated 15:35 Daily Performance Report Viewer / Downloader.
+    """
+    format_type = request.args.get("format", "json")
+    report = engine.generate_daily_report()
+    if format_type == "html":
+        report_html_path = REPORTS_DIR / f"daily_report_{report['date']}.html"
+        if report_html_path.exists():
+            with open(report_html_path, "r", encoding="utf-8") as f:
+                return f.read(), 200, {"Content-Type": "text/html"}
+    return jsonify(report)
 
 
 if __name__ == "__main__":
