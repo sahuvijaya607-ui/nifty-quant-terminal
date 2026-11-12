@@ -330,30 +330,22 @@ class MasterQuantEngine:
         return wing_dist, regime
 
     def check_bull_pcr(self):
-        """Upgrade 1: Dual-PCR Bullish Evaluation (Weekly Cumulative OR Today Fresh OI Surge)."""
+        """Strict Quantitative Rule: Weekly PCR >= 1.05 for Bullish Uptrade."""
         pcr = self.pulse.get("pcr")
         if pcr is None:
             return False, "PCR Loading..."
-        pcr_oi_chg = float(self.pulse.get("pcr_oi_change", 1.0))
-        pcr_core = float(self.pulse.get("pcr_core_atm", 1.0))
         if pcr >= 1.05:
-            return True, f"Weekly PCR ({pcr:.3f} >= 1.05)"
-        elif pcr >= 0.75 and pcr_oi_chg >= 2.0 and pcr_core >= 0.75:
-            return True, f"Fresh Intraday OI Surge (Today OI Chg {pcr_oi_chg}x >= 2.0x, ATM Core {pcr_core:.2f})"
-        return False, f"PCR: {pcr:.3f} (Required: >= 1.05 or Fresh OI >= 2.0x)"
+            return True, f"Weekly PCR ({pcr:.3f} >= 1.05, Put Writers Dominant)"
+        return False, f"Weekly PCR ({pcr:.3f} < 1.05, Call Writers Dominant)"
 
     def check_bear_pcr(self):
-        """Upgrade 1: Dual-PCR Bearish Evaluation (Weekly Cumulative OR Today Fresh Call Surge)."""
+        """Strict Quantitative Rule: Weekly PCR <= 0.85 for Bearish Downtrade."""
         pcr = self.pulse.get("pcr")
         if pcr is None:
             return False, "PCR Loading..."
-        pcr_oi_chg = float(self.pulse.get("pcr_oi_change", 1.0))
-        pcr_core = float(self.pulse.get("pcr_core_atm", 1.0))
         if pcr <= 0.85:
-            return True, f"Weekly PCR ({pcr:.3f} <= 0.85)"
-        elif pcr <= 1.25 and pcr_oi_chg <= 0.50 and pcr_core <= 1.25:
-            return True, f"Fresh Intraday Call Surge (Today OI Chg {pcr_oi_chg}x <= 0.5x, ATM Core {pcr_core:.2f})"
-        return False, f"PCR: {pcr:.3f} (Required: <= 0.85 or Fresh Call OI <= 0.5x)"
+            return True, f"Weekly PCR ({pcr:.3f} <= 0.85, Call Writers Dominant)"
+        return False, f"Weekly PCR ({pcr:.3f} > 0.85, Put Writers Dominant)"
 
     def _watchdog_loop(self):
         """Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Daemon."""
@@ -1400,7 +1392,7 @@ def get_status():
             missing_bull = []
             if not bull_c1: missing_bull.append("Spot > Daily EMA")
             if not bull_c2: missing_bull.append("5m Momentum (9>20>50)")
-            if not bull_c3: missing_bull.append("Dual-PCR Confirmation")
+            if not bull_c3: missing_bull.append(f"Weekly PCR >= 1.05 (Currently {pcr:.3f})")
             if not is_time_window: missing_bull.append("Time 09:30-14:30")
             if not cond_circuit_breaker: missing_bull.append("0 Loss Circuit Breaker")
             
@@ -1415,7 +1407,7 @@ def get_status():
             missing_bear = []
             if not bear_c1: missing_bear.append("Spot < Daily EMA")
             if not bear_c2: missing_bear.append("5m Momentum (9<20<50)")
-            if not bear_c3: missing_bear.append("Dual-PCR Confirmation")
+            if not bear_c3: missing_bear.append(f"Weekly PCR <= 0.85 (Currently {pcr:.3f})")
             if not is_time_window: missing_bear.append("Time 09:30-14:30")
             if not cond_circuit_breaker: missing_bear.append("0 Loss Circuit Breaker")
 
@@ -1435,7 +1427,7 @@ def get_status():
         c1_metric = f"Spot: {spot:,.2f} < EMA: {d_ema:,.2f}"
         c2_rule = "EMA 9 < EMA 20 < EMA 50 (Downward Momentum)"
         c2_metric = f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f}"
-        c3_rule = "Dual-PCR <= 0.85 (Weekly) OR Today Call Writing Surge (<= 0.50x)"
+        c3_rule = "Weekly PCR <= 0.85 (Call Writers Dominant / Bearish)"
         c3_metric = bear_pcr_desc
     else:
         cond_daily_regime = bull_c1
@@ -1445,7 +1437,7 @@ def get_status():
         c1_metric = f"Spot: {spot:,.2f} > EMA: {d_ema:,.2f}"
         c2_rule = "EMA 9 > EMA 20 > EMA 50 (Upward Momentum)"
         c2_metric = f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f}"
-        c3_rule = "Dual-PCR >= 1.05 (Weekly) OR Today Put Writing Surge (>= 2.0x)"
+        c3_rule = "Weekly PCR >= 1.05 (Put Writers Dominant / Bullish)"
         c3_metric = bull_pcr_desc
 
     strategy_conditions = [
