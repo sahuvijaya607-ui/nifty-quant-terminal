@@ -300,6 +300,19 @@ class MasterQuantEngine:
             if total_call_oi > 0:
                 self.pulse["pcr"] = round(total_put_oi / total_call_oi, 3)
 
+            # Intraday Fresh Change in OI PCR (Today's live build-up)
+            call_oi_chg = sum(int(c.get("oi", {}).get("cur", 0)) - int(c.get("oi", {}).get("prev", 0)) for c in chain.get("call", []))
+            put_oi_chg = sum(int(p.get("oi", {}).get("cur", 0)) - int(p.get("oi", {}).get("prev", 0)) for p in chain.get("put", []))
+            self.pulse["call_oi_chg"] = call_oi_chg
+            self.pulse["put_oi_chg"] = put_oi_chg
+            self.pulse["pcr_oi_change"] = round(put_oi_chg / call_oi_chg, 2) if call_oi_chg > 0 else (99.0 if put_oi_chg > 0 else 1.0)
+
+            # Active Core Strikes PCR (ATM +/- 500 pts)
+            atm = int(round(spot / 50.0) * 50)
+            c_oi_core = sum(int(c.get("oi", {}).get("cur", 0)) for c in chain.get("call", []) if abs(float(c.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
+            p_oi_core = sum(int(p.get("oi", {}).get("cur", 0)) for p in chain.get("put", []) if abs(float(p.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
+            self.pulse["pcr_core_atm"] = round(p_oi_core / c_oi_core, 3) if c_oi_core > 0 else 1.0
+
             self.pulse["calls_count"] = len(chain.get("call", []))
             self.pulse["puts_count"] = len(chain.get("put", []))
 
@@ -1135,9 +1148,13 @@ def get_status():
             "ema20": engine.pulse["ema20"],
             "ema50": engine.pulse["ema50"],
             "pcr": engine.pulse["pcr"],
+            "pcr_oi_change": engine.pulse.get("pcr_oi_change", 1.0),
+            "pcr_core_atm": engine.pulse.get("pcr_core_atm", 1.0),
             "total_call_oi": f"{engine.pulse.get('total_call_oi', 0):,}",
             "total_put_oi": f"{engine.pulse.get('total_put_oi', 0):,}",
-            "pcr_sentiment": "BULLISH (>1.05)" if engine.pulse["pcr"] >= 1.05 else ("BEARISH (<0.85)" if engine.pulse["pcr"] <= 0.85 else "NEUTRAL (0.85-1.05)"),
+            "call_oi_chg": f"{engine.pulse.get('call_oi_chg', 0):+,}",
+            "put_oi_chg": f"{engine.pulse.get('put_oi_chg', 0):+,}",
+            "pcr_sentiment": "BULLISH (>1.05)" if (engine.pulse["pcr"] and engine.pulse["pcr"] >= 1.05) else ("BEARISH (<0.85)" if (engine.pulse["pcr"] and engine.pulse["pcr"] <= 0.85) else "NEUTRAL (0.85-1.05)"),
             "signal": engine.pulse["signal"],
             "expiry": engine.pulse["next_expiry"],
         },

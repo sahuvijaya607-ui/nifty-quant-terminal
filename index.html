@@ -343,9 +343,18 @@
 
                 <div class="flex items-baseline space-x-3 my-1">
                     <span id="pcr-val" class="text-3xl font-extrabold text-amber-400 mono">1.15</span>
-                    <span class="text-xs text-slate-400">Put / Call Ratio</span>
+                    <span class="text-xs text-slate-400">Total Weekly PCR</span>
                 </div>
-                <p class="text-[10px] text-slate-500 mono mb-2">Put OI: <strong id="pcr-put-oi" class="text-slate-300">--</strong> &bull; Call OI: <strong id="pcr-call-oi" class="text-slate-300">--</strong></p>
+                <div class="text-[10px] mono mb-2 space-y-1">
+                    <div class="flex justify-between text-slate-400">
+                        <span>Put OI: <strong id="pcr-put-oi" class="text-slate-200">--</strong></span>
+                        <span>Call OI: <strong id="pcr-call-oi" class="text-slate-200">--</strong></span>
+                    </div>
+                    <div class="flex justify-between text-[9px] pt-1 border-t border-slate-800/80">
+                        <span class="text-cyan-400">Today's Fresh OI PCR: <strong id="pcr-oi-chg-val" class="text-white font-bold">--</strong></span>
+                        <span class="text-purple-400">ATM ±500 Core: <strong id="pcr-core-val" class="text-white font-bold">--</strong></span>
+                    </div>
+                </div>
 
                 <!-- Visual PCR Gauge Bar -->
                 <div>
@@ -1101,10 +1110,16 @@
             // PCR Gauge with 3-decimal precision & live OI contracts
             document.getElementById('pcr-val').innerText = Number(data.indicators.pcr).toFixed(3);
             if (document.getElementById('pcr-put-oi')) {
-                document.getElementById('pcr-put-oi').innerText = data.indicators.total_put_oi || '--';
+                document.getElementById('pcr-put-oi').innerText = (data.indicators.total_put_oi || '--') + (data.indicators.put_oi_chg ? ` (${data.indicators.put_oi_chg})` : '');
             }
             if (document.getElementById('pcr-call-oi')) {
-                document.getElementById('pcr-call-oi').innerText = data.indicators.total_call_oi || '--';
+                document.getElementById('pcr-call-oi').innerText = (data.indicators.total_call_oi || '--') + (data.indicators.call_oi_chg ? ` (${data.indicators.call_oi_chg})` : '');
+            }
+            if (document.getElementById('pcr-oi-chg-val') && data.indicators.pcr_oi_change !== undefined) {
+                document.getElementById('pcr-oi-chg-val').innerText = Number(data.indicators.pcr_oi_change).toFixed(2);
+            }
+            if (document.getElementById('pcr-core-val') && data.indicators.pcr_core_atm !== undefined) {
+                document.getElementById('pcr-core-val').innerText = Number(data.indicators.pcr_core_atm).toFixed(3);
             }
             const pcrBadge = document.getElementById('pcr-sentiment-badge');
             pcrBadge.innerText = data.indicators.pcr_sentiment;
