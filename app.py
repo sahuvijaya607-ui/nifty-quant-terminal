@@ -180,7 +180,7 @@ class MasterQuantEngine:
             "india_vix": 13.5,
             "vix_regime": "NORMAL_VOLATILITY (Champion)",
             "wing_distance": 350,
-            "next_expiry": "2026-11-17",
+            "next_expiry": "2026-11-24",
             "calls_count": 0,
             "puts_count": 0,
             "signal": "NEUTRAL_SCANNING",
@@ -532,9 +532,24 @@ class MasterQuantEngine:
                 self.pulse["prev_close"] = float(chain["spot"].get("prevClose", self.pulse["spot"]))
 
             if "common_data" in chain:
-                self.pulse["next_expiry"] = chain["common_data"].get("expiryDt", "2026-11-17")
+                raw_exp = chain["common_data"].get("expiryDt", "2026-11-24")
                 self.pulse["mkt_lot"] = int(chain["common_data"].get("mktLot", 65))
                 self.lot_size = self.pulse["mkt_lot"]
+
+                # Golden Expiry Rule: On expiry day (0-DTE) or past date, automatically roll to NEXT WEEK'S expiry (+7 days)
+                # to eliminate severe 0-DTE gamma explosion and early squaring-off risks
+                try:
+                    exp_dt = datetime.strptime(raw_exp, "%Y-%m-%d").date()
+                    today_dt = get_ist_now().date()
+                    if exp_dt <= today_dt:
+                        rolled_exp = exp_dt + timedelta(days=7)
+                        self.pulse["next_expiry"] = rolled_exp.strftime("%Y-%m-%d")
+                        self.pulse["is_expiry_rolled"] = True
+                    else:
+                        self.pulse["next_expiry"] = raw_exp
+                        self.pulse["is_expiry_rolled"] = False
+                except Exception:
+                    self.pulse["next_expiry"] = raw_exp
 
             spot = self.pulse["spot"]
 
@@ -733,7 +748,7 @@ class MasterQuantEngine:
         chain = self.pulse.get("option_chain")
 
         # Calculate Days to Expiry (DTE)
-        expiry_str = self.pulse.get("next_expiry", "2026-11-17")
+        expiry_str = self.pulse.get("next_expiry", "2026-11-24")
         try:
             exp_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
             today_date = get_ist_now().date()
