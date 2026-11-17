@@ -1,0 +1,6 @@
+Model,Total_6Yr_PnL,Total_Trades,Win_Rate_%,Profitable_Months,Months_GE_3K,Months_GE_5K,Avg_Monthly_PnL,Worst_Month_PnL,Best_Month_PnL,Max_Drawdown_Rs
+Model_4_4Day_ATM_Trend_CircuitBreaker,263424.3,970,58.76,55/75 (73.3%),35/75 (46.7%),25/75 (33.3%),3512.32,-18066.77,25045.83,-26269.71
+Model_1_ATM_Trend_CircuitBreaker,216305.4,654,59.17,54/75 (72.0%),33/75 (44.0%),25/75 (33.3%),2884.07,-19413.25,24213.13,-26311.97
+Model_2_Balanced45_Trend_CircuitBreaker,144262.55,658,57.75,55/75 (73.3%),26/75 (34.7%),17/75 (22.7%),1923.5,-19301.2,18222.1,-25759.77
+Model_5_Balanced45_MonthlyLock4000,81754.75,531,56.5,55/75 (73.3%),25/75 (33.3%),11/75 (14.7%),1090.06,-19301.2,6629.57,-25759.77
+Model_3_ATM_FixedTarget900,48182.06,848,70.99,42/75 (56.0%),24/75 (32.0%),16/75 (21.3%),642.43,-16009.25,12914.21,-26827.92

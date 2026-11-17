@@ -1,0 +1,6 @@
+Strategy,Total_Trades,Entry_Verified_Match,Exit_Verified_Match,PnL_Math_Exact
+Strat 1: 4-Day ATM Trend Champion,384,384/384 (100.0%),384/384 (100.0%),384/384 (100.0%)
+Strat 2: Pure ATM Asymmetric (50Δ/10Δ),303,303/303 (100.0%),303/303 (100.0%),303/303 (100.0%)
+Strat 3: Pure ATM Balanced Wing (50Δ/15Δ),302,302/302 (100.0%),302/302 (100.0%),302/302 (100.0%)
+Strat 4: Deep Wing Asymmetric (45Δ/10Δ),310,310/310 (100.0%),310/310 (100.0%),310/310 (100.0%)
+Strat 5: Benchmark Balanced (45Δ/15Δ),305,305/305 (100.0%),305/305 (100.0%),305/305 (100.0%)
