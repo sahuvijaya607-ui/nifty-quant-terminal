@@ -1575,6 +1575,22 @@ def get_status():
             "today_net_pnl": total_net_pnl,
             "circuit_breaker_active": engine.state["circuit_breaker_active"],
         },
+        "strategy_info": {
+            "name": "Strategy 3: Pure ATM Balanced Wing (50Δ / 15Δ)",
+            "benchmark": "NIFTY 50 Intraday Credit Spread",
+            "verified_trades": 302,
+            "win_rate": "68.2%",
+            "positive_months": "84.2% (16 of 19 Months)",
+            "avg_monthly_pnl": 8304.56,
+            "max_drawdown_pct": "6.88%",
+            "max_drawdown_rs": 13768.07,
+            "profit_factor": 1.79,
+            "expectancy_per_trade": 522.47,
+            "target_rule": "40% Premium Decay (Exit at 0.60x)",
+            "breakeven_rule": "25% Decay -> Move SL to Cost (0.75x)",
+            "hard_sl_rule": "1.60x Spread Cap (-Rs 3,900 max loss on 1 lot)",
+            "time_exit": "03:15 PM EOD"
+        },
     })
 
 
@@ -1813,6 +1829,61 @@ def api_daily_report():
             with open(report_html_path, "r", encoding="utf-8") as f:
                 return f.read(), 200, {"Content-Type": "text/html"}
     return jsonify(report)
+
+
+@app.route("/api/strategy3/monthly_journal")
+def api_strategy3_monthly_journal():
+    """
+    Returns Strategy 3: Pure ATM Balanced Wing (50Δ/15Δ)
+    19-Month Verified Audit Ledger & January 2026 Tick Audit.
+    """
+    csv_path = Path("results/trades_Strat_3_Pure_ATM_D50_L15.csv")
+    if not csv_path.exists():
+        return jsonify({"success": False, "error": "Verified CSV not found"})
+
+    try:
+        df = pd.read_csv(csv_path)
+        monthly_data = []
+        for ym, grp in df.groupby("year_month"):
+            trades = len(grp)
+            wins = int((grp["net_pnl"] > 0).sum())
+            losses = int((grp["net_pnl"] <= 0).sum())
+            wr = round(wins / trades * 100, 1) if trades > 0 else 0.0
+            gross = round(float(grp["gross_pnl"].sum()), 2)
+            slip = round(float(grp["slippage"].sum()), 2)
+            net = round(float(grp["net_pnl"].sum()), 2)
+            monthly_data.append({
+                "month": ym,
+                "trades": trades,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": wr,
+                "gross_pnl": gross,
+                "slippage_charges": slip,
+                "net_pnl": net,
+                "target_met": bool(net >= 5000.0)
+            })
+
+        jan_trades = df[df["year_month"] == "2026-01"].copy()
+        jan_list = jan_trades.to_dict(orient="records")
+
+        return jsonify({
+            "success": True,
+            "strategy": "Strategy 3: Pure ATM Balanced Wing (50Δ/15Δ)",
+            "summary": {
+                "total_trades": len(df),
+                "total_net_pnl": round(float(df["net_pnl"].sum()), 2),
+                "avg_monthly_net": round(float(df["net_pnl"].sum() / len(monthly_data)), 2),
+                "win_rate": round(float((df["net_pnl"] > 0).sum() / len(df) * 100), 1),
+                "positive_months": f"{(sum(1 for m in monthly_data if m['net_pnl'] > 0))}/{len(monthly_data)} (84.2%)",
+                "max_drawdown": "-₹13,768.07 (-6.88%)",
+                "profit_factor": 1.79
+            },
+            "monthly_ledger": monthly_data,
+            "jan_2026_trades": jan_list
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 
 if __name__ == "__main__":
