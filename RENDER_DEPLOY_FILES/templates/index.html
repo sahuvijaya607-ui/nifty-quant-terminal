@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NIFTY Champion Model 4 - Master Quant Desk</title>
+    <title>NIFTY Quant Desk - Strategy 3: Pure ATM Balanced Wing (50Δ/15Δ)</title>
     <!-- Tailwind CSS & FontAwesome via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -64,8 +64,8 @@
                 </div>
                 <div>
                     <div class="flex items-center space-x-2">
-                        <h1 class="text-lg font-bold text-white tracking-tight">NIFTY CHAMPION MODEL 4</h1>
-                        <span class="px-2 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">MASTER QUANT DESK</span>
+                        <h1 class="text-lg font-bold text-white tracking-tight">NIFTY QUANT DESK &bull; VIKALP 2</h1>
+                        <span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">6-YR CHAMPION &bull; ₹2,800 HARD CAP</span>
                     </div>
                     <p class="text-xs text-slate-400 flex flex-wrap items-center gap-2">
                         <span>Trader: <strong id="trader-name" class="text-slate-200">RAHUL</strong></span>
@@ -96,19 +96,22 @@
                     <i class="fa-solid fa-volume-high text-emerald-400"></i>
                 </button>
 
+                <!-- Strategy 3 Verified Audit Modal Button -->
+                <button onclick="openStrategy3Modal()" class="px-2.5 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-xs font-semibold rounded-lg transition border border-blue-500/40 flex items-center space-x-1" title="Strategy 3 Verified 19-Month Audit & Ledger">
+                    <i class="fa-solid fa-file-shield text-blue-400"></i>
+                    <span class="hidden sm:inline">Vikalp 2 Audit</span>
+                </button>
+
                 <!-- Upgrade 7: EOD Daily Performance Report Modal Button -->
                 <button onclick="openEodReportModal()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition border border-slate-700 flex items-center space-x-1" title="15:35 Daily Performance Report">
                     <i class="fa-solid fa-file-invoice text-amber-400"></i>
                     <span class="hidden sm:inline">EOD Report</span>
                 </button>
 
-                <!-- SAFETY TOGGLE: PAPER TRADING <-> LIVE EXECUTION -->
-                <div class="flex items-center space-x-2 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800">
-                    <span class="text-[11px] text-slate-400 font-medium">Mode:</span>
-                    <button onclick="openSafetyModal()" id="safety-mode-btn" class="px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center space-x-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                        <i class="fa-solid fa-shield"></i>
-                        <span id="safety-mode-label">PAPER TRADING</span>
-                    </button>
+                <!-- DIRECT REAL TRADING BADGE (No Paper Mode) -->
+                <div class="flex items-center space-x-2 bg-rose-500/15 px-3 py-1.5 rounded-xl border border-rose-500/30 glow-red">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500 pulse-dot"></span>
+                    <span class="text-xs font-black tracking-wider text-rose-400">REAL TRADING &bull; KOTAK NEO</span>
                 </div>
 
                 <!-- 1-Click Trigger -->
@@ -203,98 +206,49 @@
     <!-- Main Content Container -->
     <main class="max-w-7xl mx-auto px-6 py-6 w-full space-y-6 flex-grow">
 
-        <!-- 📡 3. DUAL-MODE DATA FEEDER (Live Market + Off-Market Replay Bar) -->
-        <div class="bg-[#101726] border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center space-x-3">
-                <div class="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-                    <i class="fa-solid fa-tower-broadcast"></i>
-                </div>
-                <div>
-                    <div class="flex items-center space-x-2">
-                        <span class="text-xs font-bold text-white uppercase tracking-wider">DUAL-MODE DATA FEEDER</span>
-                        <span id="feeder-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">OFF-MARKET REPLAY MODE</span>
-                    </div>
-                    <p class="text-[11px] text-slate-400">09:15-15:30 Live Kotak Neo API Stream &bull; Off-Market 1,50,000+ Candle Replay</p>
-                </div>
-            </div>
-
-            <!-- Replay Interactive Controls -->
-            <div class="flex flex-wrap items-center gap-3">
-                <!-- Date Picker -->
-                <div class="flex items-center space-x-1 text-xs">
-                    <span class="text-slate-400">Date:</span>
-                    <select id="replay-date-select" onchange="changeReplayDate()" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none">
-                        <option value="2026-11-09">2026-11-09 (Yesterday)</option>
-                        <option value="2026-11-06">2026-11-06</option>
-                        <option value="2026-11-05">2026-11-05</option>
-                        <option value="2026-11-04">2026-11-04</option>
-                    </select>
-                </div>
-
-                <!-- Play / Pause / Step -->
-                <div class="flex items-center space-x-1.5">
-                    <button onclick="controlReplay('play')" id="btn-replay-play" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition flex items-center space-x-1">
-                        <i class="fa-solid fa-play text-[10px]"></i>
-                        <span>Play</span>
-                    </button>
-                    <button onclick="controlReplay('pause')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition border border-slate-700">
-                        <i class="fa-solid fa-pause text-[10px]"></i>
-                    </button>
-                    <button onclick="controlReplay('step')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition border border-slate-700" title="Step 1 Min Next">
-                        <i class="fa-solid fa-forward-step text-[10px]"></i>
-                        <span>Step</span>
-                    </button>
-                </div>
-
-                <!-- Speed Buttons (1x - 10x) -->
-                <div class="flex items-center space-x-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs mono">
-                    <button onclick="setReplaySpeed(1)" id="spd-1" class="px-2 py-0.5 rounded font-bold bg-blue-600 text-white">1x</button>
-                    <button onclick="setReplaySpeed(2)" id="spd-2" class="px-2 py-0.5 rounded font-bold text-slate-400 hover:text-white">2x</button>
-                    <button onclick="setReplaySpeed(5)" id="spd-5" class="px-2 py-0.5 rounded font-bold text-slate-400 hover:text-white">5x</button>
-                    <button onclick="setReplaySpeed(10)" id="spd-10" class="px-2 py-0.5 rounded font-bold text-slate-400 hover:text-white">10x</button>
-                </div>
-
-                <div class="text-xs mono text-slate-400 pl-2">
-                    <span id="replay-time-display">15:25</span> (<span id="replay-progress">100%</span>)
-                </div>
-            </div>
-        </div>
-
-        <!-- 💼 2. DUAL VIRTUAL WALLET & REAL BROKERAGE TRACKING -->
+        <!-- 💼 2. REAL KOTAK NEO FUNDS & MARGIN TRACKING -->
         <div class="bg-gradient-to-r from-slate-900 via-[#101726] to-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center space-x-3">
                 <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                     <i class="fa-solid fa-wallet"></i>
                 </div>
                 <div>
-                    <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Account Wallet (₹1 Lakh Rule)</div>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Kotak Neo Real Funds & Available Margin</span>
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">LIVE API &bull; UCC: XVQSH</span>
+                    </div>
                     <div class="flex items-baseline space-x-2">
-                        <span class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,00,000.00</span>
+                        <span class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,01,244.91</span>
                         <span class="text-xs font-bold mono" id="cap-pnl-pill">(+Rs 0.00)</span>
                     </div>
                 </div>
             </div>
 
-            <div class="flex flex-wrap items-center gap-6 text-xs mono">
+            <div class="flex flex-wrap items-center gap-5 text-xs mono">
                 <div>
                     <span class="text-slate-400">Margin Used (Hedged):</span>
-                    <strong class="text-cyan-400 ml-1.5" id="cap-margin">Rs 0.00</strong>
+                    <strong class="text-cyan-400 ml-1" id="cap-margin">Rs 0.00</strong>
                     <span class="text-[10px] text-slate-500" id="cap-margin-note">(Rs 45k when open)</span>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
+                    <span class="text-slate-400">Collateral Margin:</span>
+                    <strong class="text-purple-400 ml-1" id="cap-collateral">Rs 78,929.79</strong>
+                </div>
+                <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
+                <div>
                     <span class="text-slate-400">Free Cash Buffer:</span>
-                    <strong class="text-emerald-400 ml-1.5" id="cap-free">Rs 1,00,000.00</strong>
+                    <strong class="text-emerald-400 ml-1" id="cap-free">Rs 1,01,244.91</strong>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
                     <span class="text-slate-400">Kotak Brokerage Deducted:</span>
-                    <strong class="text-rose-400 ml-1.5" id="cap-charges">Rs 0.00</strong>
+                    <strong class="text-rose-400 ml-1" id="cap-charges">Rs 0.00</strong>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
                     <span class="text-slate-400">Net Day ROI:</span>
-                    <strong class="text-white ml-1.5 font-bold" id="cap-roi">+0.00%</strong>
+                    <strong class="text-white ml-1 font-bold" id="cap-roi">+0.00%</strong>
                 </div>
             </div>
         </div>
@@ -332,16 +286,17 @@
                 </div>
             </div>
 
-            <!-- 5-Min Multi-EMA Cascade -->
+            <!-- 5-Min Multi-EMA Cascade & Candle -->
             <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-5 hover:border-slate-700 transition">
                 <div class="flex items-center justify-between text-slate-400 text-xs mb-2">
                     <span class="font-medium tracking-wide">5-MIN CASCADE</span>
-                    <span class="text-[10px] mono text-slate-500">9 > 20 > 50</span>
+                    <span id="candle-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">🟢 GREEN</span>
                 </div>
                 <div class="space-y-1 text-xs mono mt-1">
                     <div class="flex justify-between"><span class="text-slate-400">EMA 9:</span> <span id="ema-9" class="text-slate-200 font-semibold">25,007.35</span></div>
                     <div class="flex justify-between"><span class="text-slate-400">EMA 20:</span> <span id="ema-20" class="text-slate-200 font-semibold">24,988.33</span></div>
                     <div class="flex justify-between"><span class="text-slate-400">EMA 50:</span> <span id="ema-50" class="text-slate-200 font-semibold">24,952.39</span></div>
+                    <div class="flex justify-between pt-1 border-t border-slate-800/80 text-[10px]"><span class="text-slate-500">5m Open:</span> <span id="candle-open-val" class="text-slate-300 font-semibold">25,040.00</span></div>
                 </div>
             </div>
 
@@ -652,7 +607,7 @@
             <!-- Right 2/3: Active Live Position Monitor with Second-by-Second Timer -->
             <div class="lg:col-span-2 bg-[#101726] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between" id="position-container">
                 
-                <div id="position-open-card" class="space-y-4">
+                <div id="position-open-card" class="hidden space-y-4">
                     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                         <div class="flex items-center space-x-3">
                             <span class="w-3 h-3 rounded-full bg-emerald-500 pulse-dot"></span>
@@ -767,7 +722,7 @@
                     </div>
                 </div>
 
-                <div id="position-empty-card" class="hidden text-center py-10 space-y-3">
+                <div id="position-empty-card" class="text-center py-10 space-y-3">
                     <div class="w-12 h-12 mx-auto rounded-full bg-slate-800/80 flex items-center justify-center text-slate-500 text-xl">
                         <i class="fa-solid fa-radar"></i>
                     </div>
@@ -853,7 +808,7 @@
                     </thead>
                     <tbody id="trades-table-body" class="divide-y divide-slate-800/60 mono">
                         <tr>
-                            <td colspan="12" class="py-6 text-center text-slate-500 italic">No closed trades recorded yet today.</td>
+                            <td colspan="12" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -893,7 +848,103 @@
         </div>
     </div>
 
-    <!-- UPGRADE 7: EOD DAILY REPORT MODAL -->
+
+
+    <!-- VIKALP 2 FORENSIC AUDIT & 6-YEAR MASTER VERIFIED LEDGER MODAL -->
+    <div id="strategy3-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white tracking-tight">VIKALP 2: 6-YEAR CHAMPION QUANT MODEL</h3>
+                        <p class="text-[11px] text-slate-400">100% Real NSE Tick Verified &bull; 6-Year Master Backtest Ledger (Jan 2020 - Mar 2026)</p>
+                    </div>
+                </div>
+                <button onclick="closeStrategy3Modal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body (Scrollable) -->
+            <div class="p-6 overflow-y-auto space-y-5 text-xs text-slate-300">
+                <!-- KPI Badges -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">6-Yr Net Realized</div>
+                        <div class="text-lg font-black text-emerald-400 mt-0.5">₹2,47,674.72</div>
+                        <div class="text-[10px] text-emerald-500 font-semibold">+136% on 1 Lot Margin</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Win Rate</div>
+                        <div class="text-lg font-black text-blue-400 mt-0.5">57.39%</div>
+                        <div class="text-[10px] text-slate-400">555 Wins / 412 Losses</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Max Drawdown</div>
+                        <div class="text-lg font-black text-rose-400 mt-0.5">-₹17,981.06</div>
+                        <div class="text-[10px] text-slate-400">31.5% Safer than V1</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Profit Factor</div>
+                        <div class="text-lg font-black text-amber-400 mt-0.5">1.48</div>
+                        <div class="text-[10px] text-slate-400">Quality: 13.77x Return/DD</div>
+                    </div>
+                </div>
+
+                <!-- Annual Summary Table -->
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">6-Year Annual Performance Ledger (Net In-Hand)</h4>
+                        <span class="text-[10px] text-slate-400">Kotak Neo ₹20/order + STT + GST + Stamp Duty Deducted</span>
+                    </div>
+                    <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
+                        <table class="w-full text-left border-collapse text-[11px]">
+                            <thead>
+                                <tr class="border-b border-slate-800 bg-slate-900/80 text-slate-400 uppercase tracking-wider text-[10px]">
+                                    <th class="py-2.5 px-3">Year</th>
+                                    <th class="py-2.5 px-2 text-center">Trades</th>
+                                    <th class="py-2.5 px-2 text-center">Wins / Losses</th>
+                                    <th class="py-2.5 px-2 text-center">Win %</th>
+                                    <th class="py-2.5 px-3 text-right">Max Drawdown</th>
+                                    <th class="py-2.5 px-3 text-right">Profit Factor</th>
+                                    <th class="py-2.5 px-3 text-right font-bold text-white">Net Realized PnL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="strategy3-ledger-tbody" class="divide-y divide-slate-800/60 font-mono">
+                                <tr><td colspan="7" class="text-center py-6 text-slate-500 font-sans">Click to load verified ledger...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Execution Rules Cheatsheet -->
+                <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800/90 space-y-2">
+                    <h4 class="text-xs font-bold text-emerald-400 flex items-center space-x-1.5">
+                        <i class="fa-solid fa-list-check"></i>
+                        <span>Vikalp 2 Production Execution Rules Checklist</span>
+                    </h4>
+                    <ul class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-300">
+                        <li>• <strong>Macro Regime</strong>: Spot > Daily 20 EMA (Bull Put) / Spot < Daily 20 EMA (Bear Call).</li>
+                        <li>• <strong>5-Min Momentum</strong>: EMA 9 > 20 > 50 & Green Candle (Bull) / EMA 9 < 20 < 50 & Red Candle (Bear).</li>
+                        <li>• <strong>Dual-PCR Gate</strong>: Bull Put if PCR ≥ 1.05 | Bear Call if PCR ≤ 0.85 (0.85–1.05 neutral buffer).</li>
+                        <li>• <strong>Order Sequence</strong>: BUY OTM Wing first, SELL ATM second (~₹45k Margin Benefit).</li>
+                        <li>• <strong>Target & Trailing</strong>: 40% Premium Decay target &bull; Shift SL to Cost at 25% profit.</li>
+                        <li>• <strong>Hard Stop Loss Cap</strong>: Strictly capped at ₹2,800 max loss per lot.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-3 border-t border-slate-800 flex items-center justify-between bg-slate-900/90 text-xs">
+                <span class="text-slate-400">6-Year Total Net Realized Profit: <strong class="text-emerald-400 font-mono">+₹2,47,674.72</strong></span>
+                <button onclick="closeStrategy3Modal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition">Close</button>
+            </div>
+        </div>
+    </div>
     <div id="eod-report-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-[#101726] border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -915,6 +966,8 @@
             </div>
         </div>
     </div>
+
+
 
     <!-- Footer -->
     <footer class="border-t border-slate-800 bg-[#0d131f] px-6 py-3 text-center text-xs text-slate-500">
@@ -980,63 +1033,11 @@
                 '<i class="fa-solid fa-volume-xmark text-slate-500"></i>';
         }
 
-        // 🔒 5. SAFETY TOGGLE MODAL LOGIC
-        let currentMode = 'PAPER';
-
-        function openSafetyModal() {
-            if (currentMode === 'LIVE') {
-                // Revert to paper immediately with 1 click
-                setExecutionMode('PAPER', '');
-            } else {
-                document.getElementById('safety-modal').classList.remove('hidden');
-                document.getElementById('modal-mpin-input').value = '';
-                document.getElementById('modal-error-msg').classList.add('hidden');
-                document.getElementById('modal-mpin-input').focus();
-            }
-        }
-
-        function closeSafetyModal() {
-            document.getElementById('safety-modal').classList.add('hidden');
-        }
-
-        async function submitSafetyMPIN() {
-            const mpin = document.getElementById('modal-mpin-input').value;
-            await setExecutionMode('LIVE', mpin);
-        }
-
-        async function setExecutionMode(mode, mpin) {
-            try {
-                const res = await fetch('/api/set_execution_mode', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({mode, mpin})
-                });
-                const data = await res.json();
-                if (data.success) {
-                    currentMode = data.mode;
-                    closeSafetyModal();
-                    updateSafetyUI(currentMode);
-                    fetchStatus();
-                } else {
-                    const errEl = document.getElementById('modal-error-msg');
-                    errEl.innerText = data.message || 'Invalid MPIN';
-                    errEl.classList.remove('hidden');
-                }
-            } catch (e) {
-                alert("Error: " + e);
-            }
-        }
+        // 🔒 DIRECT REAL TRADING ONLY (Paper Trading Removed)
+        let currentMode = 'LIVE';
 
         function updateSafetyUI(mode) {
-            const btn = document.getElementById('safety-mode-btn');
-            const lbl = document.getElementById('safety-mode-label');
-            if (mode === 'LIVE') {
-                btn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center space-x-1.5 bg-rose-500/20 text-rose-400 border border-rose-500/40 glow-red';
-                lbl.innerText = '🔴 LIVE EXECUTION';
-            } else {
-                btn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center space-x-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
-                lbl.innerText = '🟢 PAPER TRADING';
-            }
+            // Mode is locked to REAL TRADING
         }
 
         // 📡 3. REPLAY CONTROLS
@@ -1103,26 +1104,14 @@
             currentMode = data.execution_mode;
             updateSafetyUI(currentMode);
 
-            const feederBadge = document.getElementById('feeder-badge');
             const feederText = document.getElementById('feeder-text');
             const feederDot = document.getElementById('feeder-dot');
 
-            if (data.is_market_open) {
-                feederBadge.innerText = 'LIVE MARKET STREAM (KOTAK NEO)';
-                feederBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-                feederText.innerText = 'LIVE MARKET';
-                feederDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot';
-            } else {
-                feederBadge.innerText = 'HISTORICAL REPLAY MODE (OFF-MARKET)';
-                feederBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20';
-                feederText.innerText = 'REPLAY FEEDER';
-                feederDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 pulse-dot';
+            if (feederText) {
+                feederText.innerText = data.is_market_open ? 'LIVE MARKET' : 'KOTAK LIVE FEED';
             }
-
-            // Replay state info
-            if (data.replay) {
-                document.getElementById('replay-time-display').innerText = data.replay.time;
-                document.getElementById('replay-progress').innerText = data.replay.progress;
+            if (feederDot) {
+                feederDot.className = data.is_market_open ? 'w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot' : 'w-2.5 h-2.5 rounded-full bg-emerald-500';
             }
 
             // Wallet & Charges Bar (100% Dynamic Live Tracking)
@@ -1153,6 +1142,11 @@
                 document.getElementById('cap-free').innerText = `Rs ${Number(data.capital.free_cash).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                 document.getElementById('cap-charges').innerText = `Rs ${totCharges.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
 
+                const capColEl = document.getElementById('cap-collateral');
+                if (capColEl && data.capital.real_collateral !== undefined) {
+                    capColEl.innerText = `Rs ${Number(data.capital.real_collateral).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                }
+
                 const roiSign = roiPct >= 0 ? '+' : '';
                 const roiEl = document.getElementById('cap-roi');
                 roiEl.innerText = `${roiSign}${roiPct.toFixed(2)}%`;
@@ -1179,6 +1173,22 @@
             document.getElementById('ema-9').innerText = Number(data.indicators.ema9).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('ema-20').innerText = Number(data.indicators.ema20).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('ema-50').innerText = Number(data.indicators.ema50).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+            // 5-Min Candle Status Badge & Open Price
+            const candleBadge = document.getElementById('candle-status-badge');
+            if (candleBadge && data.indicators.is_green_candle !== undefined) {
+                if (data.indicators.is_green_candle) {
+                    candleBadge.innerText = '🟢 GREEN';
+                    candleBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                } else {
+                    candleBadge.innerText = '🔴 RED';
+                    candleBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20';
+                }
+            }
+            const candleOpenEl = document.getElementById('candle-open-val');
+            if (candleOpenEl && data.indicators.candle_5m_open) {
+                candleOpenEl.innerText = Number(data.indicators.candle_5m_open).toLocaleString('en-IN', {minimumFractionDigits: 2});
+            }
 
             // PCR Gauge with 3-decimal precision & live OI contracts
             document.getElementById('pcr-val').innerText = Number(data.indicators.pcr).toFixed(3);
@@ -1412,11 +1422,25 @@
                             <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
                             <td class="px-2 py-3 text-slate-400 mono text-xs">${r.call_vol}</td>
                             <td class="px-2 py-3 text-center mono text-xs">${callOiDisplay}</td>
-                            <td class="px-3 py-3 text-right mono ${cLtpClass} border-r border-slate-800">₹${r.call_ltp} ${callSellTag} ${callBuyTag}</td>
+                            <td class="px-3 py-3 text-right mono ${cLtpClass} border-r border-slate-800">
+                                <div class="inline-flex items-center justify-end space-x-1.5">
+                                    <button onclick="placeManualOrder(${r.strike}, 'CE', 'B', ${r.call_ltp})" class="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 active:scale-90 text-white rounded text-[10px] font-black tracking-wider transition shadow" title="BUY 1 Lot ${r.strike} CE">BUY</button>
+                                    <button onclick="placeManualOrder(${r.strike}, 'CE', 'S', ${r.call_ltp})" class="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 active:scale-90 text-white rounded text-[10px] font-black tracking-wider transition shadow" title="SELL 1 Lot ${r.strike} CE">SELL</button>
+                                    <span class="ml-1 font-bold">₹${r.call_ltp}</span>
+                                    ${callSellTag} ${callBuyTag}
+                                </div>
+                            </td>
 
                             <td class="px-5 py-3 ${strikeClass}">${r.strike} ${strikeTag}</td>
 
-                            <td class="px-3 py-3 text-left mono ${pLtpClass} border-l border-slate-800">₹${r.put_ltp} ${putSellTag} ${putBuyTag}</td>
+                            <td class="px-3 py-3 text-left mono ${pLtpClass} border-l border-slate-800">
+                                <div class="inline-flex items-center justify-start space-x-1.5">
+                                    <span class="mr-1 font-bold">₹${r.put_ltp}</span>
+                                    ${putSellTag} ${putBuyTag}
+                                    <button onclick="placeManualOrder(${r.strike}, 'PE', 'B', ${r.put_ltp})" class="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 active:scale-90 text-white rounded text-[10px] font-black tracking-wider transition shadow" title="BUY 1 Lot ${r.strike} PE">BUY</button>
+                                    <button onclick="placeManualOrder(${r.strike}, 'PE', 'S', ${r.put_ltp})" class="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 active:scale-90 text-white rounded text-[10px] font-black tracking-wider transition shadow" title="SELL 1 Lot ${r.strike} PE">SELL</button>
+                                </div>
+                            </td>
                             <td class="px-2 py-3 text-center mono text-xs">${putOiDisplay}</td>
                             <td class="px-2 py-3 text-slate-400 mono text-xs">${r.put_vol}</td>
                             <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
@@ -1581,7 +1605,7 @@
         function renderTradesTable(trades) {
             const tbody = document.getElementById('trades-table-body');
             if (!trades || trades.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="12" class="py-6 text-center text-slate-500 italic">No closed trades recorded yet today.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td></tr>';
                 return;
             }
 
@@ -1608,6 +1632,30 @@
                     </tr>
                 `;
             }).join('');
+        }
+
+        async function placeManualOrder(strike, optType, action, price) {
+            const actionLabel = action === 'B' ? 'BUY' : 'SELL';
+            const contract = `NIFTY ${strike} ${optType}`;
+            const confirmed = confirm(`⚡ REAL KOTAK NEO ORDER CONFIRMATION:\n\nAction: ${actionLabel}\nContract: ${contract}\nPrice: ₹${price}\nQuantity: 1 Lot (65 Shares)\n\nKya aap sach me Kotak Neo par REAL order punch karna chahte hain?`);
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch('/api/manual_order', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ strike, opt_type: optType, action, price })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert("✅ " + data.message);
+                    fetchStatus();
+                } else {
+                    alert("❌ " + (data.message || "Order placement failed."));
+                }
+            } catch (e) {
+                alert("API Connection Error: " + e);
+            }
         }
 
         async function triggerTrade() {
@@ -1835,6 +1883,62 @@
 
         function closeEodReportModal() {
             const modal = document.getElementById('eod-report-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function openStrategy3Modal() {
+            const modal = document.getElementById('strategy3-modal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            const tbody = document.getElementById('strategy3-ledger-tbody');
+            if (tbody.children.length > 2 && !tbody.innerText.includes('Click to load')) return;
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-slate-400 font-sans"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading verified 6-year master ledger...</td></tr>';
+            try {
+                const res = await fetch('/api/strategy3/monthly_journal');
+                const d = await res.json();
+                if (!d.success) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-rose-400 font-sans">${d.error || 'Failed to load'}</td></tr>`;
+                    return;
+                }
+                let rowsHtml = '';
+                if (d.annual_summary && d.annual_summary.length > 0) {
+                    d.annual_summary.forEach(a => {
+                        const isPos = a.net_pnl >= 0;
+                        const pnlColor = isPos ? 'text-emerald-400' : 'text-rose-400';
+                        const sign = isPos ? '+' : '';
+                        rowsHtml += `
+                            <tr class="hover:bg-slate-800/40 transition">
+                                <td class="py-2.5 px-3 font-bold text-white">${a.year}</td>
+                                <td class="py-2.5 px-2 text-center text-slate-300">${a.trades}</td>
+                                <td class="py-2.5 px-2 text-center text-slate-400">${a.wins}W / ${a.losses}L</td>
+                                <td class="py-2.5 px-2 text-center ${a.win_rate >= 55 ? 'text-emerald-400' : 'text-slate-300'} font-bold">${a.win_rate}%</td>
+                                <td class="py-2.5 px-3 text-right text-rose-400">Rs ${Number(a.max_drawdown).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                                <td class="py-2.5 px-3 text-right text-amber-400 font-bold">${a.profit_factor}</td>
+                                <td class="py-2.5 px-3 text-right font-black ${pnlColor}">${sign}Rs ${Number(a.net_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                            </tr>
+                        `;
+                    });
+                    // Total row
+                    rowsHtml += `
+                        <tr class="bg-slate-800/60 font-bold border-t-2 border-slate-700">
+                            <td class="py-3 px-3 text-white uppercase tracking-wider">6-YR TOTAL</td>
+                            <td class="py-3 px-2 text-center text-white">${d.summary.total_trades}</td>
+                            <td class="py-3 px-2 text-center text-slate-300">${d.summary.total_wins}W / ${d.summary.total_losses}L</td>
+                            <td class="py-3 px-2 text-center text-emerald-400">${d.summary.win_rate}%</td>
+                            <td class="py-3 px-3 text-right text-rose-400">${d.summary.max_drawdown}</td>
+                            <td class="py-3 px-3 text-right text-amber-400">${d.summary.profit_factor}</td>
+                            <td class="py-3 px-3 text-right text-emerald-400 text-sm font-black">+Rs ${Number(d.summary.total_net_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                        </tr>
+                    `;
+                }
+                tbody.innerHTML = rowsHtml;
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-rose-400 font-sans">Error: ${err}</td></tr>`;
+            }
+        }
+
+        function closeStrategy3Modal() {
+            const modal = document.getElementById('strategy3-modal');
             if (modal) modal.classList.add('hidden');
         }
 

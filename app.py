@@ -657,12 +657,13 @@ class MasterQuantEngine:
             else:
                 self.pulse["signal"] = "NEUTRAL_SCANNING"
 
-            # Autonomous Live Trigger (09:30 - 14:30 IST, strictly 1 trade/day)
+            # Autonomous Live Trigger (09:20 - 14:30 IST, strictly Max 2 trades/day)
             # STRICT GUARD: Live Option Chain must be downloaded and PCR verified!
+            today_trades_count = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
             if is_mkt_open and (not self.state.get("active_position")) and (not self.state.get("circuit_breaker_active")):
-                if self.state.get("today_wins", 0) == 0 and self.state.get("today_losses", 0) == 0:
+                if today_trades_count < 2:
                     t_time = now_dt.time()
-                    if datetime.strptime("09:30", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
+                    if datetime.strptime("09:20", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
                         if self.pulse.get("option_chain") is not None and (bull_pcr_ok or bear_pcr_ok):
                             if self.pulse["signal"] in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
                                 self.trigger_trade(force=False)
@@ -1162,14 +1163,20 @@ class MasterQuantEngine:
 
         if net_pnl >= 0:
             self.state["today_wins"] += 1
-            self.state["circuit_breaker_active"] = True  # Golden Rule: Profit aate hi daily quota lock, no second trade!
             self.pending_audio_event = "TARGET"
             outcome_tag = "🎯 TARGET ACHIEVED (+40% DECAY)"
         else:
             self.state["today_losses"] += 1
-            self.state["circuit_breaker_active"] = True  # 1-Loss Circuit Breaker
             self.pending_audio_event = "STOP_LOSS"
             outcome_tag = "🛑 STOP LOSS / EXIT"
+
+        today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
+        if today_trades_done >= 2:
+            self.state["circuit_breaker_active"] = True
+            self.status_message = "Daily Quota Complete (Max 2 Trades Reached). Market locked for today."
+        else:
+            self.state["circuit_breaker_active"] = False
+            self.status_message = f"Trade 1 Closed ({outcome_tag}). Scanning for Trade 2 if valid signal forms before 14:30."
 
         send_telegram_alert(
             f"{outcome_tag} — <b>NIFTY QUANT DESK</b>\n\n"
@@ -1414,11 +1421,12 @@ def get_status():
     e50 = engine.pulse["ema50"]
     pcr = engine.pulse["pcr"]
     losses_today = engine.state["today_losses"]
+    today_trades_done = engine.state.get("today_wins", 0) + engine.state.get("today_losses", 0)
     cb_active = engine.state["circuit_breaker_active"]
 
     eval_time = datetime.strptime(engine.pulse.get("replay_time", "10:30"), "%H:%M").time() if (not is_mkt_open and engine.replay_active) else now_t
-    is_time_window = (datetime.strptime("09:30", "%H:%M").time() <= eval_time <= datetime.strptime("14:30", "%H:%M").time())
-    cond_circuit_breaker = bool(losses_today == 0 and not cb_active)
+    is_time_window = (datetime.strptime("09:20", "%H:%M").time() <= eval_time <= datetime.strptime("14:30", "%H:%M").time())
+    cond_circuit_breaker = bool(today_trades_done < 2 and not cb_active)
     cond_margin_safety = True  # Always enforced: 1st BUY OTM Wing -> 2nd SELL ATM Strike
 
     # Upgrade 1: Dual-PCR Evaluation (Weekly Cumulative OR Fresh Intraday Surge)
@@ -1556,9 +1564,9 @@ def get_status():
         },
         {
             "id": "circuit_breaker",
-            "name": "5. 1-Loss Daily Circuit Breaker",
-            "rule": "0 Losses Today (Preserve Capital on Drawdown)",
-            "metric": f"{losses_today} / 1 Loss Today",
+            "name": "5. Max 2 Trades Daily Quota",
+            "rule": "Max 2 Trades Allowed Per Day (Trade 2 Allowed After Trade 1)",
+            "metric": f"{today_trades_done} / 2 Trades Today",
             "status": cond_circuit_breaker,
             "badge": "TRUE" if cond_circuit_breaker else "FALSE",
         },
