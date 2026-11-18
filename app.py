@@ -560,12 +560,12 @@ class MasterQuantEngine:
                 self.pulse["mkt_lot"] = int(chain["common_data"].get("mktLot", 65))
                 self.lot_size = self.pulse["mkt_lot"]
 
-                # Golden Expiry Rule: On expiry day (0-DTE) or past date, automatically roll to NEXT WEEK'S expiry (+7 days)
-                # to eliminate severe 0-DTE gamma explosion and early squaring-off risks
+                # Expiry Rule: On Tuesday expiry day, trade EXACT SAME-DAY Tuesday expiry for maximum 40% decay.
+                # Only roll to next week if current expiry date is already in the past (< today_dt).
                 try:
                     exp_dt = datetime.strptime(raw_exp, "%Y-%m-%d").date()
                     today_dt = get_ist_now().date()
-                    if exp_dt <= today_dt:
+                    if exp_dt < today_dt:
                         rolled_exp = exp_dt + timedelta(days=7)
                         self.pulse["next_expiry"] = rolled_exp.strftime("%Y-%m-%d")
                         self.pulse["is_expiry_rolled"] = True
