@@ -507,16 +507,19 @@ class MasterQuantEngine:
         return report_data
 
     def init_replay_data(self, target_date="2026-11-09"):
-        """Loads historical 1-minute candles for off-market replay."""
+        """Loads historical 1-minute candles for off-market replay with immediate GC cleanup."""
         try:
             if MASTER_SPOT_PARQUET.exists():
-                df = pd.read_parquet(MASTER_SPOT_PARQUET)
+                import gc
+                df = pd.read_parquet(MASTER_SPOT_PARQUET, columns=["open", "high", "low", "close"])
                 available = df.index.normalize().unique()
                 self.available_replay_dates = [d.strftime("%Y-%m-%d") for d in sorted(available, reverse=True)[:30]]
                 if target_date not in self.available_replay_dates and self.available_replay_dates:
                     target_date = self.available_replay_dates[0]
                 
                 day_slice = df.loc[target_date].copy()
+                del df
+                gc.collect()
                 if not day_slice.empty:
                     self.replay_df = day_slice.reset_index()
                     self.replay_date = target_date
@@ -1963,17 +1966,26 @@ def export_historical_options():
     )
 
 
-@app.route("/api/chart_data")
-def api_chart_data():
-    """
-    Upgrade 8: TradingView Lightweight Charts endpoint.
-    Returns the latest 200 1-minute OHLC candles from parquet + today's live minutes.
-    """
-    try:
-        candles = []
-        if MASTER_SPOT_PARQUET.exists():
-            df = pd.read_parquet(MASTER_SPOT_PARQUET)
+# In-memory cached candles for lightweight TradingView chart (only ~200 items, <10 KB RAM)
+CACHED_BASE_CANDLES = []
+LAST_CANDLE_LOAD_TIME = 0
+
+def get_base_chart_candles():
+    global CACHED_BASE_CANDLES, LAST_CANDLE_LOAD_TIME
+    now = time.time()
+    # Cache for 10 minutes to avoid re-reading parquet on every 5s poll
+    if CACHED_BASE_CANDLES and (now - LAST_CANDLE_LOAD_TIME < 600):
+        return CACHED_BASE_CANDLES
+
+    if MASTER_SPOT_PARQUET.exists():
+        try:
+            import gc
+            df = pd.read_parquet(MASTER_SPOT_PARQUET, columns=["open", "high", "low", "close"])
             tail_df = df.tail(200).reset_index()
+            del df
+            gc.collect()
+
+            candles = []
             for _, row in tail_df.iterrows():
                 ts = row.get("timestamp") or row.get("index")
                 if hasattr(ts, "timestamp"):
@@ -1987,6 +1999,23 @@ def api_chart_data():
                     "low": round(float(row["low"]), 2),
                     "close": round(float(row["close"]), 2),
                 })
+            CACHED_BASE_CANDLES = candles
+            LAST_CANDLE_LOAD_TIME = now
+        except Exception as e:
+            logger.warning(f"Error loading base chart candles: {e}")
+    return CACHED_BASE_CANDLES
+
+
+@app.route("/api/chart_data")
+def api_chart_data():
+    """
+    Upgrade 8: TradingView Lightweight Charts endpoint.
+    Returns the latest 200 1-minute OHLC candles from memory cache + today's live minutes.
+    Memory-optimized: Zero file reads on repeated polls.
+    """
+    try:
+        base_candles = get_base_chart_candles()
+        candles = [dict(c) for c in base_candles]
 
         # Append or update with live spot tick
         spot = engine.pulse.get("spot")
