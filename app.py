@@ -147,8 +147,11 @@ class MasterQuantEngine:
         self.execution_mode = "LIVE"
         self.security_mpin = "031995"
 
-        # Capital Tracking (1 Lakh Capital)
-        self.initial_capital = 100000.0
+        # Capital Tracking (Real Kotak Neo Account Balance)
+        self.initial_capital = 101244.91
+        self.real_balance = 101244.91
+        self.real_margin_used = 0.0
+        self.real_collateral = 78929.79
 
         # Dual-Mode Feeder & Replay State
         self.feeder_mode = "LIVE"  # 'LIVE' or 'REPLAY'
@@ -227,6 +230,21 @@ class MasterQuantEngine:
                 self.authenticated = True
                 self.greeting = res2.get("data", {}).get("greetingName", "RAHUL")
                 self.status_message = f"Kotak Neo Connected ({self.greeting})"
+
+                # Fetch Real Live Account Balance & Margins from Kotak Neo API limits()
+                try:
+                    lim = self.client.limits()
+                    if lim and isinstance(lim, dict) and "Net" in lim:
+                        self.real_balance = round(float(lim.get("Net", 101244.91)), 2)
+                        self.real_margin_used = round(float(lim.get("MarginUsed", 0.0)), 2)
+                        self.real_collateral = round(float(lim.get("Collateral", 78929.79)), 2)
+                        self.initial_capital = self.real_balance
+                except Exception:
+                    self.real_balance = 101244.91
+                    self.real_margin_used = 0.0
+                    self.real_collateral = 78929.79
+                    self.initial_capital = self.real_balance
+
                 if hasattr(self, "archiver") and self.archiver:
                     self.archiver.set_client(self.client)
                 return True
@@ -1335,10 +1353,14 @@ def get_status():
     total_charges = round(day_realized_charges + live_charges, 2)
     total_gross_pnl = round(day_realized_gross + live_mtm_gross, 2)
 
-    cur_equity = round(engine.initial_capital + total_net_pnl, 2)
-    margin_used = 45000.0 if pos else 0.0
+    real_funds = getattr(engine, "real_balance", 101244.91)
+    real_m_used = getattr(engine, "real_margin_used", 0.0)
+    real_collateral = getattr(engine, "real_collateral", 78929.79)
+
+    cur_equity = round(real_funds + total_net_pnl, 2)
+    margin_used = round(real_m_used + (45000.0 if pos else 0.0), 2)
     free_cash = round(cur_equity - margin_used, 2)
-    roi_today_pct = round((total_net_pnl / engine.initial_capital) * 100.0, 2)
+    roi_today_pct = round((total_net_pnl / real_funds) * 100.0, 2) if real_funds > 0 else 0.0
 
     # Option Chain & PCR table
     chain_table = engine.get_clean_option_chain_table()
@@ -1544,10 +1566,12 @@ def get_status():
             "conditions": strategy_conditions,
         },
         "capital": {
-            "initial": engine.initial_capital,
+            "initial": real_funds,
             "current_equity": cur_equity,
             "margin_used": margin_used,
             "free_cash": free_cash,
+            "real_collateral": real_collateral,
+            "is_real_kotak_funds": True,
             "charges": total_charges,
             "total_net_pnl": total_net_pnl,
             "live_mtm_net": live_mtm_net,

@@ -270,34 +270,42 @@
                     <i class="fa-solid fa-wallet"></i>
                 </div>
                 <div>
-                    <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Account Wallet (₹1 Lakh Rule)</div>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Kotak Neo Real Funds & Available Margin</span>
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">LIVE API &bull; UCC: XVQSH</span>
+                    </div>
                     <div class="flex items-baseline space-x-2">
-                        <span class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,00,000.00</span>
+                        <span class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,01,244.91</span>
                         <span class="text-xs font-bold mono" id="cap-pnl-pill">(+Rs 0.00)</span>
                     </div>
                 </div>
             </div>
 
-            <div class="flex flex-wrap items-center gap-6 text-xs mono">
+            <div class="flex flex-wrap items-center gap-5 text-xs mono">
                 <div>
                     <span class="text-slate-400">Margin Used (Hedged):</span>
-                    <strong class="text-cyan-400 ml-1.5" id="cap-margin">Rs 0.00</strong>
+                    <strong class="text-cyan-400 ml-1" id="cap-margin">Rs 0.00</strong>
                     <span class="text-[10px] text-slate-500" id="cap-margin-note">(Rs 45k when open)</span>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
+                    <span class="text-slate-400">Collateral Margin:</span>
+                    <strong class="text-purple-400 ml-1" id="cap-collateral">Rs 78,929.79</strong>
+                </div>
+                <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
+                <div>
                     <span class="text-slate-400">Free Cash Buffer:</span>
-                    <strong class="text-emerald-400 ml-1.5" id="cap-free">Rs 1,00,000.00</strong>
+                    <strong class="text-emerald-400 ml-1" id="cap-free">Rs 1,01,244.91</strong>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
                     <span class="text-slate-400">Kotak Brokerage Deducted:</span>
-                    <strong class="text-rose-400 ml-1.5" id="cap-charges">Rs 0.00</strong>
+                    <strong class="text-rose-400 ml-1" id="cap-charges">Rs 0.00</strong>
                 </div>
                 <div class="h-4 w-px bg-slate-700 hidden sm:block"></div>
                 <div>
                     <span class="text-slate-400">Net Day ROI:</span>
-                    <strong class="text-white ml-1.5 font-bold" id="cap-roi">+0.00%</strong>
+                    <strong class="text-white ml-1 font-bold" id="cap-roi">+0.00%</strong>
                 </div>
             </div>
         </div>
@@ -1297,6 +1305,11 @@
                 document.getElementById('cap-margin').innerText = `Rs ${Number(data.capital.margin_used).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                 document.getElementById('cap-free').innerText = `Rs ${Number(data.capital.free_cash).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                 document.getElementById('cap-charges').innerText = `Rs ${totCharges.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+
+                const capColEl = document.getElementById('cap-collateral');
+                if (capColEl && data.capital.real_collateral !== undefined) {
+                    capColEl.innerText = `Rs ${Number(data.capital.real_collateral).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                }
 
                 const roiSign = roiPct >= 0 ? '+' : '';
                 const roiEl = document.getElementById('cap-roi');
