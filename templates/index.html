@@ -110,7 +110,7 @@
                         <span class="text-amber-400 font-bold px-2 py-0.5 bg-amber-500/15 rounded-lg border border-amber-500/30"><i class="fa-solid fa-bolt mr-1"></i>MAX 2 TRADES / DAY</span>
                         <span id="auth-status" class="text-emerald-400 ml-1"><i class="fa-solid fa-circle-check"></i> Kotak Neo Live</span>
                         <span id="hdr-vix-badge" class="px-2 py-0.5 text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full mono"><i class="fa-solid fa-gauge mr-1"></i>VIX: 13.5 (350w)</span>
-                        <span id="hdr-lots-badge" class="px-2 py-0.5 text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full mono"><i class="fa-solid fa-cubes mr-1"></i>Lots: 1 (65 Qty)</span>
+                        <button onclick="openLotModal()" id="hdr-lots-badge" class="px-2.5 py-0.5 text-[10px] font-bold bg-cyan-500/15 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/50 rounded-full mono transition cursor-pointer flex items-center gap-1.5 glow-cyan" title="Click to Change & Save Custom Lot Size"><i class="fa-solid fa-sliders text-cyan-400"></i><span id="hdr-lots-text">Lots: 1 (65 Qty) [SET]</span></button>
                         <span id="hdr-watchdog-pill" class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full mono"><i class="fa-solid fa-heart-pulse mr-1"></i>Watchdog: Optimal</span>
                     </p>
                 </div>
@@ -144,6 +144,12 @@
                 <button onclick="openEodReportModal()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition border border-slate-700 flex items-center space-x-1" title="15:35 Daily Performance Report">
                     <i class="fa-solid fa-file-invoice text-amber-400"></i>
                     <span class="hidden sm:inline">EOD Report</span>
+                </button>
+
+                <!-- Day-by-Day Trade Journal & Reason Breakdown Modal Button -->
+                <button onclick="openJournalModal()" class="px-2.5 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold rounded-lg transition border border-indigo-500/40 flex items-center space-x-1 shadow-sm" title="Day-by-Day Trade Journal & Reason Breakdown">
+                    <i class="fa-solid fa-calendar-days text-indigo-400"></i>
+                    <span class="hidden sm:inline">Daily Journal</span>
                 </button>
 
                 <!-- PROMINENT KOTAK NEO LIVE CONNECTION STATUS BADGE -->
@@ -685,19 +691,41 @@
                         </button>
                     </div>
 
-                    <!-- Second-by-Second Holding Timer & Points Captured -->
-                    <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-4 text-xs mono">
-                        <div>
-                            <span class="text-slate-400">Holding Timer:</span>
-                            <strong class="text-white ml-1 text-sm" id="pos-timer">00:00:00</strong>
+                    <!-- Second-by-Second Holding Timer, Spot Move & Exact Entry Details -->
+                    <div class="p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2 text-xs mono">
+                        <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-800/80">
+                            <div>
+                                <span class="text-slate-400">Entry Time:</span>
+                                <strong class="text-white ml-1" id="pos-entry-time">--:--:--</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400">Entry Spot:</span>
+                                <strong class="text-cyan-300 ml-1 font-bold" id="pos-entry-spot">--</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400">Live Spot:</span>
+                                <strong class="text-amber-300 ml-1 font-bold" id="pos-live-spot">--</strong>
+                                <span class="text-emerald-400 ml-1 font-semibold" id="pos-spot-move">(+0.0 pts)</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400">Holding Time:</span>
+                                <strong class="text-emerald-400 ml-1" id="pos-timer">00:00:00</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400">Initiator:</span>
+                                <span id="pos-initiator" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/40">AUTO ALGO</span>
+                            </div>
                         </div>
-                        <div>
-                            <span class="text-slate-400">Spot Move:</span>
-                            <strong class="text-cyan-400 ml-1" id="pos-spot-move">+0.0 pts</strong>
-                        </div>
-                        <div>
-                            <span class="text-slate-400">Order Execution:</span>
-                            <span class="text-emerald-400 font-semibold ml-1">1st Buy Wing &rarr; 2nd Sell ATM</span>
+                        <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                            <div class="flex items-center gap-1.5 text-slate-300">
+                                <i class="fa-solid fa-lightbulb text-amber-400"></i>
+                                <span class="text-slate-400 font-semibold">Kyun Liya (Reason):</span>
+                                <span id="pos-why-taken" class="text-cyan-200 font-medium">Daily 20 EMA + 5m Cascade (9>20>50) + PCR Confirmation</span>
+                            </div>
+                            <div class="text-slate-400">
+                                <span>Order Priority:</span>
+                                <span class="text-emerald-400 font-bold ml-1">1st Buy Wing &rarr; 2nd Sell ATM</span>
+                            </div>
                         </div>
                     </div>
 
@@ -859,21 +887,23 @@
                         <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
                             <th class="py-2.5 px-3">Entry Time</th>
                             <th class="py-2.5 px-3">Exit Time</th>
-                            <th class="py-2.5 px-3">Mode</th>
                             <th class="py-2.5 px-3">Strategy</th>
                             <th class="py-2.5 px-3">Strikes</th>
+                            <th class="py-2.5 px-3 text-right">Entry Spot</th>
+                            <th class="py-2.5 px-3 text-right">Exit Spot</th>
                             <th class="py-2.5 px-3 text-right">Credit</th>
-                            <th class="py-2.5 px-3 text-right">Exit Value</th>
+                            <th class="py-2.5 px-3 text-right">Exit Spread</th>
                             <th class="py-2.5 px-3 text-right">Points</th>
                             <th class="py-2.5 px-3 text-right">Gross PnL</th>
-                            <th class="py-2.5 px-3 text-right">Taxes & Fees</th>
                             <th class="py-2.5 px-3 text-right">Net ₹ PnL</th>
+                            <th class="py-2.5 px-3 text-center">Result</th>
                             <th class="py-2.5 px-3 text-center">Exit Reason</th>
+                            <th class="py-2.5 px-3 text-left">Kyun Liya (Reason)</th>
                         </tr>
                     </thead>
                     <tbody id="trades-table-body" class="divide-y divide-slate-800/60 mono">
                         <tr>
-                            <td colspan="12" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td>
+                            <td colspan="14" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1033,6 +1063,157 @@
     </div>
 
 
+
+    <!-- ⚙️ CUSTOM LOT SIZE CONFIGURATION MODAL -->
+    <div id="lot-config-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#101726] border border-cyan-500/40 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl shadow-cyan-500/10">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30">
+                        <i class="fa-solid fa-sliders"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Configure Lot Sizing</h3>
+                        <p class="text-[11px] text-slate-400">Aap jitna lot set karenge, terminal strictly wahi trade karega</p>
+                    </div>
+                </div>
+                <button onclick="closeLotModal()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Quick Preset Buttons -->
+            <div class="space-y-2">
+                <label class="text-[11px] text-slate-400 uppercase font-bold tracking-wider">Quick Presets</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button onclick="selectLotPreset(1)" class="px-3 py-2 bg-slate-900 hover:bg-cyan-950/60 border border-slate-700 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-200 transition">1 Lot (65 Qty)</button>
+                    <button onclick="selectLotPreset(2)" class="px-3 py-2 bg-slate-900 hover:bg-cyan-950/60 border border-slate-700 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-200 transition">2 Lots (130 Qty)</button>
+                    <button onclick="selectLotPreset(5)" class="px-3 py-2 bg-slate-900 hover:bg-cyan-950/60 border border-slate-700 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-200 transition">5 Lots (325 Qty)</button>
+                    <button onclick="selectLotPreset(10)" class="px-3 py-2 bg-slate-900 hover:bg-cyan-950/60 border border-slate-700 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-200 transition">10 Lots (650 Qty)</button>
+                    <button onclick="selectLotPreset(25)" class="px-3 py-2 bg-slate-900 hover:bg-cyan-950/60 border border-slate-700 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-200 transition">25 Lots (1,625 Qty)</button>
+                    <button onclick="selectLotPreset(50)" class="px-3 py-2 bg-slate-900 hover:bg-cyan-950/60 border border-slate-700 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-200 transition">50 Lots (3,250 Qty)</button>
+                </div>
+            </div>
+
+            <!-- Custom Input Box -->
+            <div class="space-y-2">
+                <label class="text-[11px] text-slate-400 uppercase font-bold tracking-wider">Custom Lot Quantity</label>
+                <div class="relative">
+                    <input type="number" id="lot-input" min="1" max="100" value="1" oninput="updateLotCalculations()" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-400 rounded-xl px-4 py-2.5 text-white font-extrabold text-base mono focus:outline-none">
+                    <span class="absolute right-4 top-3 text-xs text-slate-500 font-bold uppercase">LOTS</span>
+                </div>
+            </div>
+
+            <!-- Live Calculation Breakdown Card -->
+            <div class="p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1.5 text-xs mono">
+                <div class="flex justify-between text-slate-400">
+                    <span>Total Quantity:</span>
+                    <strong class="text-cyan-300 font-black" id="lot-calc-qty">65 Qty</strong>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                    <span>SEBI Hedge Margin Required:</span>
+                    <strong class="text-emerald-400 font-bold" id="lot-calc-margin">~₹42,000</strong>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                    <span>Max Hard SL Protection:</span>
+                    <strong class="text-rose-400 font-bold" id="lot-calc-sl">-₹2,800 Cap</strong>
+                </div>
+                <div class="flex justify-between text-slate-400 pt-1.5 border-t border-slate-800/80">
+                    <span>Target Profit (+40% Decay):</span>
+                    <strong class="text-emerald-400 font-bold" id="lot-calc-tgt">+~₹2,200</strong>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center space-x-3 pt-2">
+                <button onclick="closeLotModal()" class="w-1/3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">Cancel</button>
+                <button onclick="saveLotSize()" id="btn-save-lots" class="w-2/3 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-black font-black uppercase tracking-wider rounded-xl text-xs transition shadow-lg shadow-cyan-600/30 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>Save & Apply Lot Size</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📅 DAY-BY-DAY TRADE JOURNAL & REASON BREAKDOWN MODAL -->
+    <div id="journal-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-indigo-500/40 rounded-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl shadow-indigo-500/10">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+                        <i class="fa-solid fa-calendar-days text-base"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white tracking-tight">DAY-BY-DAY TRADE JOURNAL & REASON BREAKDOWN</h3>
+                        <p class="text-[11px] text-slate-400">Har din kis strategy par entry li, tab spot kya tha, kyun trade liya, exit spot kya tha aur result kya tha</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <div class="flex items-center space-x-2">
+                        <label class="text-xs text-slate-400 font-semibold uppercase">Month:</label>
+                        <select id="journal-month-select" onchange="onJournalMonthChange()" class="bg-slate-900 border border-slate-700 text-indigo-300 font-bold text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-indigo-400">
+                            <option value="ALL">All Recorded Months</option>
+                        </select>
+                    </div>
+                    <button onclick="closeJournalModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Monthly Summary Cards -->
+            <div class="p-6 border-b border-slate-800/80 bg-slate-950/60 grid grid-cols-2 sm:grid-cols-4 gap-4" id="journal-month-kpis">
+                <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                    <div class="text-[10px] text-slate-400 uppercase font-semibold">Total Trades</div>
+                    <div class="text-lg font-black text-white mono mt-0.5" id="journal-kpi-trades">0</div>
+                </div>
+                <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                    <div class="text-[10px] text-slate-400 uppercase font-semibold">Win Rate</div>
+                    <div class="text-lg font-black text-emerald-400 mono mt-0.5" id="journal-kpi-wr">0.0%</div>
+                </div>
+                <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                    <div class="text-[10px] text-slate-400 uppercase font-semibold">Net Realized PnL</div>
+                    <div class="text-lg font-black text-emerald-400 mono mt-0.5" id="journal-kpi-net">₹0.00</div>
+                </div>
+                <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                    <div class="text-[10px] text-slate-400 uppercase font-semibold">Wins / Losses</div>
+                    <div class="text-lg font-black text-slate-200 mono mt-0.5" id="journal-kpi-wl">0W / 0L</div>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="overflow-y-auto flex-grow p-6">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider sticky top-0 bg-[#0f172a]">
+                            <th class="py-2.5 px-3">Date & Day</th>
+                            <th class="py-2.5 px-3">Strategy</th>
+                            <th class="py-2.5 px-3">Strikes</th>
+                            <th class="py-2.5 px-3 text-right">Entry Spot</th>
+                            <th class="py-2.5 px-3">Entry Time</th>
+                            <th class="py-2.5 px-3 text-right">Exit Spot</th>
+                            <th class="py-2.5 px-3">Exit Time</th>
+                            <th class="py-2.5 px-3 text-right">Spot Move</th>
+                            <th class="py-2.5 px-3 text-right">Net ₹ PnL</th>
+                            <th class="py-2.5 px-3 text-center">Result</th>
+                            <th class="py-2.5 px-3 text-center">Exit Reason</th>
+                            <th class="py-2.5 px-3 text-left">Kyun Trade Liya? (Reason / Confluence)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="journal-table-body" class="divide-y divide-slate-800/60 mono">
+                        <tr>
+                            <td colspan="12" class="py-8 text-center text-slate-500 italic"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading Day-by-Day Trade Journal...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="px-6 py-3 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between text-xs text-slate-400">
+                <span>SEBI Margin-Safe Execution: 1st BUY Wing &rarr; 2nd SELL ATM</span>
+                <button onclick="closeJournalModal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition font-medium">Close Journal</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Footer -->
     <footer class="border-t border-slate-800 bg-[#0d131f] px-6 py-3 text-center text-xs text-slate-500">
@@ -1781,6 +1962,13 @@
                 }).join('');
             }
 
+            // Lot sizing state sync
+            if (data.active_lots !== undefined) {
+                window.currentActiveLots = data.active_lots;
+                const hdrLots = document.getElementById('hdr-lots-text');
+                if (hdrLots) hdrLots.innerText = `Lots: ${data.active_lots} (${data.active_lots * 65} Qty) [SET]`;
+            }
+
             // Active Position Monitor
             const openCard = document.getElementById('position-open-card');
             const emptyCard = document.getElementById('position-empty-card');
@@ -1821,9 +2009,37 @@
                     ptsGainEl.innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)} pts`;
                 }
 
+                // Entry Timing, Spots, Initiator and Reason
+                const pEntryTime = document.getElementById('pos-entry-time');
+                if (pEntryTime) pEntryTime.innerText = pos.entry_time ? (pos.entry_time.split(' ')[1] || pos.entry_time) : '--:--:--';
+
+                const pEntrySpot = document.getElementById('pos-entry-spot');
+                if (pEntrySpot) pEntrySpot.innerText = pos.entry_spot ? Number(pos.entry_spot).toFixed(2) : '--';
+
+                const curSpotVal = pos.current_spot || (data.pulse ? data.pulse.spot : null);
+                const pLiveSpot = document.getElementById('pos-live-spot');
+                if (pLiveSpot) pLiveSpot.innerText = curSpotVal ? Number(curSpotVal).toFixed(2) : '--';
+
+                const sMove = (pos.spot_move !== undefined && pos.spot_move !== null) ? Number(pos.spot_move) : ((curSpotVal && pos.entry_spot) ? (Number(curSpotVal) - Number(pos.entry_spot)) : 0);
+                const spotMoveEl = document.getElementById('pos-spot-move');
+                if (spotMoveEl) {
+                    spotMoveEl.innerText = `(${sMove >= 0 ? '+' : ''}${sMove.toFixed(2)} pts)`;
+                    spotMoveEl.className = sMove >= 0 ? 'text-emerald-400 ml-1 font-semibold' : 'text-rose-400 ml-1 font-semibold';
+                }
+
+                const pInit = document.getElementById('pos-initiator');
+                if (pInit) {
+                    const initVal = pos.trade_initiator || 'AUTO_ALGO';
+                    pInit.innerText = initVal === 'AUTO_ALGO' ? 'AUTO ALGO' : 'MANUAL';
+                    pInit.className = (initVal === 'AUTO_ALGO') ?
+                        'px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/40' :
+                        'px-2 py-0.5 rounded text-[10px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40';
+                }
+
+                const pWhy = document.getElementById('pos-why-taken');
+                if (pWhy) pWhy.innerText = pos.why_trade_taken || 'Daily 20 EMA + 5m Cascade (9>20>50) + PCR Confirmation';
+
                 document.getElementById('pos-timer').innerText = pos.holding_time_str || '00:00:00';
-                const sMove = pos.spot_move || 0;
-                document.getElementById('pos-spot-move').innerText = `${sMove >= 0 ? '+' : ''}${sMove} pts`;
 
                 const netPnl = Number(pos.mtm_net_pnl || 0);
                 const pnlEl = document.getElementById('pos-mtm-net');
@@ -1945,7 +2161,7 @@
         function renderTradesTable(trades) {
             const tbody = document.getElementById('trades-table-body');
             if (!trades || trades.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="12" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="14" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td></tr>';
                 return;
             }
 
@@ -1953,22 +2169,27 @@
                 const netPnl = Number(t.net_pnl);
                 const pnlClass = netPnl >= 0 ? 'text-emerald-400' : 'text-rose-400';
                 const sign = netPnl >= 0 ? '+' : '';
-                const modeClass = t.mode === 'LIVE' ? 'text-rose-400 bg-rose-500/10' : 'text-emerald-400 bg-emerald-500/10';
+                const result = t.result || (netPnl > 0 ? 'WIN' : (netPnl < 0 ? 'LOSS' : 'BREAKEVEN'));
+                const resultBadgeClass = result === 'WIN' ? 
+                    'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 
+                    (result === 'LOSS' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40');
 
                 return `
                     <tr class="hover:bg-slate-900/40 transition">
                         <td class="py-2.5 px-3 text-slate-300">${t.entry_time.split(' ')[1] || t.entry_time}</td>
                         <td class="py-2.5 px-3 text-slate-300">${t.exit_time.split(' ')[1] || t.exit_time}</td>
-                        <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${modeClass}">${t.mode || 'PAPER'}</span></td>
                         <td class="py-2.5 px-3 text-purple-300 font-semibold">${t.direction}</td>
                         <td class="py-2.5 px-3 text-slate-300">${t.strikes}</td>
+                        <td class="py-2.5 px-3 text-right text-cyan-300 font-bold">${t.entry_spot || '--'}</td>
+                        <td class="py-2.5 px-3 text-right text-amber-300 font-bold">${t.exit_spot || '--'}</td>
                         <td class="py-2.5 px-3 text-right text-cyan-300">Rs ${t.net_credit}</td>
                         <td class="py-2.5 px-3 text-right text-slate-300">Rs ${t.exit_spread}</td>
                         <td class="py-2.5 px-3 text-right text-slate-300">${t.points || 0}</td>
                         <td class="py-2.5 px-3 text-right text-slate-300">Rs ${t.gross_pnl || t.realized_pnl}</td>
-                        <td class="py-2.5 px-3 text-right text-rose-400">-Rs ${t.brokerage_taxes || 0}</td>
                         <td class="py-2.5 px-3 text-right font-bold ${pnlClass}">${sign}Rs ${netPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                        <td class="py-2.5 px-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">${t.exit_reason}</span></td>
+                        <td class="py-2.5 px-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] font-bold border ${resultBadgeClass}">${result}</span></td>
+                        <td class="py-2.5 px-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">${t.exit_reason}</span></td>
+                        <td class="py-2.5 px-3 text-left text-slate-400 font-sans text-[11px] max-w-xs truncate" title="${t.why_trade_taken || ''}">${t.why_trade_taken || 'Trend Follow & 5m Confluence'}</td>
                     </tr>
                 `;
             }).join('');
@@ -2301,6 +2522,217 @@
         function closeStrategy3Modal() {
             const modal = document.getElementById('strategy3-modal');
             if (modal) modal.classList.add('hidden');
+        }
+
+        // ⚙️ USER-CONFIGURABLE LOT SIZING HANDLERS
+        function openLotModal() {
+            const modal = document.getElementById('lot-config-modal');
+            if (!modal) return;
+            const input = document.getElementById('lot-input');
+            const cur = window.currentActiveLots || 1;
+            if (input) input.value = cur;
+            updateLotCalculations();
+            modal.classList.remove('hidden');
+        }
+
+        function closeLotModal() {
+            const modal = document.getElementById('lot-config-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function selectLotPreset(n) {
+            const input = document.getElementById('lot-input');
+            if (input) {
+                input.value = n;
+                updateLotCalculations();
+            }
+        }
+
+        function updateLotCalculations() {
+            const input = document.getElementById('lot-input');
+            let lots = parseInt(input ? input.value : 1, 10);
+            if (isNaN(lots) || lots < 1) lots = 1;
+            if (lots > 100) lots = 100;
+
+            const qty = lots * 65;
+            const margin = lots * 42000;
+            const sl = lots * 2800;
+            const tgt = lots * 2200;
+
+            const elQty = document.getElementById('lot-calc-qty');
+            const elMargin = document.getElementById('lot-calc-margin');
+            const elSl = document.getElementById('lot-calc-sl');
+            const elTgt = document.getElementById('lot-calc-tgt');
+
+            if (elQty) elQty.innerText = `${qty} Qty (${lots} Lots)`;
+            if (elMargin) elMargin.innerText = `~₹${margin.toLocaleString('en-IN')}`;
+            if (elSl) elSl.innerText = `-₹${sl.toLocaleString('en-IN')} Cap`;
+            if (elTgt) elTgt.innerText = `+~₹${tgt.toLocaleString('en-IN')}`;
+        }
+
+        async function saveLotSize() {
+            const input = document.getElementById('lot-input');
+            let lots = parseInt(input ? input.value : 1, 10);
+            if (isNaN(lots) || lots < 1) lots = 1;
+            if (lots > 100) lots = 100;
+
+            const btn = document.getElementById('btn-save-lots');
+            const oldHtml = btn ? btn.innerHTML : '';
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Saving & Applying...';
+
+            try {
+                const res = await fetch('/api/set_lot_size', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ lots })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    window.currentActiveLots = d.lots;
+                    const hdrLots = document.getElementById('hdr-lots-text');
+                    if (hdrLots) hdrLots.innerText = `Lots: ${d.lots} (${d.lot_size} Qty) [SET]`;
+                    closeLotModal();
+                    alert(`✅ LOT SIZE UPDATED & SAVED TO BACKEND:\n\nActive Lots: ${d.lots} Lots\nTotal Execution Quantity: ${d.lot_size} Shares\n\nAb agla order strictly ${d.lots} lots par hi lagega!`);
+                    fetchStatus();
+                } else {
+                    alert('❌ Error saving lot size: ' + (d.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Connection error: ' + err);
+            } finally {
+                if (btn) btn.innerHTML = oldHtml;
+            }
+        }
+
+        // 📅 DAY-BY-DAY TRADE JOURNAL HANDLERS
+        let journalRawData = null;
+
+        async function openJournalModal() {
+            const modal = document.getElementById('journal-modal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            await loadJournalData();
+        }
+
+        function closeJournalModal() {
+            const modal = document.getElementById('journal-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function loadJournalData() {
+            const tbody = document.getElementById('journal-table-body');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="py-8 text-center text-slate-500 italic"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading Day-by-Day Trade Journal...</td></tr>';
+            try {
+                const res = await fetch('/api/day_by_day_journal');
+                const d = await res.json();
+                if (!d.success) {
+                    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="py-6 text-center text-rose-400">Error loading journal: ${d.error}</td></tr>`;
+                    return;
+                }
+                journalRawData = d;
+
+                // Populate month select dropdown
+                const select = document.getElementById('journal-month-select');
+                if (select && d.months) {
+                    select.innerHTML = '';
+                    d.months.forEach((m) => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        const sm = d.month_summaries && d.month_summaries[m];
+                        const count = sm ? sm.total_trades : 0;
+                        opt.innerText = `${m} (${count} Trades)`;
+                        select.appendChild(opt);
+                    });
+                }
+
+                const initialMonth = (d.months && d.months.length > 0) ? d.months[0] : null;
+                if (initialMonth) {
+                    renderJournalForMonth(initialMonth);
+                } else {
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="py-6 text-center text-slate-500">No recorded trades found yet.</td></tr>';
+                }
+            } catch (err) {
+                if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="py-6 text-center text-rose-400">Failed to fetch journal: ${err}</td></tr>`;
+            }
+        }
+
+        function onJournalMonthChange() {
+            const select = document.getElementById('journal-month-select');
+            if (!select) return;
+            renderJournalForMonth(select.value);
+        }
+
+        function renderJournalForMonth(monthKey) {
+            if (!journalRawData || !journalRawData.trades_by_month) return;
+            const trades = journalRawData.trades_by_month[monthKey] || [];
+            const summary = (journalRawData.month_summaries && journalRawData.month_summaries[monthKey]) || {
+                total_trades: trades.length,
+                wins: trades.filter(t => (t.net_pnl || 0) > 0).length,
+                losses: trades.filter(t => (t.net_pnl || 0) <= 0).length,
+                win_rate: trades.length > 0 ? (trades.filter(t => (t.net_pnl || 0) > 0).length / trades.length * 100).toFixed(1) : 0,
+                net_pnl: trades.reduce((acc, t) => acc + (t.net_pnl || 0), 0)
+            };
+
+            // Update KPI Cards
+            const elTrades = document.getElementById('journal-kpi-trades');
+            const elWr = document.getElementById('journal-kpi-wr');
+            const elNet = document.getElementById('journal-kpi-net');
+            const elWl = document.getElementById('journal-kpi-wl');
+
+            if (elTrades) elTrades.innerText = summary.total_trades;
+            if (elWr) {
+                elWr.innerText = `${summary.win_rate}%`;
+                elWr.className = summary.win_rate >= 50 ? 'text-lg font-black text-emerald-400 mono mt-0.5' : 'text-lg font-black text-rose-400 mono mt-0.5';
+            }
+            if (elNet) {
+                const isPos = summary.net_pnl >= 0;
+                elNet.innerText = `${isPos ? '+' : ''}₹${Number(summary.net_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                elNet.className = isPos ? 'text-lg font-black text-emerald-400 mono mt-0.5' : 'text-lg font-black text-rose-400 mono mt-0.5';
+            }
+            if (elWl) elWl.innerText = `${summary.wins}W / ${summary.losses}L`;
+
+            // Update Table
+            const tbody = document.getElementById('journal-table-body');
+            if (!tbody) return;
+            if (trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="12" class="py-8 text-center text-slate-500 italic">No trades recorded for this month.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = trades.slice().reverse().map(t => {
+                const net = Number(t.net_pnl || 0);
+                const isPos = net >= 0;
+                const pnlClass = isPos ? 'text-emerald-400' : 'text-rose-400';
+                const sign = isPos ? '+' : '';
+                const result = t.result || (net > 0 ? 'WIN' : (net < 0 ? 'LOSS' : 'BREAKEVEN'));
+                const resClass = result === 'WIN' ? 
+                    'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 
+                    (result === 'LOSS' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40');
+                const spotMove = Number(t.spot_move || 0);
+                const moveClass = spotMove >= 0 ? 'text-emerald-400' : 'text-rose-400';
+
+                const entryTimePart = t.entry_time ? (t.entry_time.includes(' ') ? t.entry_time.split(' ')[1] : t.entry_time) : '--';
+                const exitTimePart = t.exit_time ? (t.exit_time.includes(' ') ? t.exit_time.split(' ')[1] : t.exit_time) : '--';
+                const datePart = t.date || (t.entry_time ? t.entry_time.split(' ')[0] : '--');
+                const dayPart = t.day ? ` (${t.day.substring(0, 3)})` : '';
+
+                return `
+                    <tr class="hover:bg-slate-900/40 transition">
+                        <td class="py-2.5 px-3 text-slate-200 font-medium whitespace-nowrap">${datePart}${dayPart}</td>
+                        <td class="py-2.5 px-3 text-purple-300 font-semibold whitespace-nowrap">${t.direction}</td>
+                        <td class="py-2.5 px-3 text-slate-300 whitespace-nowrap">${t.strikes}</td>
+                        <td class="py-2.5 px-3 text-right text-cyan-300 font-bold">${t.entry_spot || '--'}</td>
+                        <td class="py-2.5 px-3 text-slate-300 whitespace-nowrap">${entryTimePart}</td>
+                        <td class="py-2.5 px-3 text-right text-amber-300 font-bold">${t.exit_spot || '--'}</td>
+                        <td class="py-2.5 px-3 text-slate-300 whitespace-nowrap">${exitTimePart}</td>
+                        <td class="py-2.5 px-3 text-right font-bold ${moveClass}">${spotMove >= 0 ? '+' : ''}${spotMove.toFixed(1)}</td>
+                        <td class="py-2.5 px-3 text-right font-bold ${pnlClass} whitespace-nowrap">${sign}₹${net.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                        <td class="py-2.5 px-3 text-center"><span class="px-2 py-0.5 rounded text-[10px] font-bold border ${resClass}">${result}</span></td>
+                        <td class="py-2.5 px-3 text-center whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">${t.exit_reason || '--'}</span></td>
+                        <td class="py-2.5 px-3 text-left text-slate-300 font-sans text-xs min-w-[280px]">${t.why_trade_taken || 'Trend Follow & 5m Cascade Confluence'}</td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         // Live polling loops & Chart Initialization

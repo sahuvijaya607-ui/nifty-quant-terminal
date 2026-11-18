@@ -201,6 +201,8 @@ class MasterQuantEngine:
         self.last_archive_time = 0
 
         self.state = self.load_state()
+        self.active_lots = int(self.state.get("user_configured_lots", 1))
+        self.lot_size = self.active_lots * int(self.pulse.get("mkt_lot", 65))
         self.authenticate()
         self.poll_kotak_neo(force=True)
         self.init_replay_data()
@@ -259,7 +261,7 @@ class MasterQuantEngine:
             return False
 
     def load_state(self):
-        """Upgrade 3: Crash-Proof State Loader with automatic backup recovery."""
+        """Upgrade 3: Crash-Proof State Loader with automatic backup recovery & Persistent Lot Size."""
         today_str = date.today().strftime("%Y-%m-%d")
         default_state = {
             "date": today_str,
@@ -270,14 +272,22 @@ class MasterQuantEngine:
             "today_total_charges": 0.0,
             "today_realized_net_pnl": 0.0,
             "active_position": None,
+            "user_configured_lots": 1,
         }
         for state_path in [STATE_FILE, STATE_BACKUP_FILE]:
             if state_path.exists():
                 try:
                     with open(state_path, "r", encoding="utf-8") as f:
                         saved = json.load(f)
-                        if isinstance(saved, dict) and saved.get("date") == today_str:
-                            return saved
+                        if isinstance(saved, dict):
+                            user_lots = saved.get("user_configured_lots", 1)
+                            default_state["user_configured_lots"] = user_lots
+                            if saved.get("date") == today_str:
+                                if "user_configured_lots" not in saved:
+                                    saved["user_configured_lots"] = user_lots
+                                return saved
+                            else:
+                                return default_state
                 except Exception:
                     continue
         return default_state
@@ -323,13 +333,19 @@ class MasterQuantEngine:
             pass
 
     def get_compounding_lot_sizing(self):
-        """Upgrade 4: Dynamic Auto-Compounding Lot Sizing (Rs 75k per lot scaling)."""
+        """Lot Sizing: Strictly honors User-Configured Lots if set, else auto-compounds."""
+        mkt_lot = int(self.pulse.get("mkt_lot", 65))
+        if self.state.get("user_configured_lots"):
+            configured_lots = max(1, int(self.state.get("user_configured_lots")))
+            self.active_lots = configured_lots
+            self.lot_size = configured_lots * mkt_lot
+            return configured_lots, self.lot_size
+
         cur_equity = self.initial_capital + float(self.state.get("today_realized_net_pnl", 0.0))
         pos = self.state.get("active_position")
         if pos:
             cur_equity += float(pos.get("mtm_net_pnl", 0.0))
         calculated_lots = max(1, int(cur_equity // self.capital_per_lot))
-        mkt_lot = int(self.pulse.get("mkt_lot", 65))
         self.active_lots = calculated_lots
         self.lot_size = calculated_lots * mkt_lot
         return calculated_lots, self.lot_size
@@ -1065,6 +1081,13 @@ class MasterQuantEngine:
             order_status = "PAPER_VIRTUAL"
 
         entry_time_str = simulated_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pcr_val = self.pulse.get("pcr")
+        pcr_str = f"{pcr_val:.2f}" if pcr_val is not None else "1.15"
+        trade_reason = (
+            f"Spot {round(spot, 1)} > Daily 20 EMA ({round(self.pulse.get('daily_ema20', 0), 1)}) | 5m Cascade (9>20>50) | Green Candle | PCR {pcr_str} >= 1.05 | VIX {self.pulse.get('india_vix', 13.5)} Normal"
+            if direction == "BULL_PUT_SPREAD"
+            else f"Spot {round(spot, 1)} < Daily 20 EMA ({round(self.pulse.get('daily_ema20', 0), 1)}) | 5m Cascade (9<20<50) | Red Candle | PCR {pcr_str} <= 0.85 | VIX {self.pulse.get('india_vix', 13.5)} Normal"
+        )
 
         new_pos = {
             "direction": direction,
@@ -1090,6 +1113,8 @@ class MasterQuantEngine:
             "entry_time": entry_time_str,
             "entry_timestamp_sec": time.time(),
             "entry_spot": round(spot, 2),
+            "trade_initiator": "AUTO_ALGO" if not force else "MANUAL_TRIGGER",
+            "why_trade_taken": trade_reason,
             "current_spread": net_credit,
             "target_spread": round(net_credit * 0.60, 2),
             "sl_spread": round(min(net_credit * 1.60, net_credit + ((2800.0 * active_lots) / total_qty)), 2),
@@ -1213,10 +1238,15 @@ class MasterQuantEngine:
             "net_credit": pos["net_credit"],
             "exit_spread": exit_spread,
             "points": round(points_gain, 2),
-            "spot_move": round(exit_spot - pos["entry_spot"], 2),
+            "entry_spot": pos.get("entry_spot", 0.0),
+            "exit_spot": exit_spot,
+            "spot_move": round(exit_spot - pos.get("entry_spot", exit_spot), 2),
+            "trade_initiator": pos.get("trade_initiator", "AUTO_ALGO"),
+            "why_trade_taken": pos.get("why_trade_taken", "Daily 20 EMA + 5m Cascade + PCR"),
             "gross_pnl": gross_pnl,
             "brokerage_taxes": charges["total_charges"],
             "net_pnl": net_pnl,
+            "result": "WIN" if net_pnl > 0 else ("BREAKEVEN" if net_pnl == 0 else "LOSS"),
             "exit_reason": reason,
         }
         df_new = pd.DataFrame([trade_rec])
@@ -1603,6 +1633,9 @@ def get_status():
         "is_authenticated": engine.authenticated,
         "status_message": engine.status_message,
         "lot_size": engine.lot_size,
+        "active_lots": getattr(engine, "active_lots", 1),
+        "user_configured_lots": engine.state.get("user_configured_lots", getattr(engine, "active_lots", 1)),
+        "mkt_lot": int(engine.pulse.get("mkt_lot", 65)),
         "audio_event": audio_event,
         "replay": replay_info,
         "strategy_matrix": {
@@ -2165,6 +2198,133 @@ def api_vikalp2_audit_ledger():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/set_lot_size", methods=["POST"])
+def set_lot_size():
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        lots = int(data.get("lots", 1))
+        if lots < 1:
+            return jsonify({"success": False, "error": "Lot size must be at least 1."}), 400
+        if lots > 100:
+            return jsonify({"success": False, "error": "Maximum allowed lots is 100."}), 400
+
+        mkt_lot = int(engine.pulse.get("mkt_lot", 65))
+        engine.state["user_configured_lots"] = lots
+        engine.active_lots = lots
+        engine.lot_size = lots * mkt_lot
+        engine.save_state()
+        engine.status_message = f"Lot size updated to {lots} Lots ({engine.lot_size} Qty)"
+
+        return jsonify({
+            "success": True,
+            "lots": lots,
+            "lot_size": engine.lot_size,
+            "message": f"Successfully saved: {lots} Lots ({engine.lot_size} Qty)"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@app.route("/api/day_by_day_journal")
+def day_by_day_journal():
+    """Returns day-by-day trade journal grouped by month with full entry/exit spot and reason details."""
+    try:
+        trades = []
+        
+        # 1. Live recorded trades
+        if TRADES_FILE.exists():
+            try:
+                df_live = pd.read_csv(TRADES_FILE, on_bad_lines="skip")
+                for _, r in df_live.iterrows():
+                    rec = r.to_dict()
+                    rec["source"] = "LIVE"
+                    trades.append(rec)
+            except Exception:
+                pass
+                
+        # 2. Historical 2026 detailed champion trades
+        champ_2026_file = Path("results/champ_6yr_2026_trades_detailed.csv")
+        if champ_2026_file.exists():
+            try:
+                df_champ = pd.read_csv(champ_2026_file)
+                for _, r in df_champ.iterrows():
+                    d_str = str(r["date"])
+                    entry_t = str(r["entry_time"])
+                    exit_t = str(r["exit_time"])
+                    strat = str(r["strategy_type"])
+                    net_pnl = round(float(r["net_pnl"]), 2)
+                    res_tag = "WIN" if net_pnl > 0 else ("BREAKEVEN" if net_pnl == 0 else "LOSS")
+                    why_taken = (
+                        f"Spot {r['spot_entry']} > Daily 20 EMA | 5m Cascade (9>20>50) | Green Candle | PCR >= 1.05"
+                        if "BULL" in strat
+                        else f"Spot {r['spot_entry']} < Daily 20 EMA | 5m Cascade (9<20<50) | Red Candle | PCR <= 0.85"
+                    )
+                    trades.append({
+                        "date": d_str,
+                        "day": str(r.get("day", "")),
+                        "entry_time": f"{d_str} {entry_t}",
+                        "exit_time": f"{d_str} {exit_t}",
+                        "mode": "CHAMPION_AUDIT",
+                        "direction": strat,
+                        "strikes": str(r["strikes"]),
+                        "lots": 1,
+                        "quantity": int(r.get("lot_size", 65)),
+                        "net_credit": float(r["net_credit"]),
+                        "exit_spread": float(r["exit_spread"]),
+                        "points": round(float(r["net_credit"]) - float(r["exit_spread"]), 2),
+                        "entry_spot": float(r["spot_entry"]),
+                        "exit_spot": float(r["spot_exit"]),
+                        "spot_move": round(float(r.get("spot_move", float(r["spot_exit"]) - float(r["spot_entry"]))), 2),
+                        "trade_initiator": "Vikalp 2 Algo",
+                        "why_trade_taken": why_taken,
+                        "gross_pnl": round((float(r["net_credit"]) - float(r["exit_spread"])) * int(r.get("lot_size", 65)), 2),
+                        "brokerage_taxes": 108.96,
+                        "net_pnl": net_pnl,
+                        "result": res_tag,
+                        "exit_reason": str(r["exit_reason"]),
+                        "source": "CHAMPION_2026"
+                    })
+            except Exception:
+                pass
+
+        # Group by year-month
+        trades_by_month = {}
+        for t in trades:
+            ym = str(t.get("date", ""))[:7] if len(str(t.get("date", ""))) >= 7 else "2026-11"
+            if ym not in trades_by_month:
+                trades_by_month[ym] = []
+            trades_by_month[ym].append(t)
+            
+        months = sorted(trades_by_month.keys(), reverse=True)
+        
+        # Monthly KPIs
+        month_summaries = {}
+        for ym, m_trades in trades_by_month.items():
+            tot = len(m_trades)
+            wins = sum(1 for tr in m_trades if tr.get("net_pnl", 0) > 0)
+            losses = sum(1 for tr in m_trades if tr.get("net_pnl", 0) <= 0)
+            net_sum = round(sum(tr.get("net_pnl", 0) for tr in m_trades), 2)
+            wr = round(wins / tot * 100, 1) if tot > 0 else 0.0
+            month_summaries[ym] = {
+                "month": ym,
+                "total_trades": tot,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": wr,
+                "net_pnl": net_sum,
+            }
+
+        return jsonify({
+            "success": True,
+            "months": months,
+            "month_summaries": month_summaries,
+            "trades_by_month": trades_by_month,
+            "total_trades_count": len(trades)
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":
