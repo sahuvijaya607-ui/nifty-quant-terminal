@@ -1199,26 +1199,14 @@
             currentMode = data.execution_mode;
             updateSafetyUI(currentMode);
 
-            const feederBadge = document.getElementById('feeder-badge');
             const feederText = document.getElementById('feeder-text');
             const feederDot = document.getElementById('feeder-dot');
 
-            if (data.is_market_open) {
-                feederBadge.innerText = 'LIVE MARKET STREAM (KOTAK NEO)';
-                feederBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-                feederText.innerText = 'LIVE MARKET';
-                feederDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot';
-            } else {
-                feederBadge.innerText = 'HISTORICAL REPLAY MODE (OFF-MARKET)';
-                feederBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20';
-                feederText.innerText = 'REPLAY FEEDER';
-                feederDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 pulse-dot';
+            if (feederText) {
+                feederText.innerText = data.is_market_open ? 'LIVE MARKET' : 'KOTAK LIVE FEED';
             }
-
-            // Replay state info
-            if (data.replay) {
-                document.getElementById('replay-time-display').innerText = data.replay.time;
-                document.getElementById('replay-progress').innerText = data.replay.progress;
+            if (feederDot) {
+                feederDot.className = data.is_market_open ? 'w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot' : 'w-2.5 h-2.5 rounded-full bg-emerald-500';
             }
 
             // Wallet & Charges Bar (100% Dynamic Live Tracking)
