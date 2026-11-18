@@ -183,7 +183,7 @@ class MasterQuantEngine:
             "india_vix": 13.5,
             "vix_regime": "NORMAL_VOLATILITY (Champion)",
             "wing_distance": 350,
-            "next_expiry": "2026-11-24",
+            "next_expiry": self.get_next_tuesday_expiry(),
             "calls_count": 0,
             "puts_count": 0,
             "candle_5m_open": 25040.00,
@@ -333,6 +333,15 @@ class MasterQuantEngine:
         self.active_lots = calculated_lots
         self.lot_size = calculated_lots * mkt_lot
         return calculated_lots, self.lot_size
+
+    def get_next_tuesday_expiry(self, base_date=None):
+        """Strictly calculates the current or upcoming Tuesday weekly expiry date for NIFTY."""
+        if base_date is None:
+            base_date = get_ist_now().date()
+        # Monday is 0, Tuesday is 1, Wednesday is 2, ..., Sunday is 6
+        days_ahead = (1 - base_date.weekday()) % 7
+        tuesday_exp = base_date + timedelta(days=days_ahead)
+        return tuesday_exp.strftime("%Y-%m-%d")
 
     def get_adaptive_wing_distance(self):
         """Upgrade 5: India VIX-Adaptive Wing Distance (300/350/450 pts)."""
@@ -1290,11 +1299,12 @@ class MasterQuantEngine:
             self.proximity_polling = False
             pos["proximity_fast_polling"] = False
 
-        # Trailing Breakeven Trigger
+        # Trailing Breakeven Trigger (+25% Profit -> 0 Risk Lock)
         if not pos.get("breakeven_active") and (pts_gain >= entry_credit * 0.25):
             pos["breakeven_active"] = True
             pos["sl_spread"] = entry_credit
-            self.status_message = "Trailing SL Locked at BREAKEVEN (Zero Risk)!"
+            self.pending_audio_event = "BREAKEVEN_LOCKED"
+            self.status_message = "💎 TRAILING SL LOCKED: ZERO RISK (0 Rs Max Loss)!"
 
         # Exit conditions
         if current_spread <= pos["target_spread"]:
