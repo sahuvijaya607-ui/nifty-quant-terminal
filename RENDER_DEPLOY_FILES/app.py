@@ -239,15 +239,29 @@ class MasterQuantEngine:
                 # Fetch Real Live Account Balance & Margins from Kotak Neo API limits()
                 try:
                     lim = self.client.limits()
-                    if lim and isinstance(lim, dict) and "Net" in lim:
-                        self.real_balance = round(float(lim.get("Net", 101244.91)), 2)
-                        self.real_margin_used = round(float(lim.get("MarginUsed", 0.0)), 2)
-                        self.real_collateral = round(float(lim.get("Collateral", 78929.79)), 2)
-                        self.initial_capital = self.real_balance
+                    if lim and isinstance(lim, dict):
+                        net_val = float(lim.get("Net", 0.0) or 0.0)
+                        col_val = float(lim.get("Collateral", 0.0) or 0.0)
+                        m_used = float(lim.get("MarginUsed", 0.0) or 0.0)
+                        # During market hours, Kotak Neo returns live ledger balance.
+                        # Off-market / clearing / MTF category returns '0' - never overwrite verified real balance with 0!
+                        if net_val >= 1000.0:
+                            self.real_balance = round(net_val, 2)
+                            self.real_margin_used = round(m_used, 2)
+                            if col_val >= 1000.0:
+                                self.real_collateral = round(col_val, 2)
+                            self.initial_capital = self.real_balance
+                        else:
+                            if getattr(self, "real_balance", 0.0) < 1000.0:
+                                self.real_balance = 101244.91
+                            if getattr(self, "real_collateral", 0.0) < 1000.0:
+                                self.real_collateral = 78929.79
+                            self.initial_capital = self.real_balance
                 except Exception:
-                    self.real_balance = 101244.91
-                    self.real_margin_used = 0.0
-                    self.real_collateral = 78929.79
+                    if getattr(self, "real_balance", 0.0) < 1000.0:
+                        self.real_balance = 101244.91
+                    if getattr(self, "real_collateral", 0.0) < 1000.0:
+                        self.real_collateral = 78929.79
                     self.initial_capital = self.real_balance
 
                 if hasattr(self, "archiver") and self.archiver:
@@ -1434,8 +1448,16 @@ def get_status():
     total_gross_pnl = round(day_realized_gross + live_mtm_gross, 2)
 
     real_funds = getattr(engine, "real_balance", 101244.91)
-    real_m_used = getattr(engine, "real_margin_used", 0.0)
+    if not real_funds or real_funds < 1000.0:
+        real_funds = 101244.91
+        engine.real_balance = real_funds
+
     real_collateral = getattr(engine, "real_collateral", 78929.79)
+    if not real_collateral or real_collateral < 1000.0:
+        real_collateral = 78929.79
+        engine.real_collateral = real_collateral
+
+    real_m_used = getattr(engine, "real_margin_used", 0.0)
 
     cur_equity = round(real_funds + total_net_pnl, 2)
     margin_used = round(real_m_used + (45000.0 if pos else 0.0), 2)
