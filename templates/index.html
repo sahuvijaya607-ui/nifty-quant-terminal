@@ -1665,15 +1665,36 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ strike, opt_type: optType, action, price })
                 });
-                const data = await res.json();
-                if (data.success) {
-                    alert("✅ " + data.message);
-                    fetchStatus();
+
+                let data = null;
+                const contentType = res.headers.get("content-type") || "";
+                if (contentType.includes("application/json")) {
+                    try {
+                        data = await res.json();
+                    } catch (parseErr) {
+                        data = null;
+                    }
+                }
+
+                if (data) {
+                    if (data.success) {
+                        alert("✅ " + data.message);
+                        fetchStatus();
+                    } else {
+                        alert("❌ " + (data.message || "Order placement failed."));
+                    }
                 } else {
-                    alert("❌ " + (data.message || "Order placement failed."));
+                    const txt = await res.text().catch(() => "");
+                    if (res.status === 502 || res.status === 503) {
+                        alert(`⚠️ Render Server Restarting/Deploying (HTTP ${res.status}):\nRender par naya deployment chal raha hai ya server boot ho raha hai. Kripya 30 seconds wait karein aur page Refresh (Ctrl+F5) karke dobara punch karein.`);
+                    } else if (res.status === 400 || res.status === 500) {
+                        alert(`❌ Order Error (HTTP ${res.status}): ${txt.substring(0, 150) || "Server Error"}`);
+                    } else {
+                        alert(`⚠️ Server Notice (HTTP ${res.status}): Server se blank response mila. Exchange offline ya deploy update ho sakta hai.`);
+                    }
                 }
             } catch (e) {
-                alert("API Connection Error: " + e);
+                alert("API Connection Error: " + (e.message || e));
             }
         }
 

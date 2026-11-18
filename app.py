@@ -1758,92 +1758,101 @@ def api_reset_circuit_breaker():
 @app.route("/api/manual_order", methods=["POST"])
 def api_manual_order():
     """Executes single-leg BUY or SELL directly from the Option Chain on Kotak Neo."""
-    data = request.get_json() or {}
-    strike = int(data.get("strike", 0))
-    opt_type = str(data.get("opt_type", "CE")).upper()
-    action = str(data.get("action", "B")).upper()  # 'B' or 'S'
-    price = float(data.get("price", 0.0))
-    qty = engine.lot_size  # 65 qty (1 lot)
-
-    if not strike:
-        return jsonify({"success": False, "message": "Invalid strike price"}), 400
-
-    exp_str = engine.pulse.get("next_expiry", "2026-11-23")
     try:
-        exp_dt = datetime.strptime(str(exp_str)[:10], "%Y-%m-%d")
-        exp_code = exp_dt.strftime("%y%b").upper()
-    except Exception:
-        exp_code = "26NOV"
-    symbol = f"NIFTY{exp_code}{strike}{opt_type}"
-
-    # Match exact Kotak Neo symbol from live scrip search if available
-    if engine.client and engine.authenticated:
+        data = request.get_json(silent=True) or {}
         try:
-            scrips = engine.client.search_scrip(exchange_segment="nse_fo", symbol="NIFTY")
-            for s in (scrips or []):
-                if s.get("pInstType") == "OPTIDX" and s.get("pSymbolName") == "NIFTY" and s.get("pOptionType") == opt_type:
-                    strk_val = float(s.get("dStrikePrice;", 0))
-                    if int(strk_val / 100) == strike or int(strk_val) == strike:
-                        if exp_code.lower() in str(s.get("pExpiryDate", "")).lower() or exp_code in str(s.get("pTrdSymbol", "")):
-                            symbol = s.get("pTrdSymbol")
-                            break
+            strike = int(data.get("strike", 0))
+        except (ValueError, TypeError):
+            strike = 0
+        opt_type = str(data.get("opt_type", "CE")).upper()
+        action = str(data.get("action", "B")).upper()  # 'B' or 'S'
+        try:
+            price = float(data.get("price", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            price = 0.0
+        qty = engine.lot_size  # 65 qty (1 lot)
+
+        if not strike:
+            return jsonify({"success": False, "message": "Invalid strike price"}), 400
+
+        exp_str = engine.pulse.get("next_expiry", "2026-11-23")
+        try:
+            exp_dt = datetime.strptime(str(exp_str)[:10], "%Y-%m-%d")
+            exp_code = exp_dt.strftime("%y%b").upper()
         except Exception:
-            pass
+            exp_code = "26NOV"
+        symbol = f"NIFTY{exp_code}{strike}{opt_type}"
 
-    action_label = "BUY" if action == "B" else "SELL"
-    now_ist = get_ist_now()
-    is_mkt_open = (now_ist.weekday() < 5) and (d_time(9, 15) <= now_ist.time() <= d_time(15, 30))
-    amo_flag = "NO" if is_mkt_open else "YES"
+        # Match exact Kotak Neo symbol from live scrip search if available
+        if engine.client and engine.authenticated:
+            try:
+                scrips = engine.client.search_scrip(exchange_segment="nse_fo", symbol="NIFTY")
+                for s in (scrips or []):
+                    if s.get("pInstType") == "OPTIDX" and s.get("pSymbolName") == "NIFTY" and s.get("pOptionType") == opt_type:
+                        strk_val = float(s.get("dStrikePrice;", 0))
+                        if int(strk_val / 100) == strike or int(strk_val) == strike:
+                            if exp_code.lower() in str(s.get("pExpiryDate", "")).lower() or exp_code in str(s.get("pTrdSymbol", "")):
+                                symbol = s.get("pTrdSymbol")
+                                break
+            except Exception:
+                pass
 
-    if engine.execution_mode == "LIVE" and engine.authenticated and engine.client:
-        try:
-            res = engine.client.place_order(
-                exchange_segment="nse_fo",
-                product="NRML",
-                price=str(price) if price > 0 else "0",
-                order_type="L" if price > 0 else "MKT",
-                quantity=str(qty),
-                validity="DAY",
-                trading_symbol=symbol,
-                transaction_type=action,
-                amo=amo_flag,
-            )
+        action_label = "BUY" if action == "B" else "SELL"
+        now_ist = get_ist_now()
+        is_mkt_open = (now_ist.weekday() < 5) and (d_time(9, 15) <= now_ist.time() <= d_time(15, 30))
+        amo_flag = "NO" if is_mkt_open else "YES"
 
-            # Check for Kotak API rejection or error
-            stat = res.get("stat") if isinstance(res, dict) else None
-            st_code = res.get("stCode") if isinstance(res, dict) else None
-            order_id = res.get("nOrdNo") or res.get("data", {}).get("nOrdNo") if isinstance(res, dict) else None
+        if engine.execution_mode == "LIVE" and engine.authenticated and engine.client:
+            try:
+                res = engine.client.place_order(
+                    exchange_segment="nse_fo",
+                    product="NRML",
+                    price=str(price) if price > 0 else "0",
+                    order_type="L" if price > 0 else "MKT",
+                    quantity=str(qty),
+                    validity="DAY",
+                    trading_symbol=symbol,
+                    transaction_type=action,
+                    amo=amo_flag,
+                )
 
-            if stat == "Not_Ok" or not order_id:
-                err_msg = res.get("errMsg") or res.get("desc") or res.get("Error") or "Order placement rejected by Kotak Neo"
-                if st_code == 100008 or "unauthorized" in str(err_msg).lower():
-                    client_ip = "45.124.146.216"
-                    try:
-                        ip_info = engine.client.whatsmyip()
-                        if ip_info and isinstance(ip_info, dict) and ip_info.get("data"):
-                            client_ip = ip_info["data"][0].get("ip", client_ip)
-                    except Exception:
-                        pass
-                    msg = f"Kotak Neo Error 100008 (Unauthorized): Outbound IP {client_ip} Kotak Trade API Portal me whitelisted nahi hai. Please portal par jaakar IP whitelist karein."
-                    engine.status_message = f"Kotak API Order Blocked: IP {client_ip} Not Whitelisted"
-                    return jsonify({"success": False, "message": msg}), 400
+                # Check for Kotak API rejection or error
+                stat = res.get("stat") if isinstance(res, dict) else None
+                st_code = res.get("stCode") if isinstance(res, dict) else None
+                order_id = res.get("nOrdNo") or (res.get("data", {}).get("nOrdNo") if isinstance(res.get("data"), dict) else None) if isinstance(res, dict) else None
 
-                if st_code == 13 or "error from core" in str(err_msg).lower():
-                    friendly_msg = "Market Closed / Exchange Offline (stCode: 13): Raat ke samay NSE F&O Exchange band rehta hai. Subah 09:15 AM par market open hote hi Kotak Neo real orders execute karega!"
-                    engine.status_message = "Kotak Core: Market Closed (Exchange Offline)"
-                    return jsonify({"success": False, "message": friendly_msg}), 400
+                if stat == "Not_Ok" or not order_id:
+                    err_msg = res.get("errMsg") or res.get("desc") or res.get("Error") or "Order placement rejected by Kotak Neo"
+                    if st_code == 100008 or "unauthorized" in str(err_msg).lower():
+                        client_ip = "45.124.146.216"
+                        try:
+                            ip_info = engine.client.whatsmyip()
+                            if ip_info and isinstance(ip_info, dict) and ip_info.get("data"):
+                                client_ip = ip_info["data"][0].get("ip", client_ip)
+                        except Exception:
+                            pass
+                        msg = f"Kotak Neo Error 100008 (Unauthorized): Outbound IP {client_ip} Kotak Trade API Portal me whitelisted nahi hai. Please portal par jaakar IP whitelist karein."
+                        engine.status_message = f"Kotak API Order Blocked: IP {client_ip} Not Whitelisted"
+                        return jsonify({"success": False, "message": msg}), 400
 
-                engine.status_message = f"Kotak API Rejected: {err_msg}"
-                return jsonify({"success": False, "message": f"Kotak Neo Rejection: {err_msg} (stCode: {st_code})"}), 400
+                    if st_code == 13 or "error from core" in str(err_msg).lower():
+                        friendly_msg = "Market Closed / Exchange Offline (stCode: 13): Raat ke samay NSE F&O Exchange band rehta hai. Subah 09:15 AM par market open hote hi Kotak Neo real orders execute karega!"
+                        engine.status_message = "Kotak Core: Market Closed (Exchange Offline)"
+                        return jsonify({"success": False, "message": friendly_msg}), 400
 
-            engine.status_message = f"Real Order Placed: {action_label} {symbol} ({qty} Qty) [Order #{order_id}]"
-            return jsonify({"success": True, "message": f"KOTAK ORDER EXECUTED: {action_label} {symbol} ({qty} Qty) - Order #{order_id}"})
-        except Exception as e:
-            engine.status_message = f"Kotak Order Error: {str(e)[:35]}"
-            return jsonify({"success": False, "message": f"Kotak API Order Exception: {str(e)[:50]}"}), 500
-    else:
-        engine.status_message = f"Manual Order Registered: {action_label} {symbol} ({qty} Qty)"
-        return jsonify({"success": True, "message": f"ORDER RECORDED: {action_label} {symbol} ({qty} Qty)"})
+                    engine.status_message = f"Kotak API Rejected: {err_msg}"
+                    return jsonify({"success": False, "message": f"Kotak Neo Rejection: {err_msg} (stCode: {st_code})"}), 400
+
+                engine.status_message = f"Real Order Placed: {action_label} {symbol} ({qty} Qty) [Order #{order_id}]"
+                return jsonify({"success": True, "message": f"KOTAK ORDER EXECUTED: {action_label} {symbol} ({qty} Qty) - Order #{order_id}"})
+            except Exception as e:
+                engine.status_message = f"Kotak Order Error: {str(e)[:35]}"
+                return jsonify({"success": False, "message": f"Kotak API Order Exception: {str(e)[:60]}"}), 500
+        else:
+            engine.status_message = f"Manual Order Registered: {action_label} {symbol} ({qty} Qty)"
+            return jsonify({"success": True, "message": f"ORDER RECORDED: {action_label} {symbol} ({qty} Qty)"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Manual Order Handler Error: {str(e)}"}), 500
 
 
 @app.route("/api/trades")
