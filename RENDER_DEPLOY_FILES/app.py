@@ -1758,6 +1758,23 @@ def api_reset_circuit_breaker():
     return jsonify({"success": True, "message": "Circuit Breaker & Losses Reset."})
 
 
+@app.route("/api/reconnect", methods=["POST"])
+def api_reconnect():
+    """Force triggers Kotak Neo re-authentication with fresh dynamic TOTP and MPIN."""
+    try:
+        success = engine.authenticate()
+        return jsonify({
+            "success": bool(success),
+            "authenticated": engine.authenticated,
+            "message": engine.status_message,
+            "greeting": getattr(engine, "greeting", "RAHUL"),
+            "balance": engine.real_balance,
+            "time": datetime.now().strftime("%H:%M:%S")
+        })
+    except Exception as e:
+        return jsonify({"success": False, "authenticated": False, "message": f"Reconnect Exception: {str(e)}"}), 500
+
+
 @app.route("/api/manual_order", methods=["POST"])
 def api_manual_order():
     """Executes single-leg BUY or SELL directly from the Option Chain on Kotak Neo."""

@@ -53,6 +53,39 @@
 </head>
 <body class="min-h-screen flex flex-col justify-between">
 
+    <!-- CRITICAL DISCONNECT WARNING BANNER -->
+    <div id="kotak-disconnect-banner" class="hidden sticky top-0 z-[100] w-full bg-gradient-to-r from-red-700 via-rose-600 to-red-800 text-white shadow-2xl border-b-2 border-red-400 px-4 py-2.5 transition-all duration-300">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left">
+            <div class="flex items-center gap-3">
+                <span class="flex h-3.5 w-3.5 relative">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-300 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-yellow-400"></span>
+                </span>
+                <div>
+                    <div class="font-black text-sm md:text-base tracking-wide flex items-center gap-2 justify-center md:justify-start">
+                        <span>🚨 KOTAK NEO DISCONNECTED / SESSION EXPIRED</span>
+                        <span id="market-hours-badge" class="px-2 py-0.5 rounded bg-yellow-400 text-black text-[10px] font-black uppercase tracking-wider">LIVE MARKET RISK</span>
+                    </div>
+                    <div class="text-xs text-red-100 font-medium" id="disconnect-reason">
+                        Kotak Neo Trade API connection drop ho gaya hai! Live Algo orders pause hain.
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap justify-center">
+                <span id="auto-retry-timer" class="text-xs font-mono font-bold bg-black/40 px-3 py-1.5 rounded-lg border border-red-300/40 text-yellow-300">
+                    Auto-reconnecting in <span id="retry-countdown">10</span>s...
+                </span>
+                <button onclick="forceReconnectKotak()" id="btn-force-reconnect" class="px-4 py-1.5 bg-yellow-400 hover:bg-yellow-300 active:scale-95 text-black font-black text-xs rounded-lg shadow-lg shadow-black/30 transition flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-bolt"></i>
+                    <span>FORCE RECONNECT NOW</span>
+                </button>
+                <button onclick="toggleMuteAlarm()" id="btn-mute-alarm" class="px-3 py-1.5 bg-red-950/80 hover:bg-red-900 border border-red-300/30 text-white font-bold text-xs rounded-lg transition flex items-center gap-1 cursor-pointer">
+                    <span id="mute-icon">🔕</span> <span id="mute-label">MUTE ALARM (2m)</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Top Navigation Bar -->
     <header class="border-b border-slate-800 bg-[#0d131f]/95 backdrop-blur sticky top-0 z-50 px-6 py-3">
         <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
@@ -1088,6 +1121,214 @@
             fetchStatus();
         }
 
+        // Web Audio API Synthesizer for Disconnect Siren Alarm
+        let audioCtx = null;
+        let alarmOscillator = null;
+        let alarmGain = null;
+        let isAlarmPlaying = false;
+        let isAlarmMuted = false;
+        let muteTimer = null;
+        let countdownTimer = null;
+        let retrySecondsLeft = 10;
+        let isForceReconnecting = false;
+        let isKotakConnected = true;
+
+        function initAudioContext() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    audioCtx = new AudioContext();
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+        document.addEventListener('click', initAudioContext, { once: true });
+        document.addEventListener('touchstart', initAudioContext, { once: true });
+
+        function isPreMarketOrLive() {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const ist = new Date(utc + (3600000 * 5.5));
+            const day = ist.getDay();
+            if (day === 0 || day === 6) return false; // Weekend
+            const mins = ist.getHours() * 60 + ist.getMinutes();
+            // 09:00 AM (540m) to 15:30 PM (930m)
+            return (mins >= 540 && mins <= 930);
+        }
+
+        function playDisconnectSiren() {
+            if (isAlarmMuted || isAlarmPlaying) return;
+            if (!isPreMarketOrLive()) return; // Silent off-market
+            try {
+                initAudioContext();
+                if (!audioCtx) return;
+
+                alarmOscillator = audioCtx.createOscillator();
+                alarmGain = audioCtx.createGain();
+
+                // High-visibility dual-tone oscillating siren (850Hz - 1150Hz)
+                alarmOscillator.type = 'sawtooth';
+                const now = audioCtx.currentTime;
+                alarmOscillator.frequency.setValueAtTime(850, now);
+                alarmOscillator.frequency.linearRampToValueAtTime(1150, now + 0.3);
+                alarmOscillator.frequency.linearRampToValueAtTime(850, now + 0.6);
+                alarmOscillator.frequency.linearRampToValueAtTime(1150, now + 0.9);
+                alarmOscillator.frequency.linearRampToValueAtTime(850, now + 1.2);
+
+                alarmGain.gain.setValueAtTime(0.12, now); // Audible safe volume
+
+                alarmOscillator.connect(alarmGain);
+                alarmGain.connect(audioCtx.destination);
+
+                alarmOscillator.start();
+                isAlarmPlaying = true;
+
+                alarmOscillator.onended = () => {
+                    isAlarmPlaying = false;
+                    if (!isKotakConnected && !isAlarmMuted && isPreMarketOrLive()) {
+                        setTimeout(playDisconnectSiren, 1200);
+                    }
+                };
+                alarmOscillator.stop(now + 1.2);
+            } catch (e) {
+                console.warn("Alarm audio notice:", e);
+            }
+        }
+
+        function stopDisconnectSiren() {
+            if (alarmOscillator) {
+                try { alarmOscillator.stop(); } catch(e){}
+                alarmOscillator = null;
+            }
+            isAlarmPlaying = false;
+        }
+
+        function toggleMuteAlarm() {
+            isAlarmMuted = true;
+            stopDisconnectSiren();
+            const muteLabel = document.getElementById('mute-label');
+            const muteBtn = document.getElementById('btn-mute-alarm');
+            if (muteLabel) muteLabel.textContent = "MUTED (2m)";
+            if (muteBtn) muteBtn.classList.add("bg-emerald-800", "border-emerald-400");
+
+            clearTimeout(muteTimer);
+            muteTimer = setTimeout(() => {
+                isAlarmMuted = false;
+                if (muteLabel) muteLabel.textContent = "MUTE ALARM (2m)";
+                if (muteBtn) muteBtn.classList.remove("bg-emerald-800", "border-emerald-400");
+            }, 120000); // 2 minutes snooze
+        }
+
+        function startAutoRetryCountdown() {
+            if (countdownTimer) return;
+            retrySecondsLeft = 10;
+            const cdEl = document.getElementById('retry-countdown');
+            if (cdEl) cdEl.textContent = retrySecondsLeft;
+
+            countdownTimer = setInterval(() => {
+                retrySecondsLeft--;
+                if (cdEl) cdEl.textContent = Math.max(0, retrySecondsLeft);
+                if (retrySecondsLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                    if (!isKotakConnected) {
+                        forceReconnectKotak(true);
+                    }
+                }
+            }, 1000);
+        }
+
+        function stopAutoRetryCountdown() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+            retrySecondsLeft = 10;
+        }
+
+        async function forceReconnectKotak(isAuto = false) {
+            if (isForceReconnecting) return;
+            isForceReconnecting = true;
+            const btn = document.getElementById('btn-force-reconnect');
+            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span>RECONNECTING...</span>`;
+
+            try {
+                const res = await fetch('/api/reconnect', { method: 'POST' });
+                const d = await res.json();
+                if (d.success && d.authenticated) {
+                    isKotakConnected = true;
+                    stopDisconnectSiren();
+                    stopAutoRetryCountdown();
+                    const banner = document.getElementById('kotak-disconnect-banner');
+                    if (banner) banner.classList.add('hidden');
+                    alert("✅ Kotak Neo Successfully Reconnected: " + (d.greeting || "RAHUL"));
+                    fetchStatus();
+                } else {
+                    console.warn("Reconnect attempt result:", d.message);
+                    if (!isAuto) {
+                        alert("⚠️ Reconnect Result: " + (d.message || "Could not re-authenticate."));
+                    }
+                    startAutoRetryCountdown();
+                }
+            } catch (err) {
+                console.error("Reconnect error:", err);
+                startAutoRetryCountdown();
+            } finally {
+                isForceReconnecting = false;
+                if (btn) btn.innerHTML = `<i class="fa-solid fa-bolt"></i><span>FORCE RECONNECT NOW</span>`;
+            }
+        }
+
+        function checkConnectionStatus(data) {
+            const isAuth = Boolean(data.is_authenticated);
+            const statusMsg = data.status_message || '';
+            isKotakConnected = isAuth;
+
+            const banner = document.getElementById('kotak-disconnect-banner');
+            const authStatus = document.getElementById('auth-status');
+            const reasonEl = document.getElementById('disconnect-reason');
+            const marketBadge = document.getElementById('market-hours-badge');
+
+            if (!isAuth) {
+                // DISCONNECTED STATE
+                if (banner) banner.classList.remove('hidden');
+                if (authStatus) {
+                    authStatus.className = 'text-rose-400 font-bold ml-1 animate-pulse';
+                    authStatus.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> Kotak DISCONNECTED`;
+                }
+                if (reasonEl) {
+                    reasonEl.innerText = statusMsg || "Kotak Trade API session expired / disconnected. Algo orders are PAUSED.";
+                }
+
+                if (isPreMarketOrLive()) {
+                    if (marketBadge) {
+                        marketBadge.innerText = "LIVE MARKET RISK";
+                        marketBadge.className = "px-2 py-0.5 rounded bg-yellow-400 text-black text-[10px] font-black uppercase tracking-wider";
+                    }
+                    playDisconnectSiren();
+                    startAutoRetryCountdown();
+                } else {
+                    if (marketBadge) {
+                        marketBadge.innerText = "OFF-MARKET (NIGHT)";
+                        marketBadge.className = "px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-bold uppercase tracking-wider";
+                    }
+                    stopDisconnectSiren(); // No alarm at night
+                    startAutoRetryCountdown();
+                }
+            } else {
+                // CONNECTED STATE
+                if (banner) banner.classList.add('hidden');
+                stopDisconnectSiren();
+                stopAutoRetryCountdown();
+                if (authStatus) {
+                    authStatus.className = 'text-emerald-400 font-bold ml-1';
+                    authStatus.innerHTML = `<i class="fa-solid fa-circle-check"></i> Kotak Neo Live (${data.account_greeting || 'RAHUL'})`;
+                }
+            }
+        }
+
         // Real-Time Polling & Rendering
         async function fetchStatus() {
             try {
@@ -1113,6 +1354,9 @@
         }
 
         function renderUI(data) {
+            // Check connection status & trigger warning siren/countdown if disconnected
+            checkConnectionStatus(data);
+
             // Header & Feeder
             document.getElementById('trader-name').innerText = data.account_greeting || 'RAHUL';
             document.getElementById('clock-display').innerText = data.time || '';
