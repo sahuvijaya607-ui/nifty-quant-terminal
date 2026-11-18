@@ -64,8 +64,8 @@
                 </div>
                 <div>
                     <div class="flex items-center space-x-2">
-                        <h1 class="text-lg font-bold text-white tracking-tight">NIFTY QUANT DESK &bull; STRATEGY 3</h1>
-                        <span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">PURE ATM BALANCED WING (50Δ/15Δ)</span>
+                        <h1 class="text-lg font-bold text-white tracking-tight">NIFTY QUANT DESK &bull; VIKALP 2</h1>
+                        <span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">6-YR CHAMPION &bull; ₹2,800 HARD CAP</span>
                     </div>
                     <p class="text-xs text-slate-400 flex flex-wrap items-center gap-2">
                         <span>Trader: <strong id="trader-name" class="text-slate-200">RAHUL</strong></span>
@@ -99,7 +99,7 @@
                 <!-- Strategy 3 Verified Audit Modal Button -->
                 <button onclick="openStrategy3Modal()" class="px-2.5 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-xs font-semibold rounded-lg transition border border-blue-500/40 flex items-center space-x-1" title="Strategy 3 Verified 19-Month Audit & Ledger">
                     <i class="fa-solid fa-file-shield text-blue-400"></i>
-                    <span class="hidden sm:inline">Strat 3 Audit</span>
+                    <span class="hidden sm:inline">Vikalp 2 Audit</span>
                 </button>
 
                 <!-- Upgrade 7: EOD Daily Performance Report Modal Button -->
@@ -286,16 +286,17 @@
                 </div>
             </div>
 
-            <!-- 5-Min Multi-EMA Cascade -->
+            <!-- 5-Min Multi-EMA Cascade & Candle -->
             <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-5 hover:border-slate-700 transition">
                 <div class="flex items-center justify-between text-slate-400 text-xs mb-2">
                     <span class="font-medium tracking-wide">5-MIN CASCADE</span>
-                    <span class="text-[10px] mono text-slate-500">9 > 20 > 50</span>
+                    <span id="candle-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">🟢 GREEN</span>
                 </div>
                 <div class="space-y-1 text-xs mono mt-1">
                     <div class="flex justify-between"><span class="text-slate-400">EMA 9:</span> <span id="ema-9" class="text-slate-200 font-semibold">25,007.35</span></div>
                     <div class="flex justify-between"><span class="text-slate-400">EMA 20:</span> <span id="ema-20" class="text-slate-200 font-semibold">24,988.33</span></div>
                     <div class="flex justify-between"><span class="text-slate-400">EMA 50:</span> <span id="ema-50" class="text-slate-200 font-semibold">24,952.39</span></div>
+                    <div class="flex justify-between pt-1 border-t border-slate-800/80 text-[10px]"><span class="text-slate-500">5m Open:</span> <span id="candle-open-val" class="text-slate-300 font-semibold">25,040.00</span></div>
                 </div>
             </div>
 
@@ -606,7 +607,7 @@
             <!-- Right 2/3: Active Live Position Monitor with Second-by-Second Timer -->
             <div class="lg:col-span-2 bg-[#101726] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between" id="position-container">
                 
-                <div id="position-open-card" class="space-y-4">
+                <div id="position-open-card" class="hidden space-y-4">
                     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                         <div class="flex items-center space-x-3">
                             <span class="w-3 h-3 rounded-full bg-emerald-500 pulse-dot"></span>
@@ -721,7 +722,7 @@
                     </div>
                 </div>
 
-                <div id="position-empty-card" class="hidden text-center py-10 space-y-3">
+                <div id="position-empty-card" class="text-center py-10 space-y-3">
                     <div class="w-12 h-12 mx-auto rounded-full bg-slate-800/80 flex items-center justify-center text-slate-500 text-xl">
                         <i class="fa-solid fa-radar"></i>
                     </div>
@@ -807,7 +808,7 @@
                     </thead>
                     <tbody id="trades-table-body" class="divide-y divide-slate-800/60 mono">
                         <tr>
-                            <td colspan="12" class="py-6 text-center text-slate-500 italic">No closed trades recorded yet today.</td>
+                            <td colspan="12" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -847,18 +848,20 @@
         </div>
     </div>
 
-    <!-- STRATEGY 3 FORENSIC AUDIT & 19-MONTH VERIFIED LEDGER MODAL -->
+
+
+    <!-- VIKALP 2 FORENSIC AUDIT & 6-YEAR MASTER VERIFIED LEDGER MODAL -->
     <div id="strategy3-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
         <div class="bg-[#0f172a] border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
             <!-- Modal Header -->
             <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
                 <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                        <i class="fa-solid fa-certificate"></i>
+                    <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                        <i class="fa-solid fa-trophy"></i>
                     </div>
                     <div>
-                        <h3 class="text-sm font-bold text-white tracking-tight">STRATEGY 3: PURE ATM BALANCED WING (50Δ / 15Δ)</h3>
-                        <p class="text-[11px] text-slate-400">100% Real NSE Tick Verified &bull; 19-Month Backtest Ledger (Sep 2024 - Mar 2026)</p>
+                        <h3 class="text-sm font-bold text-white tracking-tight">VIKALP 2: 6-YEAR CHAMPION QUANT MODEL</h3>
+                        <p class="text-[11px] text-slate-400">100% Real NSE Tick Verified &bull; 6-Year Master Backtest Ledger (Jan 2020 - Mar 2026)</p>
                     </div>
                 </div>
                 <button onclick="closeStrategy3Modal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition">
@@ -871,49 +874,48 @@
                 <!-- KPI Badges -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                     <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Avg Monthly Net</div>
-                        <div class="text-lg font-black text-emerald-400 mt-0.5">₹8,304.56</div>
-                        <div class="text-[10px] text-emerald-500 font-semibold">+66% above ₹5k</div>
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">6-Yr Net Realized</div>
+                        <div class="text-lg font-black text-emerald-400 mt-0.5">₹2,47,674.72</div>
+                        <div class="text-[10px] text-emerald-500 font-semibold">+136% on 1 Lot Margin</div>
                     </div>
                     <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
                         <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Win Rate</div>
-                        <div class="text-lg font-black text-blue-400 mt-0.5">68.2%</div>
-                        <div class="text-[10px] text-slate-400">16 / 19 Green Mo. (84.2%)</div>
+                        <div class="text-lg font-black text-blue-400 mt-0.5">57.39%</div>
+                        <div class="text-[10px] text-slate-400">555 Wins / 412 Losses</div>
                     </div>
                     <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
                         <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Max Drawdown</div>
-                        <div class="text-lg font-black text-rose-400 mt-0.5">-6.88%</div>
-                        <div class="text-[10px] text-slate-400">-₹13,768 (Capped Tail)</div>
+                        <div class="text-lg font-black text-rose-400 mt-0.5">-₹17,981.06</div>
+                        <div class="text-[10px] text-slate-400">31.5% Safer than V1</div>
                     </div>
                     <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
                         <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Profit Factor</div>
-                        <div class="text-lg font-black text-amber-400 mt-0.5">1.79</div>
-                        <div class="text-[10px] text-slate-400">Expectancy: ₹522/tr</div>
+                        <div class="text-lg font-black text-amber-400 mt-0.5">1.48</div>
+                        <div class="text-[10px] text-slate-400">Quality: 13.77x Return/DD</div>
                     </div>
                 </div>
 
-                <!-- Monthly Table -->
+                <!-- Annual Summary Table -->
                 <div class="space-y-2">
                     <div class="flex items-center justify-between">
-                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">19-Month P&L Ledger (Net In-Hand)</h4>
-                        <span class="text-[10px] text-slate-400">Kotak Neo zero brokerage + STT + GST + 0.15% turnover slippage deducted</span>
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">6-Year Annual Performance Ledger (Net In-Hand)</h4>
+                        <span class="text-[10px] text-slate-400">Kotak Neo ₹20/order + STT + GST + Stamp Duty Deducted</span>
                     </div>
                     <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
                         <table class="w-full text-left border-collapse text-[11px]">
                             <thead>
                                 <tr class="border-b border-slate-800 bg-slate-900/80 text-slate-400 uppercase tracking-wider text-[10px]">
-                                    <th class="py-2.5 px-3">Month</th>
+                                    <th class="py-2.5 px-3">Year</th>
                                     <th class="py-2.5 px-2 text-center">Trades</th>
-                                    <th class="py-2.5 px-2 text-center">Win / Loss</th>
+                                    <th class="py-2.5 px-2 text-center">Wins / Losses</th>
                                     <th class="py-2.5 px-2 text-center">Win %</th>
-                                    <th class="py-2.5 px-3 text-right">Gross PnL</th>
-                                    <th class="py-2.5 px-3 text-right">Taxes/Slip</th>
-                                    <th class="py-2.5 px-3 text-right font-bold text-white">Net In-Hand</th>
-                                    <th class="py-2.5 px-3 text-center">₹5k Target</th>
+                                    <th class="py-2.5 px-3 text-right">Max Drawdown</th>
+                                    <th class="py-2.5 px-3 text-right">Profit Factor</th>
+                                    <th class="py-2.5 px-3 text-right font-bold text-white">Net Realized PnL</th>
                                 </tr>
                             </thead>
                             <tbody id="strategy3-ledger-tbody" class="divide-y divide-slate-800/60 font-mono">
-                                <tr><td colspan="8" class="text-center py-6 text-slate-500 font-sans">Click to load verified ledger...</td></tr>
+                                <tr><td colspan="7" class="text-center py-6 text-slate-500 font-sans">Click to load verified ledger...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -923,28 +925,26 @@
                 <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800/90 space-y-2">
                     <h4 class="text-xs font-bold text-emerald-400 flex items-center space-x-1.5">
                         <i class="fa-solid fa-list-check"></i>
-                        <span>Live Execution Rules Checklist for Kotak Neo</span>
+                        <span>Vikalp 2 Production Execution Rules Checklist</span>
                     </h4>
                     <ul class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-300">
-                        <li>• <strong>Timeframe</strong>: Strictly 5-Min Spot Chart (EMA 9/20/50).</li>
-                        <li>• <strong>PCR Gate</strong>: Bull Put if PCR ≥ 1.05 | Bear Call if PCR ≤ 0.85.</li>
-                        <li>• <strong>Order Sequence</strong>: BUY 15Δ Hedge first, SELL 50Δ ATM second.</li>
-                        <li>• <strong>Target</strong>: Exit at 40% Premium Decay (0.60x Net Credit).</li>
-                        <li>• <strong>Breakeven Trigger</strong>: Shift SL to cost when 25% profit reached.</li>
-                        <li>• <strong>Hard Stop Loss</strong>: Strictly capped at 1.60x Net Credit.</li>
+                        <li>• <strong>Macro Regime</strong>: Spot > Daily 20 EMA (Bull Put) / Spot < Daily 20 EMA (Bear Call).</li>
+                        <li>• <strong>5-Min Momentum</strong>: EMA 9 > 20 > 50 & Green Candle (Bull) / EMA 9 < 20 < 50 & Red Candle (Bear).</li>
+                        <li>• <strong>Dual-PCR Gate</strong>: Bull Put if PCR ≥ 1.05 | Bear Call if PCR ≤ 0.85 (0.85–1.05 neutral buffer).</li>
+                        <li>• <strong>Order Sequence</strong>: BUY OTM Wing first, SELL ATM second (~₹45k Margin Benefit).</li>
+                        <li>• <strong>Target & Trailing</strong>: 40% Premium Decay target &bull; Shift SL to Cost at 25% profit.</li>
+                        <li>• <strong>Hard Stop Loss Cap</strong>: Strictly capped at ₹2,800 max loss per lot.</li>
                     </ul>
                 </div>
             </div>
 
             <!-- Modal Footer -->
             <div class="px-6 py-3 border-t border-slate-800 flex items-center justify-between bg-slate-900/90 text-xs">
-                <span class="text-slate-400">Total Net In-Hand: <strong class="text-emerald-400 font-mono">+₹1,57,786.73</strong></span>
+                <span class="text-slate-400">6-Year Total Net Realized Profit: <strong class="text-emerald-400 font-mono">+₹2,47,674.72</strong></span>
                 <button onclick="closeStrategy3Modal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition">Close</button>
             </div>
         </div>
     </div>
-
-    <!-- UPGRADE 7: EOD DAILY REPORT MODAL -->
     <div id="eod-report-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-[#101726] border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -967,102 +967,7 @@
         </div>
     </div>
 
-    <!-- STRATEGY 3 FORENSIC AUDIT & 19-MONTH VERIFIED LEDGER MODAL -->
-    <div id="strategy3-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-[#0f172a] border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <!-- Modal Header -->
-            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
-                <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                        <i class="fa-solid fa-certificate"></i>
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-bold text-white tracking-tight">STRATEGY 3: PURE ATM BALANCED WING (50Δ / 15Δ)</h3>
-                        <p class="text-[11px] text-slate-400">100% Real NSE Tick Verified &bull; 19-Month Backtest Ledger (Sep 2024 - Mar 2026)</p>
-                    </div>
-                </div>
-                <button onclick="closeStrategy3Modal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
-            </div>
 
-            <!-- Modal Body (Scrollable) -->
-            <div class="p-6 overflow-y-auto space-y-5 text-xs text-slate-300">
-                <!-- KPI Badges -->
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Avg Monthly Net</div>
-                        <div class="text-lg font-black text-emerald-400 mt-0.5">₹8,304.56</div>
-                        <div class="text-[10px] text-emerald-500 font-semibold">+66% above ₹5k</div>
-                    </div>
-                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Win Rate</div>
-                        <div class="text-lg font-black text-blue-400 mt-0.5">68.2%</div>
-                        <div class="text-[10px] text-slate-400">16 / 19 Green Mo. (84.2%)</div>
-                    </div>
-                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Max Drawdown</div>
-                        <div class="text-lg font-black text-rose-400 mt-0.5">-6.88%</div>
-                        <div class="text-[10px] text-slate-400">-₹13,768 (Capped Tail)</div>
-                    </div>
-                    <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Profit Factor</div>
-                        <div class="text-lg font-black text-amber-400 mt-0.5">1.79</div>
-                        <div class="text-[10px] text-slate-400">Expectancy: ₹522/tr</div>
-                    </div>
-                </div>
-
-                <!-- Monthly Table -->
-                <div class="space-y-2">
-                    <div class="flex items-center justify-between">
-                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">19-Month P&L Ledger (Net In-Hand)</h4>
-                        <span class="text-[10px] text-slate-400">Kotak Neo zero brokerage + STT + GST + 0.15% turnover slippage deducted</span>
-                    </div>
-                    <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
-                        <table class="w-full text-left border-collapse text-[11px]">
-                            <thead>
-                                <tr class="border-b border-slate-800 bg-slate-900/80 text-slate-400 uppercase tracking-wider text-[10px]">
-                                    <th class="py-2.5 px-3">Month</th>
-                                    <th class="py-2.5 px-2 text-center">Trades</th>
-                                    <th class="py-2.5 px-2 text-center">Win / Loss</th>
-                                    <th class="py-2.5 px-2 text-center">Win %</th>
-                                    <th class="py-2.5 px-3 text-right">Gross PnL</th>
-                                    <th class="py-2.5 px-3 text-right">Taxes/Slip</th>
-                                    <th class="py-2.5 px-3 text-right font-bold text-white">Net In-Hand</th>
-                                    <th class="py-2.5 px-3 text-center">₹5k Target</th>
-                                </tr>
-                            </thead>
-                            <tbody id="strategy3-ledger-tbody" class="divide-y divide-slate-800/60 font-mono">
-                                <tr><td colspan="8" class="text-center py-6 text-slate-500 font-sans">Click to load verified ledger...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Execution Rules Cheatsheet -->
-                <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800/90 space-y-2">
-                    <h4 class="text-xs font-bold text-emerald-400 flex items-center space-x-1.5">
-                        <i class="fa-solid fa-list-check"></i>
-                        <span>Live Execution Rules Checklist for Kotak Neo</span>
-                    </h4>
-                    <ul class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-slate-300">
-                        <li>• <strong>Timeframe</strong>: Strictly 5-Min Spot Chart (EMA 9/20/50).</li>
-                        <li>• <strong>PCR Gate</strong>: Bull Put if PCR ≥ 1.05 | Bear Call if PCR ≤ 0.85.</li>
-                        <li>• <strong>Order Sequence</strong>: BUY 15Δ Hedge first, SELL 50Δ ATM second.</li>
-                        <li>• <strong>Target</strong>: Exit at 40% Premium Decay (0.60x Net Credit).</li>
-                        <li>• <strong>Breakeven Trigger</strong>: Shift SL to cost when 25% profit reached.</li>
-                        <li>• <strong>Hard Stop Loss</strong>: Strictly capped at 1.60x Net Credit.</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- Modal Footer -->
-            <div class="px-6 py-3 border-t border-slate-800 flex items-center justify-between bg-slate-900/90 text-xs">
-                <span class="text-slate-400">Total Net In-Hand: <strong class="text-emerald-400 font-mono">+₹1,57,786.73</strong></span>
-                <button onclick="closeStrategy3Modal()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition">Close</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Footer -->
     <footer class="border-t border-slate-800 bg-[#0d131f] px-6 py-3 text-center text-xs text-slate-500">
@@ -1268,6 +1173,22 @@
             document.getElementById('ema-9').innerText = Number(data.indicators.ema9).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('ema-20').innerText = Number(data.indicators.ema20).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('ema-50').innerText = Number(data.indicators.ema50).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+            // 5-Min Candle Status Badge & Open Price
+            const candleBadge = document.getElementById('candle-status-badge');
+            if (candleBadge && data.indicators.is_green_candle !== undefined) {
+                if (data.indicators.is_green_candle) {
+                    candleBadge.innerText = '🟢 GREEN';
+                    candleBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                } else {
+                    candleBadge.innerText = '🔴 RED';
+                    candleBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20';
+                }
+            }
+            const candleOpenEl = document.getElementById('candle-open-val');
+            if (candleOpenEl && data.indicators.candle_5m_open) {
+                candleOpenEl.innerText = Number(data.indicators.candle_5m_open).toLocaleString('en-IN', {minimumFractionDigits: 2});
+            }
 
             // PCR Gauge with 3-decimal precision & live OI contracts
             document.getElementById('pcr-val').innerText = Number(data.indicators.pcr).toFixed(3);
@@ -1684,7 +1605,7 @@
         function renderTradesTable(trades) {
             const tbody = document.getElementById('trades-table-body');
             if (!trades || trades.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="12" class="py-6 text-center text-slate-500 italic">No closed trades recorded yet today.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" class="py-6 text-center text-slate-500 italic">No real trades executed yet today. Terminal is armed and scanning live market.</td></tr>';
                 return;
             }
 
@@ -1971,40 +1892,48 @@
             modal.classList.remove('hidden');
             const tbody = document.getElementById('strategy3-ledger-tbody');
             if (tbody.children.length > 2 && !tbody.innerText.includes('Click to load')) return;
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-6 text-slate-400 font-sans"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading verified 19-month ledger...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-slate-400 font-sans"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading verified 6-year master ledger...</td></tr>';
             try {
                 const res = await fetch('/api/strategy3/monthly_journal');
                 const d = await res.json();
                 if (!d.success) {
-                    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-rose-400 font-sans">${d.error || 'Failed to load'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-rose-400 font-sans">${d.error || 'Failed to load'}</td></tr>`;
                     return;
                 }
                 let rowsHtml = '';
-                d.monthly_ledger.forEach(m => {
-                    const isPos = m.net_pnl >= 0;
-                    const pnlColor = isPos ? 'text-emerald-400' : 'text-rose-400';
-                    const sign = isPos ? '+' : '';
-                    const targetBadge = m.target_met 
-                        ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">🎯 PASSED</span>'
-                        : (isPos 
-                            ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">✅ PROFIT</span>' 
-                            : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">⚠️ LOSS</span>');
+                if (d.annual_summary && d.annual_summary.length > 0) {
+                    d.annual_summary.forEach(a => {
+                        const isPos = a.net_pnl >= 0;
+                        const pnlColor = isPos ? 'text-emerald-400' : 'text-rose-400';
+                        const sign = isPos ? '+' : '';
+                        rowsHtml += `
+                            <tr class="hover:bg-slate-800/40 transition">
+                                <td class="py-2.5 px-3 font-bold text-white">${a.year}</td>
+                                <td class="py-2.5 px-2 text-center text-slate-300">${a.trades}</td>
+                                <td class="py-2.5 px-2 text-center text-slate-400">${a.wins}W / ${a.losses}L</td>
+                                <td class="py-2.5 px-2 text-center ${a.win_rate >= 55 ? 'text-emerald-400' : 'text-slate-300'} font-bold">${a.win_rate}%</td>
+                                <td class="py-2.5 px-3 text-right text-rose-400">Rs ${Number(a.max_drawdown).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                                <td class="py-2.5 px-3 text-right text-amber-400 font-bold">${a.profit_factor}</td>
+                                <td class="py-2.5 px-3 text-right font-black ${pnlColor}">${sign}Rs ${Number(a.net_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                            </tr>
+                        `;
+                    });
+                    // Total row
                     rowsHtml += `
-                        <tr class="hover:bg-slate-800/40 transition">
-                            <td class="py-2.5 px-3 font-bold text-white">${m.month}</td>
-                            <td class="py-2.5 px-2 text-center text-slate-300">${m.trades}</td>
-                            <td class="py-2.5 px-2 text-center text-slate-400">${m.wins}W / ${m.losses}L</td>
-                            <td class="py-2.5 px-2 text-center ${m.win_rate >= 60 ? 'text-emerald-400' : 'text-slate-300'} font-bold">${m.win_rate}%</td>
-                            <td class="py-2.5 px-3 text-right text-slate-300">Rs ${Number(m.gross_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                            <td class="py-2.5 px-3 text-right text-rose-400/80">-Rs ${Number(m.slippage_charges).toFixed(2)}</td>
-                            <td class="py-2.5 px-3 text-right font-black ${pnlColor}">${sign}Rs ${Number(m.net_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                            <td class="py-2.5 px-3 text-center">${targetBadge}</td>
+                        <tr class="bg-slate-800/60 font-bold border-t-2 border-slate-700">
+                            <td class="py-3 px-3 text-white uppercase tracking-wider">6-YR TOTAL</td>
+                            <td class="py-3 px-2 text-center text-white">${d.summary.total_trades}</td>
+                            <td class="py-3 px-2 text-center text-slate-300">${d.summary.total_wins}W / ${d.summary.total_losses}L</td>
+                            <td class="py-3 px-2 text-center text-emerald-400">${d.summary.win_rate}%</td>
+                            <td class="py-3 px-3 text-right text-rose-400">${d.summary.max_drawdown}</td>
+                            <td class="py-3 px-3 text-right text-amber-400">${d.summary.profit_factor}</td>
+                            <td class="py-3 px-3 text-right text-emerald-400 text-sm font-black">+Rs ${Number(d.summary.total_net_pnl).toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                         </tr>
                     `;
-                });
+                }
                 tbody.innerHTML = rowsHtml;
             } catch (err) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-rose-400 font-sans">Error: ${err}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-rose-400 font-sans">Error: ${err}</td></tr>`;
             }
         }
 

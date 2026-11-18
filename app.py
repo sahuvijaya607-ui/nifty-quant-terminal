@@ -17,7 +17,7 @@ import sys
 import time
 import json
 import threading
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time as d_time
 from pathlib import Path
 from io import StringIO
 
@@ -186,6 +186,9 @@ class MasterQuantEngine:
             "next_expiry": "2026-11-24",
             "calls_count": 0,
             "puts_count": 0,
+            "candle_5m_open": 25040.00,
+            "is_green_candle": True,
+            "is_red_candle": False,
             "signal": "NEUTRAL_SCANNING",
             "option_chain": None,
         }
@@ -630,13 +633,26 @@ class MasterQuantEngine:
             e20 = self.pulse["ema20"]
             e50 = self.pulse["ema50"]
 
+            # 5-Minute Candle Tracking (Vikalp 2 Green vs Red Rule)
+            now_min = now_dt.minute
+            bucket_5m = (now_min // 5) * 5
+            if getattr(self, "current_5m_bucket", None) != bucket_5m:
+                self.current_5m_bucket = bucket_5m
+                self.candle_5m_open = spot
+            c_open = getattr(self, "candle_5m_open", spot)
+            is_green = bool(spot >= c_open)
+            is_red = bool(spot <= c_open)
+            self.pulse["candle_5m_open"] = round(c_open, 2)
+            self.pulse["is_green_candle"] = is_green
+            self.pulse["is_red_candle"] = is_red
+
             # Upgrade 1: Dual-PCR Adaptive Signal Engine
             bull_pcr_ok, bull_pcr_desc = self.check_bull_pcr()
             bear_pcr_ok, bear_pcr_desc = self.check_bear_pcr()
 
-            if bull_pcr_ok and (spot > d_ema) and (e9 > e20 > e50):
+            if bull_pcr_ok and (spot > d_ema) and (e9 > e20 > e50) and is_green:
                 self.pulse["signal"] = "BULL_PUT_SPREAD"
-            elif bear_pcr_ok and (spot < d_ema) and (e9 < e20 < e50):
+            elif bear_pcr_ok and (spot < d_ema) and (e9 < e20 < e50) and is_red:
                 self.pulse["signal"] = "BEAR_CALL_SPREAD"
             else:
                 self.pulse["signal"] = "NEUTRAL_SCANNING"
@@ -732,9 +748,19 @@ class MasterQuantEngine:
         self.pulse["daily_ema20"] = round(spot_close * 0.9850, 2)
         self.pulse["pcr"] = 1.18
 
-        # Strategy evaluation
-        if spot_close > self.pulse["daily_ema20"] and (self.pulse["ema9"] > self.pulse["ema20"] > self.pulse["ema50"]):
+        # 5-Min Candle Tracking in Replay
+        c_open = float(row.get("open", spot_close))
+        is_green = bool(spot_close >= c_open)
+        is_red = bool(spot_close <= c_open)
+        self.pulse["candle_5m_open"] = round(c_open, 2)
+        self.pulse["is_green_candle"] = is_green
+        self.pulse["is_red_candle"] = is_red
+
+        # Strategy evaluation (with Green/Red Candle filter)
+        if spot_close > self.pulse["daily_ema20"] and (self.pulse["ema9"] > self.pulse["ema20"] > self.pulse["ema50"]) and is_green:
             self.pulse["signal"] = "BULL_PUT_SPREAD"
+        elif spot_close < self.pulse["daily_ema20"] and (self.pulse["ema9"] < self.pulse["ema20"] < self.pulse["ema50"]) and is_red:
+            self.pulse["signal"] = "BEAR_CALL_SPREAD"
         else:
             self.pulse["signal"] = "NEUTRAL_SCANNING"
 
@@ -984,8 +1010,12 @@ class MasterQuantEngine:
         net_credit = round(exec_sell - exec_buy, 2)
 
         # Symbol generation for Kotak Neo F&O
-        exp_str = self.pulse["next_expiry"]
-        exp_code = f"{exp_str[2:4]}{exp_str[5:7]}"  # YYMM format e.g. 2611
+        exp_str = self.pulse.get("next_expiry", "2026-11-23")
+        try:
+            exp_dt = datetime.strptime(str(exp_str)[:10], "%Y-%m-%d")
+            exp_code = exp_dt.strftime("%y%b").upper()
+        except Exception:
+            exp_code = "26NOV"
         buy_symbol = buy_row.get("inst", {}).get("trdSym") or buy_row.get("trdSym") or f"NIFTY{exp_code}{buy_strike}{opt_type}"
         sell_symbol = sell_row.get("inst", {}).get("trdSym") or sell_row.get("trdSym") or f"NIFTY{exp_code}{sell_strike}{opt_type}"
 
@@ -1395,15 +1425,19 @@ def get_status():
     bull_pcr_ok, bull_pcr_desc = engine.check_bull_pcr()
     bear_pcr_ok, bear_pcr_desc = engine.check_bear_pcr()
 
-    # 1. Bull Put Spread Evaluation (Bullish Credit with Dual-PCR)
+    # 5-Min Candle Tracking (Vikalp 2 Green vs Red Rule)
+    is_green = engine.pulse.get("is_green_candle", True)
+    is_red = engine.pulse.get("is_red_candle", True)
+
+    # 1. Bull Put Spread Evaluation (Bullish Credit with Dual-PCR & Green Candle)
     bull_c1 = bool(spot > d_ema)
-    bull_c2 = bool(e9 > e20 > e50)
+    bull_c2 = bool((e9 > e20 > e50) and is_green)
     bull_c3 = bool(bull_pcr_ok)
     bull_score = sum([bull_c1, bull_c2, bull_c3, is_time_window, cond_circuit_breaker, cond_margin_safety])
 
-    # 2. Bear Call Spread Evaluation (Bearish Credit with Dual-PCR)
+    # 2. Bear Call Spread Evaluation (Bearish Credit with Dual-PCR & Red Candle)
     bear_c1 = bool(spot < d_ema)
-    bear_c2 = bool(e9 < e20 < e50)
+    bear_c2 = bool((e9 < e20 < e50) and is_red)
     bear_c3 = bool(bear_pcr_ok)
     bear_score = sum([bear_c1, bear_c2, bear_c3, is_time_window, cond_circuit_breaker, cond_margin_safety])
 
@@ -1430,7 +1464,11 @@ def get_status():
             lead_spread = "BULL_PUT_SPREAD"
             missing_bull = []
             if not bull_c1: missing_bull.append("Spot > Daily EMA")
-            if not bull_c2: missing_bull.append("5m Momentum (9>20>50)")
+            if not bull_c2:
+                if not (e9 > e20 > e50):
+                    missing_bull.append("5m Momentum (9>20>50)")
+                if not is_green:
+                    missing_bull.append("5m Green Candle (Close >= Open)")
             if not bull_c3: missing_bull.append(f"Weekly PCR >= 1.05 (Currently {pcr:.3f})")
             if not is_time_window: missing_bull.append("Time 09:30-14:30")
             if not cond_circuit_breaker: missing_bull.append("0 Loss Circuit Breaker")
@@ -1445,7 +1483,11 @@ def get_status():
             lead_spread = "BEAR_CALL_SPREAD"
             missing_bear = []
             if not bear_c1: missing_bear.append("Spot < Daily EMA")
-            if not bear_c2: missing_bear.append("5m Momentum (9<20<50)")
+            if not bear_c2:
+                if not (e9 < e20 < e50):
+                    missing_bear.append("5m Momentum (9<20<50)")
+                if not is_red:
+                    missing_bear.append("5m Red Candle (Close <= Open)")
             if not bear_c3: missing_bear.append(f"Weekly PCR <= 0.85 (Currently {pcr:.3f})")
             if not is_time_window: missing_bear.append("Time 09:30-14:30")
             if not cond_circuit_breaker: missing_bear.append("0 Loss Circuit Breaker")
@@ -1464,8 +1506,8 @@ def get_status():
         cond_pcr_sentiment = bear_c3
         c1_rule = "Spot < Daily 20 EMA (Bearish Macro Filter)"
         c1_metric = f"Spot: {spot:,.2f} < EMA: {d_ema:,.2f}"
-        c2_rule = "EMA 9 < EMA 20 < EMA 50 (Downward Momentum)"
-        c2_metric = f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f}"
+        c2_rule = "5m EMA 9 < 20 < 50 & Red Candle"
+        c2_metric = f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f} | Red: {is_red}"
         c3_rule = "Weekly PCR <= 0.85 (Call Writers Dominant / Bearish)"
         c3_metric = bear_pcr_desc
     else:
@@ -1474,8 +1516,8 @@ def get_status():
         cond_pcr_sentiment = bull_c3
         c1_rule = "Spot > Daily 20 EMA (Bullish Macro Filter)"
         c1_metric = f"Spot: {spot:,.2f} > EMA: {d_ema:,.2f}"
-        c2_rule = "EMA 9 > EMA 20 > EMA 50 (Upward Momentum)"
-        c2_metric = f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f}"
+        c2_rule = "5m EMA 9 > 20 > 50 & Green Candle"
+        c2_metric = f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f} | Green: {is_green}"
         c3_rule = "Weekly PCR >= 1.05 (Put Writers Dominant / Bullish)"
         c3_metric = bull_pcr_desc
 
@@ -1604,6 +1646,9 @@ def get_status():
             "pcr_sentiment": "BULLISH (>1.05)" if (engine.pulse["pcr"] and engine.pulse["pcr"] >= 1.05) else ("BEARISH (<0.85)" if (engine.pulse["pcr"] and engine.pulse["pcr"] <= 0.85) else "NEUTRAL (0.85-1.05)"),
             "signal": engine.pulse["signal"],
             "expiry": engine.pulse["next_expiry"],
+            "is_green_candle": engine.pulse.get("is_green_candle", True),
+            "is_red_candle": engine.pulse.get("is_red_candle", False),
+            "candle_5m_open": engine.pulse.get("candle_5m_open", spot),
         },
         "option_chain_table": chain_table,
         "active_position": engine.state.get("active_position"),
@@ -1715,24 +1760,33 @@ def api_manual_order():
     if not strike:
         return jsonify({"success": False, "message": "Invalid strike price"}), 400
 
-    exp_str = engine.pulse.get("next_expiry", "2026-11-24")
-    exp_code = f"{exp_str[2:4]}{exp_str[5:7]}"
+    exp_str = engine.pulse.get("next_expiry", "2026-11-23")
+    try:
+        exp_dt = datetime.strptime(str(exp_str)[:10], "%Y-%m-%d")
+        exp_code = exp_dt.strftime("%y%b").upper()
+    except Exception:
+        exp_code = "26NOV"
     symbol = f"NIFTY{exp_code}{strike}{opt_type}"
 
-    # Match exact Kotak Neo symbol if available
-    chain = engine.pulse.get("option_chain")
-    if chain and isinstance(chain, dict):
-        key = "call" if opt_type == "CE" else "put"
-        for item in chain.get(key, []):
-            try:
-                s = int(float(item.get("inst", {}).get("strkPrc", 0)))
-                if s == strike:
-                    symbol = item.get("inst", {}).get("trdSym") or item.get("trdSym") or symbol
-                    break
-            except Exception:
-                pass
+    # Match exact Kotak Neo symbol from live scrip search if available
+    if engine.client and engine.authenticated:
+        try:
+            scrips = engine.client.search_scrip(exchange_segment="nse_fo", symbol="NIFTY")
+            for s in (scrips or []):
+                if s.get("pInstType") == "OPTIDX" and s.get("pSymbolName") == "NIFTY" and s.get("pOptionType") == opt_type:
+                    strk_val = float(s.get("dStrikePrice;", 0))
+                    if int(strk_val / 100) == strike or int(strk_val) == strike:
+                        if exp_code.lower() in str(s.get("pExpiryDate", "")).lower() or exp_code in str(s.get("pTrdSymbol", "")):
+                            symbol = s.get("pTrdSymbol")
+                            break
+        except Exception:
+            pass
 
     action_label = "BUY" if action == "B" else "SELL"
+    now_ist = get_ist_now()
+    is_mkt_open = (now_ist.weekday() < 5) and (d_time(9, 15) <= now_ist.time() <= d_time(15, 30))
+    amo_flag = "NO" if is_mkt_open else "YES"
+
     if engine.execution_mode == "LIVE" and engine.authenticated and engine.client:
         try:
             res = engine.client.place_order(
@@ -1744,12 +1798,41 @@ def api_manual_order():
                 validity="DAY",
                 trading_symbol=symbol,
                 transaction_type=action,
+                amo=amo_flag,
             )
-            order_id = res.get("nOrdNo") or res.get("data", {}).get("nOrdNo") or "FILLED"
-            engine.status_message = f"Real Order Placed: {action_label} {symbol} ({qty} Qty)"
+
+            # Check for Kotak API rejection or error
+            stat = res.get("stat") if isinstance(res, dict) else None
+            st_code = res.get("stCode") if isinstance(res, dict) else None
+            order_id = res.get("nOrdNo") or res.get("data", {}).get("nOrdNo") if isinstance(res, dict) else None
+
+            if stat == "Not_Ok" or not order_id:
+                err_msg = res.get("errMsg") or res.get("desc") or res.get("Error") or "Order placement rejected by Kotak Neo"
+                if st_code == 100008 or "unauthorized" in str(err_msg).lower():
+                    client_ip = "45.124.146.216"
+                    try:
+                        ip_info = engine.client.whatsmyip()
+                        if ip_info and isinstance(ip_info, dict) and ip_info.get("data"):
+                            client_ip = ip_info["data"][0].get("ip", client_ip)
+                    except Exception:
+                        pass
+                    msg = f"Kotak Neo Error 100008 (Unauthorized): Outbound IP {client_ip} Kotak Trade API Portal me whitelisted nahi hai. Please portal par jaakar IP whitelist karein."
+                    engine.status_message = f"Kotak API Order Blocked: IP {client_ip} Not Whitelisted"
+                    return jsonify({"success": False, "message": msg}), 400
+
+                if st_code == 13 or "error from core" in str(err_msg).lower():
+                    friendly_msg = "Market Closed / Exchange Offline (stCode: 13): Raat ke samay NSE F&O Exchange band rehta hai. Subah 09:15 AM par market open hote hi Kotak Neo real orders execute karega!"
+                    engine.status_message = "Kotak Core: Market Closed (Exchange Offline)"
+                    return jsonify({"success": False, "message": friendly_msg}), 400
+
+                engine.status_message = f"Kotak API Rejected: {err_msg}"
+                return jsonify({"success": False, "message": f"Kotak Neo Rejection: {err_msg} (stCode: {st_code})"}), 400
+
+            engine.status_message = f"Real Order Placed: {action_label} {symbol} ({qty} Qty) [Order #{order_id}]"
             return jsonify({"success": True, "message": f"KOTAK ORDER EXECUTED: {action_label} {symbol} ({qty} Qty) - Order #{order_id}"})
         except Exception as e:
-            return jsonify({"success": False, "message": f"Kotak API Order Error: {str(e)[:45]}"}), 500
+            engine.status_message = f"Kotak Order Error: {str(e)[:35]}"
+            return jsonify({"success": False, "message": f"Kotak API Order Exception: {str(e)[:50]}"}), 500
     else:
         engine.status_message = f"Manual Order Registered: {action_label} {symbol} ({qty} Qty)"
         return jsonify({"success": True, "message": f"ORDER RECORDED: {action_label} {symbol} ({qty} Qty)"})
@@ -1925,56 +2008,87 @@ def api_daily_report():
     return jsonify(report)
 
 
+@app.route("/api/vikalp2/audit_ledger")
 @app.route("/api/strategy3/monthly_journal")
-def api_strategy3_monthly_journal():
+def api_vikalp2_audit_ledger():
     """
-    Returns Strategy 3: Pure ATM Balanced Wing (50Δ/15Δ)
-    19-Month Verified Audit Ledger & January 2026 Tick Audit.
+    Returns Vikalp 2: 6-Year Champion Quant Model (2020-2026)
+    Verified 967 Trades Audit Ledger, Year-by-Year & Monthly matrix.
     """
-    csv_path = Path("results/trades_Strat_3_Pure_ATM_D50_L15.csv")
+    csv_path = Path("results/vikalp2_full_967_trades_postmortem.csv")
+    matrix_path = Path("results/vikalp2_monthly_matrix.csv")
     if not csv_path.exists():
-        return jsonify({"success": False, "error": "Verified CSV not found"})
+        return jsonify({"success": False, "error": "Vikalp 2 verified CSV not found"})
 
     try:
         df = pd.read_csv(csv_path)
-        monthly_data = []
-        for ym, grp in df.groupby("year_month"):
-            trades = len(grp)
-            wins = int((grp["net_pnl"] > 0).sum())
-            losses = int((grp["net_pnl"] <= 0).sum())
-            wr = round(wins / trades * 100, 1) if trades > 0 else 0.0
-            gross = round(float(grp["gross_pnl"].sum()), 2)
-            slip = round(float(grp["slippage"].sum()), 2)
-            net = round(float(grp["net_pnl"].sum()), 2)
-            monthly_data.append({
-                "month": ym,
-                "trades": trades,
-                "wins": wins,
-                "losses": losses,
-                "win_rate": wr,
-                "gross_pnl": gross,
-                "slippage_charges": slip,
-                "net_pnl": net,
-                "target_met": bool(net >= 5000.0)
+        annual_data = []
+        for yr, ydf in df.groupby("year"):
+            y_trades = len(ydf)
+            y_wins = int((ydf["net_pnl"] > 0).sum())
+            y_losses = int((ydf["net_pnl"] <= 0).sum())
+            y_wr = round(y_wins / y_trades * 100, 1)
+            y_net = round(float(ydf["net_pnl"].sum()), 2)
+            y_eq = ydf["net_pnl"].cumsum()
+            y_dd = round(float((y_eq - y_eq.cummax()).min()), 2)
+            gw = ydf[ydf["net_pnl"] > 0]["net_pnl"].sum()
+            gl = abs(ydf[ydf["net_pnl"] <= 0]["net_pnl"].sum())
+            y_pf = round(float(gw / gl if gl > 0 else 99.0), 2)
+            annual_data.append({
+                "year": int(yr),
+                "trades": y_trades,
+                "wins": y_wins,
+                "losses": y_losses,
+                "win_rate": y_wr,
+                "net_pnl": y_net,
+                "max_drawdown": y_dd,
+                "profit_factor": y_pf
             })
 
-        jan_trades = df[df["year_month"] == "2026-01"].copy()
-        jan_list = jan_trades.to_dict(orient="records")
+        # Load monthly matrix
+        monthly_data = []
+        if matrix_path.exists():
+            df_m = pd.read_csv(matrix_path)
+            for _, r in df_m.iterrows():
+                monthly_data.append({
+                    "month": str(r["year_month"]),
+                    "trades": int(r["trades"]),
+                    "wins": int(r["wins"]),
+                    "win_rate": round(float(r["win_rate"]), 1),
+                    "net_pnl": round(float(r["net_pnl"]), 2),
+                    "is_positive": bool(r["net_pnl"] > 0)
+                })
+
+        total_net = round(float(df["net_pnl"].sum()), 2)
+        total_trades = len(df)
+        total_wins = int((df["net_pnl"] > 0).sum())
+        total_losses = int((df["net_pnl"] <= 0).sum())
+        win_rate = round(float(total_wins / total_trades * 100), 1)
+        eq = df["net_pnl"].cumsum()
+        max_dd = round(float((eq - eq.cummax()).min()), 2)
+        gw = df[df["net_pnl"] > 0]["net_pnl"].sum()
+        gl = abs(df[df["net_pnl"] <= 0]["net_pnl"].sum())
+        profit_factor = round(float(gw / gl if gl > 0 else 99.0), 2)
+
+        recent_trades = df.tail(15).to_dict(orient="records")
 
         return jsonify({
             "success": True,
-            "strategy": "Strategy 3: Pure ATM Balanced Wing (50Δ/15Δ)",
+            "strategy": "Vikalp 2: 6-Year Champion Quant Model (2020-2026)",
             "summary": {
-                "total_trades": len(df),
-                "total_net_pnl": round(float(df["net_pnl"].sum()), 2),
-                "avg_monthly_net": round(float(df["net_pnl"].sum() / len(monthly_data)), 2),
-                "win_rate": round(float((df["net_pnl"] > 0).sum() / len(df) * 100), 1),
-                "positive_months": f"{(sum(1 for m in monthly_data if m['net_pnl'] > 0))}/{len(monthly_data)} (84.2%)",
-                "max_drawdown": "-₹13,768.07 (-6.88%)",
-                "profit_factor": 1.79
+                "total_trades": total_trades,
+                "total_wins": total_wins,
+                "total_losses": total_losses,
+                "total_net_pnl": total_net,
+                "win_rate": win_rate,
+                "max_drawdown": f"-₹{abs(max_dd):,.2f}",
+                "profit_factor": profit_factor,
+                "return_on_drawdown": "13.77x",
+                "avg_trade_pnl": round(float(df["net_pnl"].mean()), 2)
             },
+            "annual_summary": annual_data,
             "monthly_ledger": monthly_data,
-            "jan_2026_trades": jan_list
+            "recent_trades": recent_trades
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})

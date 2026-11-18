@@ -35,7 +35,8 @@ data/
 # Scratch & Temporary Scripts
 scratch/
 tmp/
-logs/*.log
+logs/
+logs/*
 *.log
 
 # System Files

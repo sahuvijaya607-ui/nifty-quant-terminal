@@ -1,0 +1,8 @@
+Config ID,Strategy,Net Profit (Rs),Win Rate (%),Max Drawdown (Rs),Return / Max DD,Profit Factor,Total Trades,Target Hits,SL Hits,BE Hits,Time Exits,Avg Duration (min),Avg Win (Rs),Avg Loss (Rs)
+baseline_40pct,"Baseline (40% Decay, 25% BE)",247674.77,57.39,-17981.05,13.77,1.48,967,318,172,106,371,184.1,1384.41,-1263.77
+fixed_850_prop,Target Rs 850/lot (BE 50%),66591.85,54.28,-20942.96,3.18,1.17,1122,557,133,303,129,95.1,739.68,-748.3
+fixed_850_25be,Target Rs 850/lot (BE 25% Dec),70626.0,69.6,-22635.45,3.12,1.13,1217,766,184,38,229,118.0,731.66,-1484.04
+fixed_900_prop,Target Rs 900/lot (BE 50%),79265.03,54.03,-19760.87,4.01,1.21,1103,527,131,296,149,100.9,777.33,-757.44
+fixed_950_prop,Target Rs 950/lot (BE 50%),100753.19,54.4,-17770.77,5.67,1.26,1103,522,133,282,166,105.0,816.83,-774.04
+fixed_1000_prop,"Target Rs 1,000/lot (BE 50%)",112461.98,54.4,-21327.96,5.27,1.28,1092,509,134,275,174,109.7,858.32,-797.95
+fixed_1000_25be,"Target Rs 1,000/lot (BE 25% Dec)",110633.61,67.58,-21851.65,5.06,1.2,1163,671,181,51,260,130.3,847.87,-1474.25
