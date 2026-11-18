@@ -1702,6 +1702,59 @@ def api_reset_circuit_breaker():
     return jsonify({"success": True, "message": "Circuit Breaker & Losses Reset."})
 
 
+@app.route("/api/manual_order", methods=["POST"])
+def api_manual_order():
+    """Executes single-leg BUY or SELL directly from the Option Chain on Kotak Neo."""
+    data = request.get_json() or {}
+    strike = int(data.get("strike", 0))
+    opt_type = str(data.get("opt_type", "CE")).upper()
+    action = str(data.get("action", "B")).upper()  # 'B' or 'S'
+    price = float(data.get("price", 0.0))
+    qty = engine.lot_size  # 65 qty (1 lot)
+
+    if not strike:
+        return jsonify({"success": False, "message": "Invalid strike price"}), 400
+
+    exp_str = engine.pulse.get("next_expiry", "2026-11-24")
+    exp_code = f"{exp_str[2:4]}{exp_str[5:7]}"
+    symbol = f"NIFTY{exp_code}{strike}{opt_type}"
+
+    # Match exact Kotak Neo symbol if available
+    chain = engine.pulse.get("option_chain")
+    if chain and isinstance(chain, dict):
+        key = "call" if opt_type == "CE" else "put"
+        for item in chain.get(key, []):
+            try:
+                s = int(float(item.get("inst", {}).get("strkPrc", 0)))
+                if s == strike:
+                    symbol = item.get("inst", {}).get("trdSym") or item.get("trdSym") or symbol
+                    break
+            except Exception:
+                pass
+
+    action_label = "BUY" if action == "B" else "SELL"
+    if engine.execution_mode == "LIVE" and engine.authenticated and engine.client:
+        try:
+            res = engine.client.place_order(
+                exchange_segment="nse_fo",
+                product="NRML",
+                price=str(price) if price > 0 else "0",
+                order_type="L" if price > 0 else "MKT",
+                quantity=str(qty),
+                validity="DAY",
+                trading_symbol=symbol,
+                transaction_type=action,
+            )
+            order_id = res.get("nOrdNo") or res.get("data", {}).get("nOrdNo") or "FILLED"
+            engine.status_message = f"Real Order Placed: {action_label} {symbol} ({qty} Qty)"
+            return jsonify({"success": True, "message": f"KOTAK ORDER EXECUTED: {action_label} {symbol} ({qty} Qty) - Order #{order_id}"})
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Kotak API Order Error: {str(e)[:45]}"}), 500
+    else:
+        engine.status_message = f"Manual Order Registered: {action_label} {symbol} ({qty} Qty)"
+        return jsonify({"success": True, "message": f"ORDER RECORDED: {action_label} {symbol} ({qty} Qty)"})
+
+
 @app.route("/api/trades")
 def get_trades():
     if TRADES_FILE.exists():
