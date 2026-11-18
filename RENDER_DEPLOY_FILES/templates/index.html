@@ -146,10 +146,19 @@
                     <span class="hidden sm:inline">EOD Report</span>
                 </button>
 
+                <!-- PROMINENT KOTAK NEO LIVE CONNECTION STATUS BADGE -->
+                <div id="kotak-conn-badge" class="flex items-center space-x-2 bg-emerald-500/20 px-3.5 py-1.5 rounded-xl border border-emerald-400/60 text-emerald-300 shadow-lg shadow-emerald-500/20 glow-green">
+                    <span id="kotak-conn-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot"></span>
+                    <span id="kotak-conn-text" class="text-xs font-black tracking-wider uppercase flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+                        <span>KOTAK NEO: CONNECTED</span>
+                    </span>
+                </div>
+
                 <!-- DIRECT REAL TRADING BADGE (No Paper Mode) -->
                 <div class="flex items-center space-x-2 bg-rose-500/15 px-3 py-1.5 rounded-xl border border-rose-500/30 glow-red">
                     <span class="w-2.5 h-2.5 rounded-full bg-rose-500 pulse-dot"></span>
-                    <span class="text-xs font-black tracking-wider text-rose-400">REAL TRADING &bull; KOTAK NEO</span>
+                    <span class="text-xs font-black tracking-wider text-rose-400">REAL TRADING</span>
                 </div>
 
                 <!-- 1-Click Trigger -->
@@ -170,6 +179,9 @@
                     <strong id="cockpit-lead-spread" class="text-white font-bold tracking-wide">BULL PUT SPREAD</strong>
                     <span id="cockpit-lead-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold mono uppercase bg-amber-500/20 text-amber-300 border border-amber-500/50 glow-amber">
                         WAITING (5/6 TRUE)
+                    </span>
+                    <span id="cockpit-idle-conn" class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 flex items-center gap-1 glow-green">
+                        <i class="fa-solid fa-circle-check text-emerald-400"></i>KOTAK: CONNECTED
                     </span>
                 </div>
 
@@ -207,6 +219,7 @@
                         <div class="flex items-center space-x-2">
                             <strong id="cockpit-pos-title" class="text-white font-bold text-sm tracking-wide">BULL PUT SPREAD</strong>
                             <span id="cockpit-pos-mode" class="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">PAPER</span>
+                            <span id="cockpit-active-conn" class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 flex items-center gap-1 glow-green"><i class="fa-solid fa-circle-check text-emerald-400"></i>KOTAK: CONNECTED</span>
                             <span id="cockpit-trailing-be-badge" class="hidden px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 glow-green animate-pulse"><i class="fa-solid fa-gem mr-1 text-cyan-300"></i>0 RISK LOCKED</span>
                         </div>
                         <p class="text-[11px] text-slate-400 mono" id="cockpit-pos-legs">Sold 25050 PE @ Rs 114 | Bought 24700 PE @ Rs 30</p>
@@ -262,7 +275,10 @@
                 <div>
                     <div class="flex items-center space-x-2">
                         <span class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Kotak Neo Real Funds & Available Margin</span>
-                        <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">LIVE API &bull; UCC: XVQSH</span>
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-500/15 text-blue-400 border border-blue-500/30">LIVE API &bull; UCC: XVQSH</span>
+                        <span id="funds-conn-pill" class="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 flex items-center gap-1 glow-green">
+                            <i class="fa-solid fa-circle-check text-emerald-400"></i>CONNECTED
+                        </span>
                     </div>
                     <div class="flex items-baseline space-x-2">
                         <span class="text-lg font-extrabold text-white mono" id="cap-current">Rs 1,01,244.91</span>
@@ -1290,6 +1306,13 @@
             const reasonEl = document.getElementById('disconnect-reason');
             const marketBadge = document.getElementById('market-hours-badge');
 
+            const kConnBadge = document.getElementById('kotak-conn-badge');
+            const kConnDot = document.getElementById('kotak-conn-dot');
+            const kConnText = document.getElementById('kotak-conn-text');
+            const fundsConnPill = document.getElementById('funds-conn-pill');
+            const cockpitIdleConn = document.getElementById('cockpit-idle-conn');
+            const cockpitActiveConn = document.getElementById('cockpit-active-conn');
+
             if (!isAuth) {
                 // DISCONNECTED STATE
                 if (banner) banner.classList.remove('hidden');
@@ -1299,6 +1322,28 @@
                 }
                 if (reasonEl) {
                     reasonEl.innerText = statusMsg || "Kotak Trade API session expired / disconnected. Algo orders are PAUSED.";
+                }
+
+                if (kConnBadge) {
+                    kConnBadge.className = 'flex items-center space-x-2 bg-rose-500/25 px-3.5 py-1.5 rounded-xl border border-rose-500/60 text-rose-300 shadow-lg shadow-rose-500/25 glow-red animate-pulse';
+                }
+                if (kConnDot) {
+                    kConnDot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping';
+                }
+                if (kConnText) {
+                    kConnText.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400 mr-1.5"></i><span>KOTAK NEO: DISCONNECTED</span>`;
+                }
+                if (fundsConnPill) {
+                    fundsConnPill.className = 'px-2 py-0.5 rounded text-[9px] font-black uppercase bg-rose-500/25 text-rose-300 border border-rose-500/50 flex items-center gap-1 glow-red animate-pulse';
+                    fundsConnPill.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400"></i>DISCONNECTED`;
+                }
+                if (cockpitIdleConn) {
+                    cockpitIdleConn.className = 'px-2 py-0.5 rounded text-[10px] font-black uppercase bg-rose-500/25 text-rose-300 border border-rose-500/50 flex items-center gap-1 glow-red animate-pulse';
+                    cockpitIdleConn.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400"></i>KOTAK DISCONNECTED`;
+                }
+                if (cockpitActiveConn) {
+                    cockpitActiveConn.className = 'px-2 py-0.5 rounded text-[10px] font-black uppercase bg-rose-500/25 text-rose-300 border border-rose-500/50 flex items-center gap-1 glow-red animate-pulse';
+                    cockpitActiveConn.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose-400"></i>KOTAK DISCONNECTED`;
                 }
 
                 if (isPreMarketOrLive()) {
@@ -1324,6 +1369,28 @@
                 if (authStatus) {
                     authStatus.className = 'text-emerald-400 font-bold ml-1';
                     authStatus.innerHTML = `<i class="fa-solid fa-circle-check"></i> Kotak Neo Live (${data.account_greeting || 'RAHUL'})`;
+                }
+
+                if (kConnBadge) {
+                    kConnBadge.className = 'flex items-center space-x-2 bg-emerald-500/20 px-3.5 py-1.5 rounded-xl border border-emerald-400/60 text-emerald-300 shadow-lg shadow-emerald-500/20 glow-green';
+                }
+                if (kConnDot) {
+                    kConnDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot';
+                }
+                if (kConnText) {
+                    kConnText.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1.5"></i><span>KOTAK NEO: CONNECTED</span>`;
+                }
+                if (fundsConnPill) {
+                    fundsConnPill.className = 'px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 flex items-center gap-1 glow-green';
+                    fundsConnPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400"></i>CONNECTED`;
+                }
+                if (cockpitIdleConn) {
+                    cockpitIdleConn.className = 'px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 flex items-center gap-1 glow-green';
+                    cockpitIdleConn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400"></i>KOTAK: CONNECTED`;
+                }
+                if (cockpitActiveConn) {
+                    cockpitActiveConn.className = 'px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 flex items-center gap-1 glow-green';
+                    cockpitActiveConn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400"></i>KOTAK: CONNECTED`;
                 }
             }
         }
