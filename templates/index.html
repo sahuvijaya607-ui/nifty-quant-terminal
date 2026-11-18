@@ -108,13 +108,10 @@
                     <span class="hidden sm:inline">EOD Report</span>
                 </button>
 
-                <!-- SAFETY TOGGLE: PAPER TRADING <-> LIVE EXECUTION -->
-                <div class="flex items-center space-x-2 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800">
-                    <span class="text-[11px] text-slate-400 font-medium">Mode:</span>
-                    <button onclick="openSafetyModal()" id="safety-mode-btn" class="px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center space-x-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                        <i class="fa-solid fa-shield"></i>
-                        <span id="safety-mode-label">PAPER TRADING</span>
-                    </button>
+                <!-- DIRECT REAL TRADING BADGE (No Paper Mode) -->
+                <div class="flex items-center space-x-2 bg-rose-500/15 px-3 py-1.5 rounded-xl border border-rose-500/30 glow-red">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500 pulse-dot"></span>
+                    <span class="text-xs font-black tracking-wider text-rose-400">REAL TRADING &bull; KOTAK NEO</span>
                 </div>
 
                 <!-- 1-Click Trigger -->
@@ -1180,63 +1177,11 @@
                 '<i class="fa-solid fa-volume-xmark text-slate-500"></i>';
         }
 
-        // 🔒 5. SAFETY TOGGLE MODAL LOGIC
-        let currentMode = 'PAPER';
-
-        function openSafetyModal() {
-            if (currentMode === 'LIVE') {
-                // Revert to paper immediately with 1 click
-                setExecutionMode('PAPER', '');
-            } else {
-                document.getElementById('safety-modal').classList.remove('hidden');
-                document.getElementById('modal-mpin-input').value = '';
-                document.getElementById('modal-error-msg').classList.add('hidden');
-                document.getElementById('modal-mpin-input').focus();
-            }
-        }
-
-        function closeSafetyModal() {
-            document.getElementById('safety-modal').classList.add('hidden');
-        }
-
-        async function submitSafetyMPIN() {
-            const mpin = document.getElementById('modal-mpin-input').value;
-            await setExecutionMode('LIVE', mpin);
-        }
-
-        async function setExecutionMode(mode, mpin) {
-            try {
-                const res = await fetch('/api/set_execution_mode', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({mode, mpin})
-                });
-                const data = await res.json();
-                if (data.success) {
-                    currentMode = data.mode;
-                    closeSafetyModal();
-                    updateSafetyUI(currentMode);
-                    fetchStatus();
-                } else {
-                    const errEl = document.getElementById('modal-error-msg');
-                    errEl.innerText = data.message || 'Invalid MPIN';
-                    errEl.classList.remove('hidden');
-                }
-            } catch (e) {
-                alert("Error: " + e);
-            }
-        }
+        // 🔒 DIRECT REAL TRADING ONLY (Paper Trading Removed)
+        let currentMode = 'LIVE';
 
         function updateSafetyUI(mode) {
-            const btn = document.getElementById('safety-mode-btn');
-            const lbl = document.getElementById('safety-mode-label');
-            if (mode === 'LIVE') {
-                btn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center space-x-1.5 bg-rose-500/20 text-rose-400 border border-rose-500/40 glow-red';
-                lbl.innerText = '🔴 LIVE EXECUTION';
-            } else {
-                btn.className = 'px-3 py-1 rounded-lg text-xs font-extrabold transition flex items-center space-x-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
-                lbl.innerText = '🟢 PAPER TRADING';
-            }
+            // Mode is locked to REAL TRADING
         }
 
         // 📡 3. REPLAY CONTROLS

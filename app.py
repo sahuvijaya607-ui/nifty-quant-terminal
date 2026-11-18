@@ -143,8 +143,8 @@ class MasterQuantEngine:
         self.active_lots = 1
         self.capital_per_lot = 75000.0
 
-        # Safety Execution Mode: 'PAPER' (default) or 'LIVE'
-        self.execution_mode = "PAPER"
+        # Safety Execution Mode: 'LIVE' (Real Kotak Neo Trading)
+        self.execution_mode = "LIVE"
         self.security_mpin = "031995"
 
         # Capital Tracking (1 Lakh Capital)
@@ -968,11 +968,11 @@ class MasterQuantEngine:
         # Symbol generation for Kotak Neo F&O
         exp_str = self.pulse["next_expiry"]
         exp_code = f"{exp_str[2:4]}{exp_str[5:7]}"  # YYMM format e.g. 2611
-        buy_symbol = f"NIFTY{exp_code}{buy_strike}{opt_type}"
-        sell_symbol = f"NIFTY{exp_code}{sell_strike}{opt_type}"
+        buy_symbol = buy_row.get("inst", {}).get("trdSym") or buy_row.get("trdSym") or f"NIFTY{exp_code}{buy_strike}{opt_type}"
+        sell_symbol = sell_row.get("inst", {}).get("trdSym") or sell_row.get("trdSym") or f"NIFTY{exp_code}{sell_strike}{opt_type}"
 
         # Real execution via Kotak Neo API if in LIVE mode
-        order_status = "PAPER_VIRTUAL"
+        order_status = "KOTAK_API_PENDING"
         if self.execution_mode == "LIVE" and self.authenticated and self.client:
             try:
                 # 1. Place BUY OTM Wing First (Margin Benefit)
@@ -1000,6 +1000,8 @@ class MasterQuantEngine:
                 order_status = "KOTAK_API_FILLED"
             except Exception as e:
                 order_status = f"API_ERROR: {str(e)[:25]}"
+        else:
+            order_status = "PAPER_VIRTUAL"
 
         entry_time_str = simulated_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
