@@ -1122,7 +1122,6 @@
         }
 
         // Web Audio API Synthesizer for Disconnect Siren Alarm
-        let audioCtx = null;
         let alarmOscillator = null;
         let alarmGain = null;
         let isAlarmPlaying = false;
@@ -1134,12 +1133,7 @@
         let isKotakConnected = true;
 
         function initAudioContext() {
-            if (!audioCtx) {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (AudioContext) {
-                    audioCtx = new AudioContext();
-                }
-            }
+            initAudio();
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
