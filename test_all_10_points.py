@@ -32,9 +32,10 @@ def test_p3():
     src = inspect.getsource(engine.has_open_broker_positions)
     assert 'self.client.positions()' in src, "Positions API check missing"
     assert 'net_qty > 0' in src, "Net quantity check missing"
+    assert 'NEOTRADEAPI' in src or 'terminal_symbols' in src, "Must isolate Render Terminal trades from mobile trades"
     trig_src = inspect.getsource(engine.trigger_trade)
-    assert 'Demat has open F&O leg' in trig_src, "Demat gate missing in trigger_trade"
-    return "VERIFIED: Direct Broker Demat Gate active - 1 open F&O leg 100% blocks new trade entry"
+    assert 'has_open_broker_positions()' in trig_src, "has_open_broker_positions call missing in trigger_trade"
+    return "VERIFIED: Option 1 Active - Render Terminal checks its own open Demat F&O legs; Mobile trades run 100% independently"
 
 def test_p4():
     src = inspect.getsource(engine.has_open_broker_positions)

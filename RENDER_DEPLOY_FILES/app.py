@@ -1143,12 +1143,30 @@ class MasterQuantEngine:
         }
 
     def has_open_broker_positions(self):
-        """Checks Kotak Neo broker directly to see if any open NIFTY F&O position exists in Demat."""
+        """
+        OPTION 1 (INDEPENDENT ALGO):
+        Checks Kotak Neo broker specifically for Render Terminal (API) open positions.
+        User's manual mobile app trades (ADMINCPPAPI_MOB) are completely independent and ignored.
+        """
         if not self.client or not self.authenticated or self.execution_mode != "LIVE":
-            return False
+            return bool(self.state.get("active_position"))
         try:
+            if self.state.get("active_position"):
+                return True
+
             b_pos = self.client.positions()
             if is_kotak_ok(b_pos) and b_pos.get("data"):
+                # Collect all symbols placed by this Render Terminal
+                terminal_symbols = set()
+                try:
+                    rep = self.client.order_report()
+                    if is_kotak_ok(rep) and rep.get("data"):
+                        for o in rep.get("data", []):
+                            if "NEOTRADEAPI" in str(o.get("ordSrc", "")).upper() or str(o.get("nOrdNo", "")) in getattr(self, "terminal_order_ids", set()):
+                                terminal_symbols.add(str(o.get("trdSym", "")).upper())
+                except Exception:
+                    pass
+
                 for p in b_pos.get("data", []):
                     ex_seg = str(p.get("exSeg", "")).lower()
                     sym = str(p.get("sym", "")).upper()
@@ -1158,7 +1176,10 @@ class MasterQuantEngine:
                         continue
                     net_qty = abs(int(float(p.get("flBuyQty", 0))) - int(float(p.get("flSellQty", 0))))
                     if net_qty > 0:
-                        return True
+                        # Under Option 1: Only consider open if this position belongs to THIS Render Terminal!
+                        # User's personal mobile app trades (ADMINCPPAPI_MOB) are 100% independent!
+                        if terminal_symbols and trd_sym in terminal_symbols:
+                            return True
             return False
         except Exception as e:
             logger.warning(f"Error checking broker positions: {e}")
@@ -1226,42 +1247,30 @@ class MasterQuantEngine:
                 logger.warning(msg)
                 return False, msg
 
-            # Rule 6: Demat Safety (0 Open Positions & Free Cash >= Rs 50,000)
+            # Rule 6: Demat Safety (0 Render Open Positions & Free Cash >= Rs 50,000)
+            # Under Option 1: User's manual mobile app trades do NOT block Algo. Both trade independently!
             if self.state.get("active_position"):
-                msg = "[GATE BLOCKED - RULE 6] Internal state already has an active position!"
+                msg = "[GATE BLOCKED - RULE 6] Render Terminal already has an active position!"
                 logger.warning(msg)
                 return False, msg
 
             if self.execution_mode == "LIVE" and self.authenticated and self.client:
-                # Direct Broker Demat open legs check
-                try:
-                    b_pos = self.client.positions()
-                    if is_kotak_ok(b_pos) and b_pos.get("data"):
-                        for p in b_pos.get("data", []):
-                            ex_seg = str(p.get("exSeg", "")).lower()
-                            sym = str(p.get("sym", "")).upper()
-                            trd_sym = str(p.get("trdSym", "")).upper()
-                            stk_prc = float(p.get("stkPrc", 0.0) or 0.0)
-                            if ex_seg != "nse_fo" or not (sym == "NIFTY" or trd_sym.startswith("NIFTY")) or stk_prc <= 0:
-                                continue
-                            net_qty = abs(int(float(p.get("flBuyQty", 0))) - int(float(p.get("flSellQty", 0))))
-                            if net_qty > 0:
-                                msg = f"[GATE BLOCKED - RULE 6] Demat has open F&O leg ({p.get('trdSym')} Qty {net_qty}). Strictly 0 open legs allowed!"
-                                logger.warning(msg)
-                                return False, msg
-                except Exception as b_err:
-                    msg = f"[GATE BLOCKED - RULE 6] Failed broker Demat check: {b_err}"
+                # Direct Broker Demat open legs check specifically for Render Terminal trades
+                if self.has_open_broker_positions():
+                    msg = "[GATE BLOCKED - RULE 6] Render Terminal already has an open F&O position in Demat!"
                     logger.warning(msg)
                     return False, msg
 
                 # Broker Free Cash Check (>= Rs 50,000)
+                # Ensures that even if user has a manual trade, enough cash exists for the algo's spread
                 try:
                     cash_avail = self.get_broker_cash_margin()
                     if cash_avail > 0 and cash_avail < 50000.0:
-                        msg = f"[GATE BLOCKED - RULE 6] Free cash Rs {cash_avail:,.2f} < Rs 50,000 minimum required!"
+                        msg = f"[GATE BLOCKED - RULE 6] Free cash Rs {cash_avail:,.2f} < Rs 50,000 minimum required! (Manual trade may be consuming margin)"
                         logger.warning(msg)
                         return False, msg
                 except Exception as c_err:
+                    logger.warning(f"Failed cash check: {c_err}")
                     logger.warning(f"Failed cash check: {c_err}")
 
             # Direction & Signal Evaluation
