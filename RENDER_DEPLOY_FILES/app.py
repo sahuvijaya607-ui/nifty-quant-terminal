@@ -223,17 +223,25 @@ class MasterQuantEngine:
         self.poll_kotak_neo(force=True)
         self.init_replay_data()
 
-        # Background thread for off-market replay loop
-        self.replay_thread = threading.Thread(target=self._replay_loop, daemon=True)
-        self.replay_thread.start()
+        # Dedicated Autonomous Background Workers (Live Poller, Watchdog & Replay)
+        self.start_background_workers()
 
-        # Dedicated 100% Autonomous Background Worker (Auto-Downloads 1-Min Options & Auto-Executes Trades)
-        self.live_daemon_thread = threading.Thread(target=self._live_engine_loop, daemon=True)
-        self.live_daemon_thread.start()
+    def start_background_workers(self):
+        """Ensures all 3 autonomous background threads are active inside the process/worker."""
+        if not hasattr(self, "live_daemon_thread") or not self.live_daemon_thread.is_alive():
+            self.live_daemon_thread = threading.Thread(target=self._live_engine_loop, daemon=True)
+            self.live_daemon_thread.start()
+            logger.info("[ENGINE] Started autonomous live_daemon_thread in worker process.")
 
-        # Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Thread
-        self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
-        self.watchdog_thread.start()
+        if not hasattr(self, "watchdog_thread") or not self.watchdog_thread.is_alive():
+            self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+            self.watchdog_thread.start()
+            logger.info("[ENGINE] Started self-healing watchdog_thread in worker process.")
+
+        if not hasattr(self, "replay_thread") or not self.replay_thread.is_alive():
+            self.replay_thread = threading.Thread(target=self._replay_loop, daemon=True)
+            self.replay_thread.start()
+
 
     def authenticate(self):
         if not self.consumer_key or not self.ucc:
@@ -1993,9 +2001,19 @@ class MasterQuantEngine:
 engine = MasterQuantEngine()
 
 
+@app.before_request
+def ensure_engine_workers():
+    """Failsafe: Guarantees background trading daemons run continuously inside Gunicorn workers."""
+    if not hasattr(engine, "live_daemon_thread") or not engine.live_daemon_thread.is_alive() or not getattr(engine, "watchdog_thread", None) or not engine.watchdog_thread.is_alive():
+        engine.start_background_workers()
+
+
 @app.route("/api/health")
 def health():
+    if not hasattr(engine, "live_daemon_thread") or not engine.live_daemon_thread.is_alive() or not getattr(engine, "watchdog_thread", None) or not engine.watchdog_thread.is_alive():
+        engine.start_background_workers()
     now_ts = time.time()
+
     last_poll_sec = round(now_ts - getattr(engine, "last_api_poll", 0), 1)
     uptime_sec = int(now_ts - getattr(engine, "start_time", now_ts))
     worker_alive = bool(hasattr(engine, "live_daemon_thread") and engine.live_daemon_thread.is_alive())
