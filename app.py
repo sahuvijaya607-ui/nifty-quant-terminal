@@ -728,6 +728,15 @@ class MasterQuantEngine:
                         pos_list = real_pos.get("data", []) or []
 
                         for p in pos_list:
+                            # CRITICAL SAFETY FILTER: Only process NIFTY F&O Options! Ignore Equity shares/ETFs (like ITBEES)!
+                            ex_seg = str(p.get("exSeg", "")).lower()
+                            sym = str(p.get("sym", "")).upper()
+                            trd_sym = str(p.get("trdSym", "")).upper()
+                            stk_prc = float(p.get("stkPrc", 0.0) or 0.0)
+
+                            if ex_seg != "nse_fo" or not (sym == "NIFTY" or trd_sym.startswith("NIFTY")) or stk_prc <= 0:
+                                continue
+
                             try:
                                 buy_q = int(float(p.get("flBuyQty", 0)))
                                 sell_q = int(float(p.get("flSellQty", 0)))
@@ -1251,14 +1260,20 @@ class MasterQuantEngine:
         }
 
     def has_open_broker_positions(self):
-        """Checks Kotak Neo broker directly to see if any open F&O position exists in Demat."""
+        """Checks Kotak Neo broker directly to see if any open NIFTY F&O position exists in Demat."""
         if not self.client or not self.authenticated or self.execution_mode != "LIVE":
             return False
         try:
             b_pos = self.client.positions()
             if is_kotak_ok(b_pos) and b_pos.get("data"):
                 for p in b_pos.get("data", []):
-                    net_qty = abs(int(p.get("flBuyQty", 0)) - int(p.get("flSellQty", 0)))
+                    ex_seg = str(p.get("exSeg", "")).lower()
+                    sym = str(p.get("sym", "")).upper()
+                    trd_sym = str(p.get("trdSym", "")).upper()
+                    stk_prc = float(p.get("stkPrc", 0.0) or 0.0)
+                    if ex_seg != "nse_fo" or not (sym == "NIFTY" or trd_sym.startswith("NIFTY")) or stk_prc <= 0:
+                        continue
+                    net_qty = abs(int(float(p.get("flBuyQty", 0))) - int(float(p.get("flSellQty", 0))))
                     if net_qty > 0:
                         return True
             return False
@@ -1340,7 +1355,13 @@ class MasterQuantEngine:
                     b_pos = self.client.positions()
                     if is_kotak_ok(b_pos) and b_pos.get("data"):
                         for p in b_pos.get("data", []):
-                            net_qty = abs(int(p.get("flBuyQty", 0)) - int(p.get("flSellQty", 0)))
+                            ex_seg = str(p.get("exSeg", "")).lower()
+                            sym = str(p.get("sym", "")).upper()
+                            trd_sym = str(p.get("trdSym", "")).upper()
+                            stk_prc = float(p.get("stkPrc", 0.0) or 0.0)
+                            if ex_seg != "nse_fo" or not (sym == "NIFTY" or trd_sym.startswith("NIFTY")) or stk_prc <= 0:
+                                continue
+                            net_qty = abs(int(float(p.get("flBuyQty", 0))) - int(float(p.get("flSellQty", 0))))
                             if net_qty > 0:
                                 msg = f"[GATE BLOCKED - RULE 6] Demat has open F&O leg ({p.get('trdSym')} Qty {net_qty}). Strictly 0 open legs allowed!"
                                 logger.warning(msg)
