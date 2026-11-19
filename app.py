@@ -60,14 +60,16 @@ def send_telegram_alert(message):
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
-# Persistence paths
-STATE_FILE = Path("results/paper_engine_state.json")
-STATE_BACKUP_FILE = Path("results/paper_engine_state_backup.json")
-EQUITY_CURVE_FILE = Path("results/equity_curve_history.json")
-TRADES_FILE = Path("results/live_paper_trades.csv")
-MASTER_SPOT_PARQUET = Path("data/nifty_1min_5yr.parquet")
-REPORTS_DIR = Path("results/daily_reports")
-STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+# Persistence paths (Guaranteed Absolute Paths relative to app.py)
+BASE_DIR = Path(__file__).resolve().parent
+RESULTS_DIR = BASE_DIR / "results"
+STATE_FILE = RESULTS_DIR / "paper_engine_state.json"
+STATE_BACKUP_FILE = RESULTS_DIR / "paper_engine_state_backup.json"
+EQUITY_CURVE_FILE = RESULTS_DIR / "equity_curve_history.json"
+TRADES_FILE = RESULTS_DIR / "live_paper_trades.csv"
+MASTER_SPOT_PARQUET = BASE_DIR / "data" / "nifty_1min_5yr.parquet"
+REPORTS_DIR = RESULTS_DIR / "daily_reports"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -2513,13 +2515,30 @@ def get_orders():
 
 @app.route("/api/trades")
 def get_trades():
+    trades = []
     if TRADES_FILE.exists():
         try:
             df = pd.read_csv(TRADES_FILE, on_bad_lines="skip")
-            return jsonify(df.to_dict(orient="records"))
+            trades = df.to_dict(orient="records")
         except Exception:
-            return jsonify([])
-    return jsonify([])
+            pass
+
+    # Ensure today's trades from daily report are present if CSV was cached or desynced
+    today_str = date.today().strftime("%Y-%m-%d")
+    today_trades_exist = any(str(t.get("date", "")) == today_str for t in trades)
+    if not today_trades_exist:
+        today_rep_file = REPORTS_DIR / f"daily_report_{today_str}.json"
+        if today_rep_file.exists():
+            try:
+                with open(today_rep_file, "r") as f:
+                    rep_json = json.load(f)
+                    rep_trades = rep_json.get("trades", [])
+                    if rep_trades:
+                        trades = rep_trades + trades
+            except Exception:
+                pass
+
+    return jsonify(trades)
 
 
 @app.route("/api/export_csv")
