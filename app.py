@@ -703,7 +703,8 @@ class MasterQuantEngine:
                     has_real_pos = False
                     short_leg = None
                     long_leg = None
-                    if isinstance(real_pos, dict) and real_pos.get("stat") == "Ok" and real_pos.get("data"):
+                    pos_stat = str(real_pos.get("stat", "")).lower() if isinstance(real_pos, dict) else ""
+                    if isinstance(real_pos, dict) and (pos_stat == "ok" or real_pos.get("stCode") == 200) and real_pos.get("data"):
                         for p in real_pos.get("data", []):
                             net = int(p.get("flBuyQty", 0)) - int(p.get("flSellQty", 0))
                             if abs(net) > 0:
