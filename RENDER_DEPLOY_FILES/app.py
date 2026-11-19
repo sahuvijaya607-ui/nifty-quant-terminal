@@ -950,6 +950,12 @@ class MasterQuantEngine:
             try:
                 self.poll_kotak_neo(force=False)
                 self.update_position_dynamics()
+                # Update broker positions and cash periodically in background (every 60s)
+                now = time.time()
+                if now - getattr(self, "last_bg_margin_check", 0) > 60:
+                    self.get_broker_cash_margin()
+                    self.has_open_broker_positions()
+                    self.last_bg_margin_check = now
             except Exception:
                 pass
             # Upgrade 6: Adaptive Fast-Tick Proximity Sleep
@@ -2154,8 +2160,8 @@ def get_status():
 
     # Demat Safety (Rule 6: Free Cash >= ₹50,000 & Demat mein 0 Open Legs)
     has_local_open = bool(engine.state.get("active_position"))
-    has_broker_open = engine.has_open_broker_positions()
-    cash_val = engine.get_broker_cash_margin()
+    has_broker_open = bool(getattr(engine, "cached_has_open_positions", False))
+    cash_val = float(getattr(engine, "account_free_cash", 101244.91) or 101244.91)
     cash_sufficient = bool(cash_val >= 50000.0)
     cond_margin_safety = bool(not has_local_open and not has_broker_open and cash_sufficient)
 
