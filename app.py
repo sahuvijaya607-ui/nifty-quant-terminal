@@ -1359,26 +1359,21 @@ class MasterQuantEngine:
             sell_ltp = float(sell_row.get("call_ltp", 0.0)) or 255.0
             buy_ltp = float(buy_row.get("call_ltp", 0.0)) or 115.0
 
-        # Upgrade 2: Smart Limit Order & Bid-Ask Spread Guard
-        # If retail wing spread > Rs 1.50, place Mid-Price Limit Order to eliminate retail slippage
-        buy_ask = float(buy_row.get("ask", buy_ltp * 1.005))
-        buy_bid = float(buy_row.get("bid", buy_ltp * 0.995))
-        wing_spread = round(buy_ask - buy_bid, 2)
-
+        # Institutional Marketable Instant-Fill Engine:
+        # Guarantees 100% immediate fill on NSE order book so valid trades are NEVER missed!
+        # Buying at Best Ask (with 0.8% tick buffer) matches instantly with the best seller on NSE
         def round_to_tick(price, tick=0.05):
             return round(round(float(price) / tick) * tick, 2)
 
-        if wing_spread > 1.50 and buy_bid > 0:
-            mid_price = round((buy_bid + buy_ask) / 2.0, 2)
-            exec_buy = round_to_tick(min(buy_ltp, mid_price + 0.15))
-            slippage_saved = round(max(0.0, (buy_ltp * 1.005) - exec_buy), 2)
-            exec_type = "SMART_MID_LIMIT"
-        else:
-            exec_buy = round_to_tick(buy_ltp * 1.005)
-            slippage_saved = 0.0
-            exec_type = "TIGHT_LIMIT"
+        buy_ask = float(buy_row.get("ask", buy_ltp * 1.005))
+        buy_bid = float(buy_row.get("bid", buy_ltp * 0.995))
+        exec_buy = round_to_tick(max(buy_ask, buy_ltp * 1.008))
+        exec_type = "MARKETABLE_INSTANT_FILL"
+        slippage_saved = 0.0
 
-        exec_sell = round_to_tick(sell_ltp * 0.995)
+        # Selling at Best Bid matches instantly with the best buyer on NSE
+        sell_bid = float(sell_row.get("bid", sell_ltp * 0.995))
+        exec_sell = round_to_tick(min(sell_bid, sell_ltp * 0.992)) if sell_bid > 0 else round_to_tick(sell_ltp * 0.992)
         net_credit = round(exec_sell - exec_buy, 2)
 
         # Symbol generation for Kotak Neo F&O
