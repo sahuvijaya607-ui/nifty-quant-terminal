@@ -412,8 +412,9 @@ class MasterQuantEngine:
         if not self.client or not self.authenticated:
             return
         now = time.time()
-        if now - getattr(self, "last_ema_calc_time", 0) < 60:
+        if now - getattr(self, "last_ema_calc_time", 0) < 120:
             return
+        self.last_ema_calc_time = now
         try:
             today_str = date.today().strftime("%Y-%m-%d")
             start_5m = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
@@ -433,8 +434,6 @@ class MasterQuantEngine:
                 d_closes = [float(c[4]) for c in candles_d]
                 s_d = pd.Series(d_closes)
                 self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
-
-            self.last_ema_calc_time = now
         except Exception:
             pass
 
@@ -620,6 +619,7 @@ class MasterQuantEngine:
         try:
             chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
             self.pulse["option_chain"] = chain
+            self.pulse["chain_updated_at"] = now_dt.strftime("%H:%M:%S IST")
 
             if "spot" in chain and "ltp" in chain["spot"]:
                 self.pulse["spot"] = float(chain["spot"]["ltp"])
@@ -937,23 +937,46 @@ class MasterQuantEngine:
             # Calls
             c_data = call_map.get(s, {})
             c_ltp = float(c_data.get("quote", {}).get("ltp", 0.0))
-            c_oi = int(c_data.get("oi", {}).get("cur", c_data.get("oi", {}).get("oi", 0)))
+            c_cur = int(c_data.get("oi", {}).get("cur", c_data.get("oi", {}).get("oi", 0)))
+            c_prev = int(c_data.get("oi", {}).get("prev", 0))
+            c_oi = c_cur
+            c_oi_chg = (c_cur - c_prev) if (c_cur and c_prev) else 0
+            c_chg_pct = float(c_data.get("oi", {}).get("chgPct", 0.0) or 0.0)
             c_vol = int(c_data.get("quote", {}).get("vol", 0))
+            c_close = float(c_data.get("quote", {}).get("c", c_data.get("quote", {}).get("pc", 0.0)) or 0.0)
+            c_net_chg = round(c_ltp - c_close, 2) if (c_close > 0 and c_ltp > 0) else 0.0
 
             # Puts
             p_data = put_map.get(s, {})
             p_ltp = float(p_data.get("quote", {}).get("ltp", 0.0))
-            p_oi = int(p_data.get("oi", {}).get("cur", p_data.get("oi", {}).get("oi", 0)))
+            p_cur = int(p_data.get("oi", {}).get("cur", p_data.get("oi", {}).get("oi", 0)))
+            p_prev = int(p_data.get("oi", {}).get("prev", 0))
+            p_oi = p_cur
+            p_oi_chg = (p_cur - p_prev) if (p_cur and p_prev) else 0
+            p_chg_pct = float(p_data.get("oi", {}).get("chgPct", 0.0) or 0.0)
             p_vol = int(p_data.get("quote", {}).get("vol", 0))
+            p_close = float(p_data.get("quote", {}).get("c", p_data.get("quote", {}).get("pc", 0.0)) or 0.0)
+            p_net_chg = round(p_ltp - p_close, 2) if (p_close > 0 and p_ltp > 0) else 0.0
 
             dist = s - spot
-            if c_ltp == 0:
-                c_ltp = round(max(3.0, 115.0 - (dist * 0.45)), 2)
-            if p_ltp == 0:
-                p_ltp = round(max(3.0, 110.0 + (dist * 0.45)), 2)
-            if c_oi == 0:
+            if c_ltp == 0 and c_close > 0:
+                c_ltp = c_close
+            elif c_ltp == 0:
+                c_ltp = round(max(0.05, 115.0 - (dist * 0.45)), 2)
+
+            if p_ltp == 0 and p_close > 0:
+                p_ltp = p_close
+            elif p_ltp == 0:
+                p_ltp = round(max(0.05, 110.0 + (dist * 0.45)), 2)
+
+            if c_oi == 0 and c_prev > 0:
+                c_oi = c_prev
+            elif c_oi == 0:
                 c_oi = abs(int(100000 - dist * 40))
-            if p_oi == 0:
+
+            if p_oi == 0 and p_prev > 0:
+                p_oi = p_prev
+            elif p_oi == 0:
                 p_oi = abs(int(115000 + dist * 40))
 
             if c_oi > max_c_oi:
@@ -963,10 +986,10 @@ class MasterQuantEngine:
                 max_p_oi = p_oi
                 max_p_strike = s
 
-            raw_rows.append((s, c_ltp, c_oi, c_vol, p_ltp, p_oi, p_vol))
+            raw_rows.append((s, c_ltp, c_oi, c_oi_chg, c_chg_pct, c_net_chg, c_vol, p_ltp, p_oi, p_oi_chg, p_chg_pct, p_net_chg, p_vol))
 
         table_rows = []
-        for s, c_ltp, c_oi, c_vol, p_ltp, p_oi, p_vol in raw_rows:
+        for s, c_ltp, c_oi, c_oi_chg, c_chg_pct, c_net_chg, c_vol, p_ltp, p_oi, p_oi_chg, p_chg_pct, p_net_chg, p_vol in raw_rows:
             is_atm = (s == atm_strike)
             is_hedge_wing = (s == wing_strike_pe or s == wing_strike_ce)
             wing_tag = "HEDGE WING (350 OTM)" if is_hedge_wing else None
@@ -989,13 +1012,21 @@ class MasterQuantEngine:
                 "sold_type": sold_type if is_sold_leg else None,
                 "bought_type": bought_type if is_bought_leg else None,
                 "call_ltp": c_ltp,
+                "call_chg": c_net_chg,
                 "call_oi": f"{c_oi:,}",
                 "call_oi_raw": c_oi,
+                "call_oi_chg": f"{c_oi_chg:+,}",
+                "call_oi_chg_raw": c_oi_chg,
+                "call_chg_pct": round(c_chg_pct, 2),
                 "call_vol": f"{c_vol:,}",
                 "is_max_call_oi": is_max_call_oi,
                 "put_ltp": p_ltp,
+                "put_chg": p_net_chg,
                 "put_oi": f"{p_oi:,}",
                 "put_oi_raw": p_oi,
+                "put_oi_chg": f"{p_oi_chg:+,}",
+                "put_oi_chg_raw": p_oi_chg,
+                "put_chg_pct": round(p_chg_pct, 2),
                 "put_vol": f"{p_vol:,}",
                 "is_max_put_oi": is_max_put_oi,
                 "call_moneyness": "ITM" if s < spot else ("ATM" if s == atm_strike else "OTM"),
@@ -1725,6 +1756,7 @@ def get_status():
 
     return jsonify({
         "time": now_dt.strftime("%d-%b-%Y %H:%M:%S IST"),
+        "chain_updated_at": engine.pulse.get("chain_updated_at", now_dt.strftime("%H:%M:%S IST")),
         "feeder_mode": engine.feeder_mode,
         "execution_mode": engine.execution_mode,
         "is_market_open": is_mkt_open,
