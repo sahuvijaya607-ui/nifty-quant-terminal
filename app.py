@@ -759,7 +759,10 @@ class MasterQuantEngine:
                             "buy_price": b_prc,
                             "net_credit": credit,
                             "target_credit": round(credit * 0.50, 2),
+                            "target_spread": round(credit * 0.60, 2),
+                            "sl_spread": round(credit * 1.60, 2),
                             "stop_loss": round(credit * 1.60, 2),
+                            "breakeven_active": True,
                             "be_locked": True,
                             "be_locked_time": short_leg.get("hsUpTm", ""),
                             "peak_points": max(0.0, credit - (s_prc - b_prc)),
@@ -775,7 +778,14 @@ class MasterQuantEngine:
                             "gst": 9.0,
                             "total_charges": 60.0,
                             "unrealized_net": 0.0,
+                            "target_profit_inr": round((credit * 0.40) * s_qty, 2),
+                            "max_risk_inr": round(credit * 0.60 * s_qty, 2),
+                            "status": "OPEN",
+                            "mtm_gross_pnl": 0.0,
+                            "mtm_net_pnl": 0.0,
+                            "trade_initiator": "AUTO_ALGO",
                             "margin_used": float(self.account_margin_used or 45000),
+                            "why_trade_taken": f"Spot > Daily 20 EMA | 5m Cascade (9>20>50) | Green Candle | PCR >= 1.05 | Broker Reconciled Live Trade",
                             "kyun_liya": f"Spot > Daily 20 EMA | 5m Cascade (9>20>50) | Green Candle | PCR >= 1.05 | Broker Reconciled Live Trade",
                         }
                         self.save_state()
@@ -1496,6 +1506,12 @@ class MasterQuantEngine:
 
         spot_diff = (spot - entry_spot) if direction == "BULL_PUT_SPREAD" else (entry_spot - spot)
         
+        # Ensure target_spread and sl_spread are always populated
+        if "target_spread" not in pos or pos["target_spread"] is None:
+            pos["target_spread"] = pos.get("target_credit") or round(entry_credit * 0.60, 2)
+        if "sl_spread" not in pos or pos["sl_spread"] is None:
+            pos["sl_spread"] = pos.get("stop_loss") or round(entry_credit * 1.60, 2)
+
         # Second-by-second holding timer
         start_sec = pos.get("entry_timestamp_sec", time.time())
         holding_sec = int(time.time() - start_sec)
@@ -1552,9 +1568,11 @@ class MasterQuantEngine:
             self.status_message = "💎 TRAILING SL LOCKED: ZERO RISK (0 Rs Max Loss)!"
 
         # Exit conditions
-        if current_spread <= pos["target_spread"]:
+        target_spread = pos.get("target_spread") or pos.get("target_credit") or round(entry_credit * 0.60, 2)
+        sl_spread = pos.get("sl_spread") or pos.get("stop_loss") or round(entry_credit * 1.60, 2)
+        if current_spread <= target_spread:
             self.square_off_position("TARGET_HIT (+40% DECAY)")
-        elif current_spread >= pos["sl_spread"]:
+        elif current_spread >= sl_spread:
             self.square_off_position("BREAKEVEN_SL" if pos.get("breakeven_active") else "STOP_LOSS")
         else:
             # Time Exit at 15:15 PM IST (Zero Overnight Risk)
