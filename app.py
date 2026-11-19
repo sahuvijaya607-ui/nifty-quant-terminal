@@ -480,6 +480,16 @@ class MasterQuantEngine:
                     self.status_message = f"[WATCHDOG] Stalled poller ({int(now - self.last_api_poll)}s). Soft-healing connection..."
                     self.authenticate()
                     self.poll_kotak_neo(force=True)
+
+                # Pre-Market Proactive Re-authentication Handshake (09:05 - 09:14 IST)
+                # Guarantees a fresh session token before market opens at 09:15 sharp!
+                if datetime.strptime("09:05", "%H:%M").time() <= now_dt.time() <= datetime.strptime("09:14", "%H:%M").time() and (now_dt.weekday() < 5):
+                    if not getattr(self, "pre_market_reauth_done", False):
+                        logger.info("[WATCHDOG] Performing Pre-Market Proactive Authentication Handshake (09:10 IST)...")
+                        self.authenticate()
+                        self.pre_market_reauth_done = True
+                elif now_dt.time() > datetime.strptime("09:15", "%H:%M").time():
+                    self.pre_market_reauth_done = False
             except Exception:
                 pass
 
@@ -1697,6 +1707,7 @@ class MasterQuantEngine:
         if pos.get("execution_mode") == "LIVE" and self.authenticated and self.client:
             try:
                 # 1. Buy back short leg first (releases margin obligation safely)
+                # Attempt Market Order first; if rejected by NSE options RMS, fallback to aggressive marketable limit
                 res_exit_sell = self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
@@ -1707,6 +1718,19 @@ class MasterQuantEngine:
                     trading_symbol=pos.get("sell_symbol", f"NIFTY{pos['sell_strike']}{pos['sell_type']}"),
                     transaction_type="B",
                 )
+                if not is_kotak_ok(res_exit_sell):
+                    sell_ltp = float(pos.get("current_sell_ltp", 0.0) or pos.get("sell_price", 100.0))
+                    limit_buyback = f"{round(round(sell_ltp * 1.05 / 0.05) * 0.05, 2):.2f}"
+                    res_exit_sell = self.client.place_order(
+                        exchange_segment="nse_fo",
+                        product="NRML",
+                        price=limit_buyback,
+                        order_type="L",
+                        quantity=str(total_qty),
+                        validity="DAY",
+                        trading_symbol=pos.get("sell_symbol", f"NIFTY{pos['sell_strike']}{pos['sell_type']}"),
+                        transaction_type="B",
+                    )
                 logger.info(f"[EXIT_SQUAREOFF] Short leg buyback result: {res_exit_sell}")
 
                 # 2. Sell back long wing second
@@ -1720,6 +1744,19 @@ class MasterQuantEngine:
                     trading_symbol=pos.get("buy_symbol", f"NIFTY{pos['buy_strike']}{pos['buy_type']}"),
                     transaction_type="S",
                 )
+                if not is_kotak_ok(res_exit_buy):
+                    buy_ltp = float(pos.get("current_buy_ltp", 0.0) or pos.get("buy_price", 30.0))
+                    limit_sellback = f"{round(round(buy_ltp * 0.90 / 0.05) * 0.05, 2):.2f}"
+                    res_exit_buy = self.client.place_order(
+                        exchange_segment="nse_fo",
+                        product="NRML",
+                        price=limit_sellback,
+                        order_type="L",
+                        quantity=str(total_qty),
+                        validity="DAY",
+                        trading_symbol=pos.get("buy_symbol", f"NIFTY{pos['buy_strike']}{pos['buy_type']}"),
+                        transaction_type="S",
+                    )
                 logger.info(f"[EXIT_SQUAREOFF] Long wing squareoff result: {res_exit_buy}")
             except Exception as exit_err:
                 logger.error(f"[EXIT_ERROR] Live squareoff order failed: {exit_err}")
