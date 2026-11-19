@@ -2539,9 +2539,14 @@ def api_square_off():
 def api_reset_circuit_breaker():
     engine.state["circuit_breaker_active"] = False
     engine.state["today_losses"] = 0
+    engine.state["today_wins"] = 0
+    engine.state["today_realized_gross_pnl"] = 0.0
+    engine.state["today_total_charges"] = 0.0
+    engine.state["today_realized_net_pnl"] = 0.0
+    engine.state["date"] = get_ist_now().strftime("%Y-%m-%d")
     engine.save_state()
-    engine.status_message = "Circuit Breaker & Losses Reset (0 Losses Today)."
-    return jsonify({"success": True, "message": "Circuit Breaker & Losses Reset."})
+    engine.status_message = "Circuit Breaker & Daily Quota Reset (0 / 2 Trades Done)."
+    return jsonify({"success": True, "message": "Circuit Breaker & Daily Quota Reset."})
 
 
 @app.route("/api/reconnect", methods=["POST"])
