@@ -1765,7 +1765,10 @@
         }
 
         // Real-Time Polling & Rendering
+        let isFetchingStatus = false;
         async function fetchStatus() {
+            if (isFetchingStatus) return;
+            isFetchingStatus = true;
             try {
                 const res = await fetch('/api/status');
                 const data = await res.json();
@@ -1775,24 +1778,34 @@
                 }
             } catch (err) {
                 console.error("Status fetch error:", err);
+            } finally {
+                isFetchingStatus = false;
             }
         }
 
+        let isFetchingTrades = false;
         async function fetchTrades() {
+            if (isFetchingTrades) return;
+            isFetchingTrades = true;
             try {
                 const res = await fetch('/api/trades');
                 const trades = await res.json();
                 renderTradesTable(trades);
             } catch (err) {
                 console.error("Trades fetch error:", err);
+            } finally {
+                isFetchingTrades = false;
             }
         }
 
         // 📑 Real Kotak Neo Order Book Polling & Filtering
         let currentOrderFilter = 'ALL';
         let allOrdersData = [];
+        let isFetchingOrders = false;
 
         async function fetchOrders() {
+            if (isFetchingOrders) return;
+            isFetchingOrders = true;
             try {
                 const res = await fetch('/api/orders');
                 const data = await res.json();
@@ -1802,6 +1815,8 @@
                 }
             } catch (err) {
                 console.error("Orders fetch error:", err);
+            } finally {
+                isFetchingOrders = false;
             }
         }
 

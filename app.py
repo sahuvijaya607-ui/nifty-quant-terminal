@@ -1228,10 +1228,14 @@ class MasterQuantEngine:
         """
         if not self.client or not self.authenticated or self.execution_mode != "LIVE":
             return bool(self.state.get("active_position"))
+        if self.state.get("active_position"):
+            return True
+        now = time.time()
+        # Cooldown: only query Kotak positions every 15 seconds to avoid thread starvation
+        if now - getattr(self, "last_positions_check_time", 0) < 15.0:
+            return getattr(self, "cached_has_open_positions", False)
+        self.last_positions_check_time = now
         try:
-            if self.state.get("active_position"):
-                return True
-
             b_pos = self.client.positions()
             if is_kotak_ok(b_pos) and b_pos.get("data"):
                 # Collect all symbols placed by this Render Terminal
@@ -1257,16 +1261,23 @@ class MasterQuantEngine:
                         # Under Option 1: Only consider open if this position belongs to THIS Render Terminal!
                         # User's personal mobile app trades (ADMINCPPAPI_MOB) are 100% independent!
                         if terminal_symbols and trd_sym in terminal_symbols:
+                            self.cached_has_open_positions = True
                             return True
+            self.cached_has_open_positions = False
             return False
         except Exception as e:
             logger.warning(f"Error checking broker positions: {e}")
-            return False
+            return getattr(self, "cached_has_open_positions", False)
 
     def get_broker_cash_margin(self):
-        """Fetches live free cash margin from Kotak Neo."""
+        """Fetches live free cash margin from Kotak Neo with 30s cooldown."""
         if not self.client or not self.authenticated or self.execution_mode != "LIVE":
             return float(getattr(self, "account_free_cash", 50000.0) or 50000.0)
+        now = time.time()
+        # Cooldown: only query Kotak limits every 30 seconds to prevent thread starvation
+        if now - getattr(self, "last_limits_check_time", 0) < 30.0 and hasattr(self, "account_free_cash"):
+            return float(self.account_free_cash)
+        self.last_limits_check_time = now
         try:
             lims = self.client.limits()
             if isinstance(lims, dict):
@@ -2064,10 +2075,9 @@ def index():
 @app.route("/api/status")
 def get_status():
     try:
-        engine.poll_kotak_neo()
         engine.update_position_dynamics()
     except Exception as e:
-        logger.warning(f"Engine poll/dynamics error: {e}")
+        logger.warning(f"Engine dynamics error: {e}")
 
     now_dt = get_ist_now()
     now_t = now_dt.time()
@@ -2612,14 +2622,20 @@ def get_orders():
     """Fetches real order book directly from Kotak Neo API, or fallback to saved today's orders."""
     raw_orders = []
     source = "EMPTY"
+    now = time.time()
     
-    # 1. Try Live Kotak Neo API first if authenticated
+    # 1. Return in-memory cache if queried within last 15 seconds to prevent Gunicorn thread lock
+    if hasattr(engine, "last_orders_cache") and engine.last_orders_cache and (now - getattr(engine, "last_orders_cache_time", 0) < 15.0):
+        return jsonify({"orders": engine.last_orders_cache, "source": "CACHE"})
+
+    # 2. Try Live Kotak Neo API first if authenticated
     if engine.authenticated and engine.client:
         try:
             orders_res = engine.client.order_report()
             if is_kotak_ok(orders_res) and orders_res.get("data"):
                 raw_orders = orders_res.get("data", [])
                 engine.last_orders_cache = raw_orders
+                engine.last_orders_cache_time = now
                 source = "KOTAK_NEO_API"
         except Exception as e:
             logger.warning(f"Error fetching live Kotak order report: {e}")
