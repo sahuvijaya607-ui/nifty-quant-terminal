@@ -195,10 +195,10 @@ class MasterQuantEngine:
             "pcr": None,
             "pcr_oi_change": 1.0,
             "pcr_core_atm": 1.0,
-            "india_vix": 13.5,
+            "india_vix": 16.11,
             "vix_regime": "NORMAL_VOLATILITY (Champion)",
             "wing_distance": 350,
-            "next_expiry": self.get_next_tuesday_expiry(),
+            "next_expiry": "2026-11-23",
             "calls_count": 0,
             "puts_count": 0,
             "candle_5m_open": 25040.00,
@@ -218,6 +218,7 @@ class MasterQuantEngine:
         self.state = self.load_state()
         self.active_lots = int(self.state.get("user_configured_lots", 1))
         self.lot_size = self.active_lots * int(self.pulse.get("mkt_lot", 65))
+        self.load_cached_emas()
         self.authenticate()
         self.poll_kotak_neo(force=True)
         self.init_replay_data()
@@ -422,12 +423,49 @@ class MasterQuantEngine:
             return True, f"Weekly PCR ({pcr:.3f} <= 0.85, Call Writers Dominant)"
         return False, f"Weekly PCR ({pcr:.3f} > 0.85, Put Writers Dominant)"
 
+    def load_cached_emas(self):
+        """Loads persistent Daily and 5m base EMAs from results/cached_emas.json."""
+        cache_file = os.path.join(os.path.dirname(__file__), "results", "cached_emas.json")
+        try:
+            if os.path.exists(cache_file):
+                with open(cache_file, "r") as f:
+                    c = json.load(f)
+                    self.base_ema9 = float(c.get("ema9", 25311.88))
+                    self.base_ema20 = float(c.get("ema20", 25267.0))
+                    self.base_ema50 = float(c.get("ema50", 25245.26))
+                    self.base_daily20 = float(c.get("daily_ema20", 24483.43))
+                    return True
+        except Exception as e:
+            logger.warning(f"Notice: Failed to load cached EMAs: {e}")
+        return False
+
+    def save_cached_emas(self):
+        """Persists current calculated EMAs to results/cached_emas.json."""
+        cache_file = os.path.join(os.path.dirname(__file__), "results", "cached_emas.json")
+        try:
+            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+            data = {
+                "date": date.today().strftime("%Y-%m-%d"),
+                "ema9": getattr(self, "base_ema9", 25311.88),
+                "ema20": getattr(self, "base_ema20", 25267.0),
+                "ema50": getattr(self, "base_ema50", 25245.26),
+                "daily_ema20": getattr(self, "base_daily20", 24483.43),
+                "last_spot": float(self.pulse.get("spot", 25514.3) or 25514.3),
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            with open(cache_file, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Notice: Failed to save cached EMAs: {e}")
+
     def update_real_emas_from_candles(self):
-        """Fetches real historical 5-minute and Daily candle data from Kotak Neo API and calculates exact EMAs."""
+        """Fetches real historical 5-minute and Daily candle data from Kotak Neo API and calculates exact EMAs with persistent cache fallback."""
         if not self.client or not self.authenticated:
+            self.load_cached_emas()
             return
         now = time.time()
         if now < getattr(self, "ema_backoff_until", 0):
+            self.load_cached_emas()
             return
         if now - getattr(self, "last_ema_calc_time", 0) < 300:
             return
@@ -438,6 +476,7 @@ class MasterQuantEngine:
             res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
             if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
                 self.ema_backoff_until = now + 300
+                self.load_cached_emas()
                 return
             candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
             if candles_5m and len(candles_5m) >= 50:
@@ -454,9 +493,11 @@ class MasterQuantEngine:
                 d_closes = [float(c[4]) for c in candles_d]
                 s_d = pd.Series(d_closes)
                 self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+            self.save_cached_emas()
         except Exception as e:
             if "429" in str(e) or "rate" in str(e).lower():
                 self.ema_backoff_until = now + 300
+            self.load_cached_emas()
 
     def _watchdog_loop(self):
         """Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Daemon."""
@@ -821,6 +862,14 @@ class MasterQuantEngine:
             now_min = now_dt.minute
             bucket_5m = (now_min // 5) * 5
             if getattr(self, "current_5m_bucket", None) != bucket_5m:
+                if getattr(self, "current_5m_bucket", None) is not None:
+                    # Live Spot Memory EMA Calculation:
+                    # Previous 5-min candle completed: organically evolve base EMAs in memory from real tick close!
+                    prev_c_close = spot
+                    self.base_ema9 = round(prev_c_close * a9 + base_e9 * (1.0 - a9), 2)
+                    self.base_ema20 = round(prev_c_close * a20 + base_e20 * (1.0 - a20), 2)
+                    self.base_ema50 = round(prev_c_close * a50 + base_e50 * (1.0 - a50), 2)
+                    self.save_cached_emas()
                 self.current_5m_bucket = bucket_5m
                 self.candle_5m_open = spot
             c_open = getattr(self, "candle_5m_open", spot)
