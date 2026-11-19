@@ -626,6 +626,10 @@ class MasterQuantEngine:
             if not self.authenticated or not self.client:
                 return
 
+        # Rate Limit (429) Safeguard: Honor backoff cooldown if active
+        if not force and now < getattr(self, "kotak_rate_limit_backoff_until", 0):
+            return
+
         # Check market hours in IST (09:15 - 15:30 IST)
         now_dt = get_ist_now()
         is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
@@ -846,7 +850,10 @@ class MasterQuantEngine:
             self.last_api_poll = now
         except Exception as e:
             err_str = str(e).lower()
-            if "401" in err_str or "token" in err_str or "session" in err_str or "unauth" in err_str:
+            if "429" in err_str or "rate" in err_str or "too many" in err_str:
+                logger.warning(f"[RATE_LIMIT] Kotak API 429 detected in polling: {e}. Backing off for 60s.")
+                self.kotak_rate_limit_backoff_until = now + 60
+            elif "401" in err_str or "token" in err_str or "session" in err_str or "unauth" in err_str:
                 self.authenticate()
 
     def _live_engine_loop(self):
@@ -1447,7 +1454,7 @@ class MasterQuantEngine:
                             quantity=str(total_qty),
                             validity="DAY",
                             trading_symbol=buy_symbol,
-                            transaction_type="S" if direction == "BULL_PUT_SPREAD" else "B",
+                            transaction_type="S",
                         )
                         logger.info(f"[RMS_SAFEGUARD] BUY hedge wing {buy_symbol} auto-unwound successfully at MARKET!")
                     except Exception as unwind_err:
