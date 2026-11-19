@@ -1039,17 +1039,20 @@ class MasterQuantEngine:
         buy_bid = float(buy_row.get("bid", buy_ltp * 0.995))
         wing_spread = round(buy_ask - buy_bid, 2)
 
+        def round_to_tick(price, tick=0.05):
+            return round(round(float(price) / tick) * tick, 2)
+
         if wing_spread > 1.50 and buy_bid > 0:
             mid_price = round((buy_bid + buy_ask) / 2.0, 2)
-            exec_buy = min(buy_ltp, round(mid_price + 0.15, 2))
+            exec_buy = round_to_tick(min(buy_ltp, mid_price + 0.15))
             slippage_saved = round(max(0.0, (buy_ltp * 1.005) - exec_buy), 2)
             exec_type = "SMART_MID_LIMIT"
         else:
-            exec_buy = round(buy_ltp * 1.005, 2)
+            exec_buy = round_to_tick(buy_ltp * 1.005)
             slippage_saved = 0.0
             exec_type = "TIGHT_LIMIT"
 
-        exec_sell = round(sell_ltp * 0.995, 2)
+        exec_sell = round_to_tick(sell_ltp * 0.995)
         net_credit = round(exec_sell - exec_buy, 2)
 
         # Symbol generation for Kotak Neo F&O
@@ -1066,22 +1069,35 @@ class MasterQuantEngine:
         order_status = "KOTAK_API_PENDING"
         if self.execution_mode == "LIVE" and self.authenticated and self.client:
             try:
-                # 1. Place BUY OTM Wing First (Margin Benefit)
-                self.client.place_order(
+                # 1. Place BUY OTM Wing First (Margin Benefit) with strict 0.05 Tick Size Formatting
+                exec_buy_fmt = f"{round_to_tick(exec_buy):.2f}"
+                exec_sell_fmt = f"{round_to_tick(exec_sell):.2f}"
+
+                res_buy = self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
-                    price=str(exec_buy),
+                    price=exec_buy_fmt,
                     order_type="L",
                     quantity=str(total_qty),
                     validity="DAY",
                     trading_symbol=buy_symbol,
                     transaction_type="B",
                 )
+
+                # Strict Safeguard: Verify BUY order was accepted BEFORE firing SELL order!
+                # If BUY failed or was rejected, ABORT to prevent naked short margin rejection!
+                buy_stat = res_buy.get("stat") if isinstance(res_buy, dict) else None
+                if buy_stat and buy_stat != "Ok":
+                    err_msg = res_buy.get("errMsg") or res_buy.get("message") or "BUY order rejected by broker"
+                    raise ValueError(f"BUY Hedge Rejected: {err_msg}")
+
+                time.sleep(0.3)  # 300ms exchange margin recognition buffer
+
                 # 2. Place SELL ATM Strike Second
-                self.client.place_order(
+                res_sell = self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
-                    price=str(exec_sell),
+                    price=exec_sell_fmt,
                     order_type="L",
                     quantity=str(total_qty),
                     validity="DAY",
@@ -1090,7 +1106,7 @@ class MasterQuantEngine:
                 )
                 order_status = "KOTAK_API_FILLED"
             except Exception as e:
-                order_status = f"API_ERROR: {str(e)[:25]}"
+                order_status = f"API_ERROR: {str(e)[:35]}"
         else:
             order_status = "PAPER_VIRTUAL"
 
@@ -1889,10 +1905,11 @@ def api_manual_order():
 
         if engine.execution_mode == "LIVE" and engine.authenticated and engine.client:
             try:
+                price_fmt = f"{round(round(price / 0.05) * 0.05, 2):.2f}" if price > 0 else "0"
                 res = engine.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
-                    price=str(price) if price > 0 else "0",
+                    price=price_fmt,
                     order_type="L" if price > 0 else "MKT",
                     quantity=str(qty),
                     validity="DAY",
