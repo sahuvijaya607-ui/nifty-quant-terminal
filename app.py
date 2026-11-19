@@ -1362,19 +1362,23 @@ class MasterQuantEngine:
 
         # Institutional Marketable Instant-Fill Engine:
         # Guarantees 100% immediate fill on NSE order book so valid trades are NEVER missed!
-        # Buying at Best Ask (with 0.8% tick buffer) matches instantly with the best seller on NSE
         def round_to_tick(price, tick=0.05):
             return round(round(float(price) / tick) * tick, 2)
 
-        buy_ask = float(buy_row.get("ask", buy_ltp * 1.005))
-        buy_bid = float(buy_row.get("bid", buy_ltp * 0.995))
-        exec_buy = round_to_tick(max(buy_ask, buy_ltp * 1.008))
+        buy_ask = float(buy_row.get("ask", 0.0) or 0.0)
+        if buy_ask <= 0:
+            buy_ask = buy_ltp * 1.005
+        buy_bid = float(buy_row.get("bid", 0.0) or 0.0)
+        # Marketable limit buy placed with buffer above ask matches instantly on top of book
+        exec_buy = round_to_tick(max(buy_ask + 0.60, buy_ltp * 1.015))
         exec_type = "MARKETABLE_INSTANT_FILL"
         slippage_saved = 0.0
 
         # Selling at Best Bid matches instantly with the best buyer on NSE
-        sell_bid = float(sell_row.get("bid", sell_ltp * 0.995))
-        exec_sell = round_to_tick(min(sell_bid, sell_ltp * 0.992)) if sell_bid > 0 else round_to_tick(sell_ltp * 0.992)
+        sell_bid = float(sell_row.get("bid", 0.0) or 0.0)
+        if sell_bid <= 0:
+            sell_bid = sell_ltp * 0.995
+        exec_sell = round_to_tick(min(sell_bid - 0.60, sell_ltp * 0.985)) if sell_bid > 0 else round_to_tick(sell_ltp * 0.985)
         net_credit = round(exec_sell - exec_buy, 2)
 
         # Symbol generation for Kotak Neo F&O
@@ -1413,21 +1417,43 @@ class MasterQuantEngine:
                     raise ValueError(f"BUY Hedge Rejected: {err_msg}")
 
                 buy_ord_no = res_buy.get("nOrdNo") if isinstance(res_buy, dict) else None
-                time.sleep(0.3)  # 300ms exchange margin recognition buffer
-
-                # Verify in order report during the buffer that BUY wasn't rejected by exchange RMS
+                
+                # Active Verification: Wait up to 1.4s for BUY order to reach 'complete' / 'traded' status
+                buy_filled = False
+                buy_rejected = False
+                buy_fill_reason = ""
                 if buy_ord_no:
-                    try:
-                        rep = self.client.order_report()
-                        if is_kotak_ok(rep) and rep.get("data"):
-                            for o in rep.get("data", []):
-                                if o.get("nOrdNo") == buy_ord_no and o.get("ordSt") in ["rejected", "cancelled"]:
-                                    rej = o.get("rejRsn") or "Exchange rejected BUY order"
-                                    raise ValueError(f"BUY Hedge Rejected on Exchange: {rej}")
-                    except ValueError:
-                        raise
-                    except Exception as b_check_err:
-                        logger.warning(f"BUY order report check notice: {b_check_err}")
+                    for _ in range(7):
+                        time.sleep(0.2)
+                        try:
+                            rep = self.client.order_report()
+                            if is_kotak_ok(rep) and rep.get("data"):
+                                for o in rep.get("data", []):
+                                    if str(o.get("nOrdNo")) == str(buy_ord_no):
+                                        st = str(o.get("ordSt", "")).lower()
+                                        if st in ["complete", "traded"]:
+                                            buy_filled = True
+                                            break
+                                        elif st in ["rejected", "cancelled"]:
+                                            buy_rejected = True
+                                            buy_fill_reason = o.get("rejRsn") or "Exchange rejected BUY order"
+                                            break
+                            if buy_filled or buy_rejected:
+                                break
+                        except Exception as b_check_err:
+                            logger.warning(f"BUY order report check notice: {b_check_err}")
+
+                    if buy_rejected:
+                        raise ValueError(f"BUY Hedge Rejected on Exchange: {buy_fill_reason}")
+
+                    if not buy_filled:
+                        # If BUY timed out in open state, cancel the open order immediately to avoid late execution
+                        logger.warning(f"[SAFEGUARD] BUY order {buy_ord_no} not filled in 1.4s. Cancelling order!")
+                        try:
+                            self.client.cancel_order(order_id=str(buy_ord_no))
+                        except Exception as c_err:
+                            logger.error(f"Failed to cancel unfilled BUY order: {c_err}")
+                        raise ValueError(f"BUY order {buy_ord_no} timed out and was cancelled. Trade safely aborted (0 Demat positions)!")
 
                 # 2. Place SELL ATM Strike Second
                 res_sell = self.client.place_order(
@@ -1442,7 +1468,7 @@ class MasterQuantEngine:
                 )
                 
                 # Critical Two-Phase Verification: Verify Leg 2 in order report to detect RMS margin rejection!
-                time.sleep(0.4)
+                time.sleep(0.3)
                 sell_ok = is_kotak_ok(res_sell)
                 sell_ord_no = res_sell.get("nOrdNo") if isinstance(res_sell, dict) else None
                 rej_rsn = "SELL order failed"
@@ -1455,8 +1481,9 @@ class MasterQuantEngine:
                         orders_rep = self.client.order_report()
                         if isinstance(orders_rep, dict) and orders_rep.get("data"):
                             for o in orders_rep.get("data", []):
-                                if o.get("nOrdNo") == sell_ord_no:
-                                    if o.get("ordSt") in ["rejected", "cancelled"]:
+                                if str(o.get("nOrdNo")) == str(sell_ord_no):
+                                    st = str(o.get("ordSt", "")).lower()
+                                    if st in ["rejected", "cancelled"]:
                                         sell_ok = False
                                         rej_rsn = o.get("rejRsn") or "RMS Margin / Limit Exceeded"
                                         break
@@ -1482,6 +1509,22 @@ class MasterQuantEngine:
                                 unwind_success = True
                                 logger.info(f"[RMS_SAFEGUARD] BUY hedge wing {buy_symbol} auto-unwound successfully at MARKET (Attempt {attempt+1})!")
                                 break
+                            else:
+                                unwind_limit_price = f"{round_to_tick(exec_buy * 0.90):.2f}"
+                                res_unwind_l = self.client.place_order(
+                                    exchange_segment="nse_fo",
+                                    product="NRML",
+                                    price=unwind_limit_price,
+                                    order_type="L",
+                                    quantity=str(total_qty),
+                                    validity="DAY",
+                                    trading_symbol=buy_symbol,
+                                    transaction_type="S",
+                                )
+                                if is_kotak_ok(res_unwind_l):
+                                    unwind_success = True
+                                    logger.info(f"[RMS_SAFEGUARD] BUY hedge wing {buy_symbol} auto-unwound successfully at Limit {unwind_limit_price} (Attempt {attempt+1})!")
+                                    break
                             time.sleep(0.15)
                         except Exception as unwind_err:
                             logger.error(f"[RMS_SAFEGUARD] Unwind attempt {attempt+1} failed: {unwind_err}")
@@ -1642,8 +1685,8 @@ class MasterQuantEngine:
         # If LIVE mode, send real squareoff orders
         if pos.get("execution_mode") == "LIVE" and self.authenticated and self.client:
             try:
-                # 1. Buy back short leg
-                self.client.place_order(
+                # 1. Buy back short leg first (releases margin obligation safely)
+                res_exit_sell = self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
                     price="0",
@@ -1653,8 +1696,10 @@ class MasterQuantEngine:
                     trading_symbol=pos.get("sell_symbol", f"NIFTY{pos['sell_strike']}{pos['sell_type']}"),
                     transaction_type="B",
                 )
-                # 2. Sell back long wing
-                self.client.place_order(
+                logger.info(f"[EXIT_SQUAREOFF] Short leg buyback result: {res_exit_sell}")
+
+                # 2. Sell back long wing second
+                res_exit_buy = self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
                     price="0",
@@ -1664,8 +1709,9 @@ class MasterQuantEngine:
                     trading_symbol=pos.get("buy_symbol", f"NIFTY{pos['buy_strike']}{pos['buy_type']}"),
                     transaction_type="S",
                 )
-            except Exception:
-                pass
+                logger.info(f"[EXIT_SQUAREOFF] Long wing squareoff result: {res_exit_buy}")
+            except Exception as exit_err:
+                logger.error(f"[EXIT_ERROR] Live squareoff order failed: {exit_err}")
 
         # Update Daily Metrics
         self.state["today_realized_gross_pnl"] = round(self.state["today_realized_gross_pnl"] + gross_pnl, 2)
