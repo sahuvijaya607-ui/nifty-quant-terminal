@@ -1195,6 +1195,28 @@ class MasterQuantEngine:
                     trading_symbol=sell_symbol,
                     transaction_type="S",
                 )
+                
+                # Critical Safeguard: If SELL leg is rejected or fails, AUTO-UNWIND BUY leg immediately!
+                sell_stat = res_sell.get("stat") if isinstance(res_sell, dict) else None
+                sell_ord_st = res_sell.get("ordSt") if isinstance(res_sell, dict) else None
+                if (sell_stat and sell_stat != "Ok") or sell_ord_st == "rejected":
+                    rej_rsn = res_sell.get("rejRsn") or res_sell.get("errMsg") or res_sell.get("message") or "SELL rejected by RMS"
+                    logger.error(f"[RMS_SAFEGUARD] SELL leg rejected ({rej_rsn}). Auto-unwinding BUY hedge wing immediately!")
+                    try:
+                        self.client.place_order(
+                            exchange_segment="nse_fo",
+                            product="NRML",
+                            price="0",
+                            order_type="MKT",
+                            quantity=str(total_qty),
+                            validity="DAY",
+                            trading_symbol=buy_symbol,
+                            transaction_type="S" if direction == "BULL_PUT_SPREAD" else "B",
+                        )
+                    except Exception as unwind_err:
+                        logger.error(f"[RMS_SAFEGUARD] Failed to auto-unwind BUY wing: {unwind_err}")
+                    raise ValueError(f"SELL leg rejected ({rej_rsn}). Auto-unwound orphan BUY wing!")
+
                 order_status = "KOTAK_API_FILLED"
             except Exception as e:
                 order_status = f"API_ERROR: {str(e)[:35]}"
