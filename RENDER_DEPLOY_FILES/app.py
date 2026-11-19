@@ -721,101 +721,167 @@ class MasterQuantEngine:
             if self.execution_mode == "LIVE" and self.authenticated and self.client:
                 try:
                     real_pos = self.client.positions()
-                    has_real_pos = False
-                    short_leg = None
-                    long_leg = None
-                    pos_stat = str(real_pos.get("stat", "")).lower() if isinstance(real_pos, dict) else ""
-                    if isinstance(real_pos, dict) and (pos_stat == "ok" or real_pos.get("stCode") == 200) and real_pos.get("data"):
-                        for p in real_pos.get("data", []):
-                            net = int(p.get("flBuyQty", 0)) - int(p.get("flSellQty", 0))
-                            if abs(net) > 0:
-                                has_real_pos = True
-                            if net < 0 and not short_leg:
-                                short_leg = p
-                            elif net > 0 and not long_leg:
-                                long_leg = p
+                    if is_kotak_ok(real_pos):
+                        has_real_pos = False
+                        short_leg = None
+                        long_leg = None
+                        pos_list = real_pos.get("data", []) or []
 
-                    # If Kotak Neo reports NO open position, record closed position to Ledger before clearing!
-                    if not has_real_pos and self.state.get("active_position"):
-                        old_pos = self.state.get("active_position")
-                        try:
-                            self.record_external_close_to_ledger(old_pos, reason="BROKER_MANUAL_SQUAREOFF")
-                        except Exception as log_err:
-                            logger.error(f"Failed to record external close to ledger: {log_err}")
-                        self.state["active_position"] = None
-                        self.save_state()
-                    elif has_real_pos and not self.state.get("active_position") and short_leg and long_leg:
-                        # Auto-Reconciliation: Recover open spread directly from Demat broker
-                        opt_type = short_leg.get("optTp", "PE")
-                        direction = "BULL_PUT_SPREAD" if opt_type == "PE" else "BEAR_CALL_SPREAD"
-                        s_stk = int(float(short_leg.get("stkPrc", 0)))
-                        b_stk = int(float(long_leg.get("stkPrc", 0)))
-                        s_qty = int(short_leg.get("flSellQty", 65))
-                        b_qty = int(long_leg.get("flBuyQty", 65))
-                        s_amt = float(short_leg.get("sellAmt", 0))
-                        b_amt = float(long_leg.get("buyAmt", 0))
-                        s_prc = round(s_amt / max(1, s_qty), 2)
-                        b_prc = round(b_amt / max(1, b_qty), 2)
-                        credit = round(s_prc - b_prc, 2)
-                        entry_spot_val = spot if spot else s_stk
+                        for p in pos_list:
+                            try:
+                                buy_q = int(float(p.get("flBuyQty", 0)))
+                                sell_q = int(float(p.get("flSellQty", 0)))
+                                net = buy_q - sell_q
+                                if abs(net) > 0:
+                                    has_real_pos = True
+                                if net < 0 and not short_leg:
+                                    short_leg = p
+                                elif net > 0 and not long_leg:
+                                    long_leg = p
+                            except Exception:
+                                pass
 
-                        self.state["active_position"] = {
-                            "direction": direction,
-                            "expiry": short_leg.get("expDt", self.pulse.get("next_expiry")),
-                            "execution_mode": "LIVE",
-                            "order_status": "KOTAK_API_FILLED",
-                            "execution_type": "MANUAL (Kotak Mobile App - User Controlled)",
-                            "slippage_saved_pts": 0.0,
-                            "slippage_saved_inr": 0.0,
-                            "lot_count": max(1, s_qty // 65),
-                            "lot_size": s_qty,
-                            "wing_distance": abs(s_stk - b_stk),
-                            "entry_time": short_leg.get("hsUpTm", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-                            "entry_timestamp_sec": time.time() - 3600,
-                            "entry_spot": entry_spot_val,
-                            "sell_strike": s_stk,
-                            "sell_type": opt_type,
-                            "sell_token": short_leg.get("tok", ""),
-                            "sell_symbol": short_leg.get("trdSym", ""),
-                            "sell_price": s_prc,
-                            "buy_strike": b_stk,
-                            "buy_type": long_leg.get("optTp", "PE"),
-                            "buy_token": long_leg.get("tok", ""),
-                            "buy_symbol": long_leg.get("trdSym", ""),
-                            "buy_price": b_prc,
-                            "net_credit": credit,
-                            "target_credit": round(credit * 0.50, 2),
-                            "target_spread": round(credit * 0.60, 2),
-                            "sl_spread": round(credit * 1.60, 2),
-                            "stop_loss": round(credit * 1.60, 2),
-                            "breakeven_active": True,
-                            "be_locked": True,
-                            "be_locked_time": short_leg.get("hsUpTm", ""),
-                            "peak_points": max(0.0, credit - (s_prc - b_prc)),
-                            "holding_time_str": "0:45:00",
-                            "spot_move": round(spot - entry_spot_val, 1) if spot else 0.0,
-                            "current_sell_ltp": s_prc,
-                            "current_buy_ltp": b_prc,
-                            "current_spread": credit,
-                            "points_captured": 0.0,
-                            "unrealized_gross": 0.0,
-                            "brokerage": 40.0,
-                            "stt": 10.0,
-                            "gst": 9.0,
-                            "total_charges": 60.0,
-                            "unrealized_net": 0.0,
-                            "target_profit_inr": round((credit * 0.40) * s_qty, 2),
-                            "max_risk_inr": round(credit * 0.60 * s_qty, 2),
-                            "status": "OPEN",
-                            "mtm_gross_pnl": 0.0,
-                            "mtm_net_pnl": 0.0,
-                            "trade_initiator": "USER_MANUAL",
-                            "margin_used": float(self.account_margin_used or 45000),
-                            "why_trade_taken": "Manually placed by User from Kotak Neo Mobile App (Algo Monitor Only - No Auto Exit)",
-                            "kyun_liya": "Manually placed by User from Kotak Neo Mobile App (Algo Monitor Only - No Auto Exit)",
-                        }
-                        self.save_state()
-                        logger.info(f"[RECONCILIATION] Successfully recovered {direction} from Kotak Neo: Sell {s_stk} / Buy {b_stk} Credit {credit}")
+                        # Case A: Kotak confirmed NO open position in Demat -> Record close and clear
+                        if not has_real_pos and self.state.get("active_position"):
+                            old_pos = self.state.get("active_position")
+                            try:
+                                self.record_external_close_to_ledger(old_pos, reason="BROKER_MANUAL_SQUAREOFF")
+                            except Exception as log_err:
+                                logger.error(f"Failed to record external close to ledger: {log_err}")
+                            self.state["active_position"] = None
+                            self.save_state()
+
+                        # Case B: Kotak confirmed Open 2-Leg Spread -> Recover into active_position
+                        elif has_real_pos and not self.state.get("active_position") and short_leg and long_leg:
+                            opt_type = short_leg.get("optTp", "PE")
+                            direction = "BULL_PUT_SPREAD" if opt_type == "PE" else "BEAR_CALL_SPREAD"
+                            s_stk = int(float(short_leg.get("stkPrc", 0)))
+                            b_stk = int(float(long_leg.get("stkPrc", 0)))
+                            s_qty = int(float(short_leg.get("flSellQty", 65)))
+                            b_qty = int(float(long_leg.get("flBuyQty", 65)))
+                            s_amt = float(short_leg.get("sellAmt", 0))
+                            b_amt = float(long_leg.get("buyAmt", 0))
+                            s_prc = round(s_amt / max(1, s_qty), 2)
+                            b_prc = round(b_amt / max(1, b_qty), 2)
+                            credit = round(s_prc - b_prc, 2)
+                            entry_spot_val = spot if spot else s_stk
+
+                            self.state["active_position"] = {
+                                "direction": direction,
+                                "expiry": short_leg.get("expDt", self.pulse.get("next_expiry")),
+                                "execution_mode": "LIVE",
+                                "order_status": "KOTAK_API_FILLED",
+                                "execution_type": "MANUAL (Kotak Mobile App - User Controlled)",
+                                "trade_initiator": "USER_MANUAL",
+                                "why_trade_taken": "Reconciled from Kotak Neo Demat Open Positions",
+                                "slippage_saved_pts": 0.0,
+                                "slippage_saved_inr": 0.0,
+                                "lot_count": max(1, s_qty // 65),
+                                "lot_size": s_qty,
+                                "wing_distance": abs(s_stk - b_stk),
+                                "entry_time": short_leg.get("hsUpTm", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                                "entry_timestamp_sec": time.time() - 3600,
+                                "entry_spot": entry_spot_val,
+                                "sell_strike": s_stk,
+                                "sell_type": opt_type,
+                                "sell_token": short_leg.get("tok", ""),
+                                "sell_symbol": short_leg.get("trdSym", ""),
+                                "sell_price": s_prc,
+                                "buy_strike": b_stk,
+                                "buy_type": long_leg.get("optTp", "PE"),
+                                "buy_token": long_leg.get("tok", ""),
+                                "buy_symbol": long_leg.get("trdSym", ""),
+                                "buy_price": b_prc,
+                                "net_credit": credit,
+                                "target_credit": round(credit * 0.50, 2),
+                                "target_spread": round(credit * 0.60, 2),
+                                "sl_spread": round(credit * 1.60, 2),
+                                "stop_loss": round(credit * 1.60, 2),
+                                "breakeven_active": True,
+                                "be_locked": True,
+                                "be_locked_time": short_leg.get("hsUpTm", ""),
+                                "peak_points": max(0.0, credit - (s_prc - b_prc)),
+                                "holding_time_str": "0:45:00",
+                                "spot_move": round(spot - entry_spot_val, 1) if spot else 0.0,
+                                "current_sell_ltp": s_prc,
+                                "current_buy_ltp": b_prc,
+                                "current_spread": credit,
+                                "points_captured": 0.0,
+                                "unrealized_gross": 0.0,
+                                "brokerage": 40.0,
+                                "stt": 10.0,
+                                "gst": 9.0,
+                                "total_charges": 60.0,
+                                "unrealized_net": 0.0,
+                                "target_profit_inr": round((credit * 0.40) * s_qty, 2),
+                                "max_risk_inr": round(credit * 0.60 * s_qty, 2),
+                                "status": "OPEN",
+                                "mtm_gross_pnl": 0.0,
+                            }
+                            self.save_state()
+
+                        # Case C: Demat has 1 Open Orphan Leg (Only short or only long) -> Recover & Alert!
+                        elif has_real_pos and not self.state.get("active_position") and (short_leg or long_leg):
+                            leg = short_leg or long_leg
+                            is_short = bool(short_leg)
+                            leg_qty = int(float(leg.get("flSellQty" if is_short else "flBuyQty", 65)))
+                            leg_amt = float(leg.get("sellAmt" if is_short else "buyAmt", 0))
+                            leg_prc = round(leg_amt / max(1, leg_qty), 2)
+                            leg_stk = int(float(leg.get("stkPrc", 0)))
+                            leg_type = leg.get("optTp", "PE")
+
+                            self.state["active_position"] = {
+                                "direction": f"ORPHAN_LEG ({'SELL' if is_short else 'BUY'} {leg_stk}{leg_type})",
+                                "expiry": leg.get("expDt", self.pulse.get("next_expiry")),
+                                "execution_mode": "LIVE",
+                                "order_status": "KOTAK_API_FILLED",
+                                "execution_type": "MANUAL (Kotak Mobile App - User Controlled)",
+                                "trade_initiator": "USER_MANUAL",
+                                "why_trade_taken": "Single Demat Leg Detected - Manual Intervention Advised",
+                                "slippage_saved_pts": 0.0,
+                                "slippage_saved_inr": 0.0,
+                                "lot_count": max(1, leg_qty // 65),
+                                "lot_size": leg_qty,
+                                "wing_distance": 0,
+                                "entry_time": leg.get("hsUpTm", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                                "entry_timestamp_sec": time.time() - 3600,
+                                "entry_spot": spot if spot else leg_stk,
+                                "sell_strike": leg_stk if is_short else 0,
+                                "sell_type": leg_type if is_short else "",
+                                "sell_token": leg.get("tok", "") if is_short else "",
+                                "sell_symbol": leg.get("trdSym", "") if is_short else "",
+                                "sell_price": leg_prc if is_short else 0.0,
+                                "buy_strike": leg_stk if not is_short else 0,
+                                "buy_type": leg_type if not is_short else "",
+                                "buy_token": leg.get("tok", "") if not is_short else "",
+                                "buy_symbol": leg.get("trdSym", "") if not is_short else "",
+                                "buy_price": leg_prc if not is_short else 0.0,
+                                "net_credit": leg_prc,
+                                "target_credit": round(leg_prc * 0.50, 2),
+                                "target_spread": round(leg_prc * 0.60, 2),
+                                "sl_spread": round(leg_prc * 1.60, 2),
+                                "stop_loss": round(leg_prc * 1.60, 2),
+                                "breakeven_active": False,
+                                "holding_time_str": "0:30:00",
+                                "spot_move": 0.0,
+                                "current_sell_ltp": leg_prc,
+                                "current_buy_ltp": 0.0,
+                                "current_spread": leg_prc,
+                                "points_captured": 0.0,
+                                "unrealized_gross": 0.0,
+                                "brokerage": 20.0,
+                                "stt": 5.0,
+                                "gst": 5.0,
+                                "total_charges": 30.0,
+                                "unrealized_net": 0.0,
+                                "target_profit_inr": round((leg_prc * 0.40) * leg_qty, 2),
+                                "max_risk_inr": round(leg_prc * 0.60 * leg_qty, 2),
+                                "status": "OPEN",
+                                "mtm_gross_pnl": 0.0,
+                            }
+                            self.save_state()
+                    else:
+                        logger.warning(f"Skipping broker position reconciliation - Kotak API returned non-OK: {real_pos}")
                 except Exception as recon_err:
                     logger.error(f"[RECONCILIATION_ERROR] {recon_err}")
 
