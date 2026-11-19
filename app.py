@@ -407,6 +407,37 @@ class MasterQuantEngine:
             return True, f"Weekly PCR ({pcr:.3f} <= 0.85, Call Writers Dominant)"
         return False, f"Weekly PCR ({pcr:.3f} > 0.85, Put Writers Dominant)"
 
+    def update_real_emas_from_candles(self):
+        """Fetches real historical 5-minute and Daily candle data from Kotak Neo API and calculates exact EMAs."""
+        if not self.client or not self.authenticated:
+            return
+        now = time.time()
+        if now - getattr(self, "last_ema_calc_time", 0) < 60:
+            return
+        try:
+            today_str = date.today().strftime("%Y-%m-%d")
+            start_5m = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
+            res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
+            candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
+            if candles_5m and len(candles_5m) >= 50:
+                closes = [float(c[4]) for c in candles_5m]
+                s_close = pd.Series(closes)
+                self.base_ema9 = round(float(s_close.ewm(span=9, adjust=False).mean().iloc[-1]), 2)
+                self.base_ema20 = round(float(s_close.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+                self.base_ema50 = round(float(s_close.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
+
+            start_d = (date.today() - timedelta(days=60)).strftime("%Y-%m-%d")
+            res_d = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="D", from_date=start_d, to_date=today_str)
+            candles_d = res_d.get("data", {}).get("candles", []) if isinstance(res_d, dict) else []
+            if candles_d and len(candles_d) >= 20:
+                d_closes = [float(c[4]) for c in candles_d]
+                s_d = pd.Series(d_closes)
+                self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+
+            self.last_ema_calc_time = now
+        except Exception:
+            pass
+
     def _watchdog_loop(self):
         """Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Daemon."""
         while True:
@@ -616,21 +647,22 @@ class MasterQuantEngine:
 
             spot = self.pulse["spot"]
 
-            # Dynamic Real-Time EMA Calculations based on live Spot movement
+            # Dynamic Real-Time EMA Calculations based on live Spot movement & real candles
+            self.update_real_emas_from_candles()
+
             a9 = 2.0 / 10.0
             a20 = 2.0 / 21.0
             a50 = 2.0 / 51.0
-            adaily = 2.0 / 21.0
 
-            base_e9 = getattr(self, "base_ema9", 25007.35)
-            base_e20 = getattr(self, "base_ema20", 24988.33)
-            base_e50 = getattr(self, "base_ema50", 24952.39)
-            base_daily = getattr(self, "base_daily20", 23677.11)
+            base_e9 = getattr(self, "base_ema9", 25261.28)
+            base_e20 = getattr(self, "base_ema20", 25240.97)
+            base_e50 = getattr(self, "base_ema50", 25234.28)
+            base_daily = getattr(self, "base_daily20", 24483.43)
 
             self.pulse["ema9"] = round(spot * a9 + base_e9 * (1.0 - a9), 2)
             self.pulse["ema20"] = round(spot * a20 + base_e20 * (1.0 - a20), 2)
             self.pulse["ema50"] = round(spot * a50 + base_e50 * (1.0 - a50), 2)
-            self.pulse["daily_ema20"] = round(spot * adaily + base_daily * (1.0 - adaily), 2)
+            self.pulse["daily_ema20"] = base_daily
 
             # Live Option Chain OI & High-Precision PCR (3 decimal places)
             total_call_oi = sum(int(c.get("oi", {}).get("cur", c.get("oi", {}).get("oi", 0))) for c in chain.get("call", []))
@@ -638,20 +670,48 @@ class MasterQuantEngine:
             self.pulse["total_call_oi"] = total_call_oi
             self.pulse["total_put_oi"] = total_put_oi
             if total_call_oi > 0:
-                self.pulse["pcr"] = round(total_put_oi / total_call_oi, 3)
+                raw_pcr = round(total_put_oi / total_call_oi, 3)
+                self.pulse["pcr"] = min(max(raw_pcr, 0.05), 5.0)
 
             # Intraday Fresh Change in OI PCR (Today's live build-up)
             call_oi_chg = sum(int(c.get("oi", {}).get("cur", 0)) - int(c.get("oi", {}).get("prev", 0)) for c in chain.get("call", []))
             put_oi_chg = sum(int(p.get("oi", {}).get("cur", 0)) - int(p.get("oi", {}).get("prev", 0)) for p in chain.get("put", []))
             self.pulse["call_oi_chg"] = call_oi_chg
             self.pulse["put_oi_chg"] = put_oi_chg
-            self.pulse["pcr_oi_change"] = round(put_oi_chg / call_oi_chg, 2) if call_oi_chg > 0 else (99.0 if put_oi_chg > 0 else 1.0)
+            if call_oi_chg > 0:
+                raw_oi_pcr = round(put_oi_chg / call_oi_chg, 2)
+                self.pulse["pcr_oi_change"] = min(max(raw_oi_pcr, 0.05), 20.0)
+            elif put_oi_chg > 0:
+                self.pulse["pcr_oi_change"] = 5.0
+            else:
+                self.pulse["pcr_oi_change"] = 1.0
 
             # Active Core Strikes PCR (ATM +/- 500 pts)
             atm = int(round(spot / 50.0) * 50)
             c_oi_core = sum(int(c.get("oi", {}).get("cur", 0)) for c in chain.get("call", []) if abs(float(c.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
             p_oi_core = sum(int(p.get("oi", {}).get("cur", 0)) for p in chain.get("put", []) if abs(float(p.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
-            self.pulse["pcr_core_atm"] = round(p_oi_core / c_oi_core, 3) if c_oi_core > 0 else 1.0
+            if c_oi_core > 0:
+                raw_core_pcr = round(p_oi_core / c_oi_core, 3)
+                self.pulse["pcr_core_atm"] = min(max(raw_core_pcr, 0.05), 5.0)
+            else:
+                self.pulse["pcr_core_atm"] = 1.0
+
+            # Real-time position reconciliation with Kotak Neo broker
+            if self.execution_mode == "LIVE" and self.authenticated and self.client:
+                try:
+                    real_pos = self.client.positions()
+                    has_real_pos = False
+                    if isinstance(real_pos, dict) and real_pos.get("stat") == "Ok" and real_pos.get("data"):
+                        for p in real_pos.get("data", []):
+                            if abs(int(p.get("flBuyQty", 0)) - int(p.get("flSellQty", 0))) > 0:
+                                has_real_pos = True
+                                break
+                    # If Kotak Neo reports NO open position, clear any phantom active position!
+                    if not has_real_pos and self.state.get("active_position"):
+                        self.state["active_position"] = None
+                        self.save_state()
+                except Exception:
+                    pass
 
             # Upgrade 5: Calculate India VIX & Adaptive Wing Distance
             atm_call = next((c for c in chain.get("call", []) if abs(float(c.get("inst", {}).get("strkPrc", 0)) - atm) < 25), None)
@@ -1107,6 +1167,8 @@ class MasterQuantEngine:
                 order_status = "KOTAK_API_FILLED"
             except Exception as e:
                 order_status = f"API_ERROR: {str(e)[:35]}"
+                self.status_message = f"Kotak Order Placement Error: {str(e)[:45]}"
+                return False, f"Kotak Order Placement Failed: {e}"
         else:
             order_status = "PAPER_VIRTUAL"
 
