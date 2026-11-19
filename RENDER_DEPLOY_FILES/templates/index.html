@@ -880,17 +880,79 @@
                     </div>
                 </div>
 
-                <div id="position-empty-card" class="text-center py-10 space-y-3">
-                    <div class="w-12 h-12 mx-auto rounded-full bg-slate-800/80 flex items-center justify-center text-slate-500 text-xl">
-                        <i class="fa-solid fa-radar"></i>
+                <div id="position-empty-card" class="py-6 space-y-4">
+                    <div class="text-center space-y-2">
+                        <div class="w-10 h-10 mx-auto rounded-full bg-slate-800/80 flex items-center justify-center text-slate-500 text-lg">
+                            <i class="fa-solid fa-radar text-cyan-400 animate-pulse"></i>
+                        </div>
+                        <h3 class="text-sm font-semibold text-slate-200">No Open Position (Radar Scanning)</h3>
+                        <p class="text-xs text-slate-400 max-w-md mx-auto">
+                            Continuous 6-Rule Gate Verification active. When all 6 rules align, the Credit Spread will execute with instant BUY-FIRST margin safety.
+                        </p>
                     </div>
-                    <h3 class="text-sm font-semibold text-slate-300">No Open Position</h3>
-                    <p class="text-xs text-slate-500 max-w-sm mx-auto">
-                        Scanning live candles. When conditions align or when you click below, trade will trigger with BUY-FIRST margin safety.
-                    </p>
-                    <button onclick="triggerTrade()" class="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition">
-                        <i class="fa-solid fa-bolt mr-1"></i> Trigger Trade Now
-                    </button>
+
+                    <!-- 4-Card Target & Risk Architecture Rules Preview -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                        <!-- Card 1: Max Potential -->
+                        <div class="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col justify-between">
+                            <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                                <span>MAX POTENTIAL</span>
+                                <i class="fa-solid fa-coins text-cyan-400"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-cyan-300 mono">100% Net Credit</div>
+                                <div class="text-[10px] text-slate-400 mono mt-0.5">Spread: ~85-95 pts (~₹5.5k - ₹6.2k)</div>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: 40% Target Goal -->
+                        <div class="p-3 bg-slate-900/60 border border-emerald-500/30 rounded-xl flex flex-col justify-between bg-emerald-500/5">
+                            <div class="flex items-center justify-between text-[11px] text-emerald-400 font-semibold">
+                                <span>40% TARGET EXIT</span>
+                                <i class="fa-solid fa-bullseye text-emerald-400"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-emerald-400 mono">+40% Decay</div>
+                                <div class="text-[10px] text-slate-400 mono mt-0.5">Exit Spread: 60% of Entry Price</div>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: 25% Auto-Trail -->
+                        <div class="p-3 bg-slate-900/60 border border-amber-500/30 rounded-xl flex flex-col justify-between bg-amber-500/5">
+                            <div class="flex items-center justify-between text-[11px] text-amber-400 font-semibold">
+                                <span>25% AUTO-TRAIL (0-RISK)</span>
+                                <i class="fa-solid fa-shield-halved text-amber-400"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-amber-300 mono">+25% Profit</div>
+                                <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
+                                    <span class="text-slate-400">Trigger: 75% Spread</span>
+                                    <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">SL &rarr; BE</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 4: Stop Loss -->
+                        <div class="p-3 bg-slate-900/60 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5">
+                            <div class="flex items-center justify-between text-[11px] text-rose-400 font-semibold">
+                                <span>STOP LOSS</span>
+                                <i class="fa-solid fa-hand text-rose-400"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-rose-400 mono">-₹2,800 CAP</div>
+                                <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
+                                    <span class="text-slate-400">Cut Spread: 1.6x</span>
+                                    <span class="text-[9px] font-bold text-slate-400">ACTIVE</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center pt-2">
+                        <button onclick="triggerTrade()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition shadow-lg shadow-blue-600/30">
+                            <i class="fa-solid fa-bolt mr-1"></i> Trigger Trade Now (BUY-FIRST Safe)
+                        </button>
+                    </div>
                 </div>
 
                 <div class="pt-4 border-t border-slate-800 text-[11px] text-slate-500 flex justify-between">
