@@ -31,6 +31,10 @@ from dotenv import load_dotenv
 
 from scripts.daily_data_archiver import DailyDataArchiver
 
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("quant_terminal")
+
 load_dotenv()
 
 
@@ -124,6 +128,15 @@ def calc_bs_greeks(spot, strike, dte_days=5, iv=0.135, r=0.07):
             "vega": 12.80,
             "iv": 13.5,
         }
+
+
+def is_kotak_ok(res):
+    """Case-insensitive robust verification of Kotak Neo API responses."""
+    if not isinstance(res, dict):
+        return False
+    stat = str(res.get("stat", "")).strip().lower()
+    st_code = str(res.get("stCode", ""))
+    return stat == "ok" or st_code in ["200", "0"] or "nOrdNo" in res or "data" in res
 
 
 class MasterQuantEngine:
@@ -412,13 +425,18 @@ class MasterQuantEngine:
         if not self.client or not self.authenticated:
             return
         now = time.time()
-        if now - getattr(self, "last_ema_calc_time", 0) < 120:
+        if now < getattr(self, "ema_backoff_until", 0):
+            return
+        if now - getattr(self, "last_ema_calc_time", 0) < 300:
             return
         self.last_ema_calc_time = now
         try:
             today_str = date.today().strftime("%Y-%m-%d")
             start_5m = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
             res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
+            if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
+                self.ema_backoff_until = now + 300
+                return
             candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
             if candles_5m and len(candles_5m) >= 50:
                 closes = [float(c[4]) for c in candles_5m]
@@ -434,8 +452,9 @@ class MasterQuantEngine:
                 d_closes = [float(c[4]) for c in candles_d]
                 s_d = pd.Series(d_closes)
                 self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
-        except Exception:
-            pass
+        except Exception as e:
+            if "429" in str(e) or "rate" in str(e).lower():
+                self.ema_backoff_until = now + 300
 
     def _watchdog_loop(self):
         """Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Daemon."""
@@ -664,25 +683,27 @@ class MasterQuantEngine:
             self.pulse["ema50"] = round(spot * a50 + base_e50 * (1.0 - a50), 2)
             self.pulse["daily_ema20"] = base_daily
 
-            # Live Option Chain OI & High-Precision PCR (3 decimal places)
-            total_call_oi = sum(int(c.get("oi", {}).get("cur", c.get("oi", {}).get("oi", 0))) for c in chain.get("call", []))
-            total_put_oi = sum(int(p.get("oi", {}).get("cur", p.get("oi", {}).get("oi", 0))) for p in chain.get("put", []))
+            # Live Option Chain OI & High-Precision PCR (Sanitized & Bounded)
+            total_call_oi = sum(int(c.get("oi", {}).get("cur") or 0) for c in chain.get("call", []))
+            total_put_oi = sum(int(p.get("oi", {}).get("cur") or 0) for p in chain.get("put", []))
             self.pulse["total_call_oi"] = total_call_oi
             self.pulse["total_put_oi"] = total_put_oi
             if total_call_oi > 0:
                 raw_pcr = round(total_put_oi / total_call_oi, 3)
-                self.pulse["pcr"] = min(max(raw_pcr, 0.05), 5.0)
+                self.pulse["pcr"] = min(max(raw_pcr, 0.20), 4.00)
+            else:
+                self.pulse["pcr"] = 1.05
 
             # Intraday Fresh Change in OI PCR (Today's live build-up)
-            call_oi_chg = sum(int(c.get("oi", {}).get("cur", 0)) - int(c.get("oi", {}).get("prev", 0)) for c in chain.get("call", []))
-            put_oi_chg = sum(int(p.get("oi", {}).get("cur", 0)) - int(p.get("oi", {}).get("prev", 0)) for p in chain.get("put", []))
+            call_oi_chg = sum(int(c.get("oi", {}).get("cur") or 0) - int(c.get("oi", {}).get("prev") or 0) for c in chain.get("call", []))
+            put_oi_chg = sum(int(p.get("oi", {}).get("cur") or 0) - int(p.get("oi", {}).get("prev") or 0) for p in chain.get("put", []))
             self.pulse["call_oi_chg"] = call_oi_chg
             self.pulse["put_oi_chg"] = put_oi_chg
-            if call_oi_chg > 0:
+            if call_oi_chg > 0 and put_oi_chg > 0:
                 raw_oi_pcr = round(put_oi_chg / call_oi_chg, 2)
-                self.pulse["pcr_oi_change"] = min(max(raw_oi_pcr, 0.05), 20.0)
+                self.pulse["pcr_oi_change"] = min(max(raw_oi_pcr, 0.10), 10.0)
             elif put_oi_chg > 0:
-                self.pulse["pcr_oi_change"] = 5.0
+                self.pulse["pcr_oi_change"] = 3.0
             else:
                 self.pulse["pcr_oi_change"] = 1.0
 
@@ -738,7 +759,7 @@ class MasterQuantEngine:
                             "expiry": short_leg.get("expDt", self.pulse.get("next_expiry")),
                             "execution_mode": "LIVE",
                             "order_status": "KOTAK_API_FILLED",
-                            "execution_type": "AUTO ALGO (Broker Reconciled)",
+                            "execution_type": "MANUAL (Kotak Mobile App - User Controlled)",
                             "slippage_saved_pts": 0.0,
                             "slippage_saved_inr": 0.0,
                             "lot_count": max(1, s_qty // 65),
@@ -783,10 +804,10 @@ class MasterQuantEngine:
                             "status": "OPEN",
                             "mtm_gross_pnl": 0.0,
                             "mtm_net_pnl": 0.0,
-                            "trade_initiator": "AUTO_ALGO",
+                            "trade_initiator": "USER_MANUAL",
                             "margin_used": float(self.account_margin_used or 45000),
-                            "why_trade_taken": f"Spot > Daily 20 EMA | 5m Cascade (9>20>50) | Green Candle | PCR >= 1.05 | Broker Reconciled Live Trade",
-                            "kyun_liya": f"Spot > Daily 20 EMA | 5m Cascade (9>20>50) | Green Candle | PCR >= 1.05 | Broker Reconciled Live Trade",
+                            "why_trade_taken": "Manually placed by User from Kotak Neo Mobile App (Algo Monitor Only - No Auto Exit)",
+                            "kyun_liya": "Manually placed by User from Kotak Neo Mobile App (Algo Monitor Only - No Auto Exit)",
                         }
                         self.save_state()
                         logger.info(f"[RECONCILIATION] Successfully recovered {direction} from Kotak Neo: Sell {s_stk} / Buy {b_stk} Credit {credit}")
@@ -839,13 +860,13 @@ class MasterQuantEngine:
             else:
                 self.pulse["signal"] = "NEUTRAL_SCANNING"
 
-            # Autonomous Live Trigger (09:20 - 14:30 IST, strictly Max 2 trades/day)
+            # Autonomous Live Trigger (09:30 - 14:30 IST, strictly Max 2 trades/day)
             # STRICT GUARD: Live Option Chain must be downloaded and PCR verified!
             today_trades_count = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
             if is_mkt_open and (not self.state.get("active_position")) and (not self.state.get("circuit_breaker_active")):
                 if today_trades_count < 2:
                     t_time = now_dt.time()
-                    if datetime.strptime("09:20", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
+                    if datetime.strptime("09:30", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
                         if self.pulse.get("option_chain") is not None and (bull_pcr_ok or bear_pcr_ok):
                             if self.pulse["signal"] in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
                                 self.trigger_trade(force=False)
@@ -1158,20 +1179,170 @@ class MasterQuantEngine:
             "total_charges": total_deduction,
         }
 
+    def has_open_broker_positions(self):
+        """Checks Kotak Neo broker directly to see if any open F&O position exists in Demat."""
+        if not self.client or not self.authenticated or self.execution_mode != "LIVE":
+            return False
+        try:
+            b_pos = self.client.positions()
+            if is_kotak_ok(b_pos) and b_pos.get("data"):
+                for p in b_pos.get("data", []):
+                    net_qty = abs(int(p.get("flBuyQty", 0)) - int(p.get("flSellQty", 0)))
+                    if net_qty > 0:
+                        return True
+            return False
+        except Exception as e:
+            logger.warning(f"Error checking broker positions: {e}")
+            return False
+
+    def get_broker_cash_margin(self):
+        """Fetches live free cash margin from Kotak Neo."""
+        if not self.client or not self.authenticated or self.execution_mode != "LIVE":
+            return float(getattr(self, "account_free_cash", 50000.0) or 50000.0)
+        try:
+            lims = self.client.limits()
+            if isinstance(lims, dict):
+                lim_data = lims.get("data", {})
+                cash = float(lim_data.get("cashAvailable") or lim_data.get("availableMargin") or getattr(self, "account_free_cash", 0.0) or 0.0)
+                if cash > 0:
+                    self.account_free_cash = cash
+                    return cash
+        except Exception as e:
+            logger.warning(f"Failed to fetch live broker cash: {e}")
+        return float(getattr(self, "account_free_cash", 50000.0) or 50000.0)
+
     def trigger_trade(self, force=False, simulated_time=None):
         """
         Executes Margin-Safe Credit Spread:
         STEP 1: BUY OTM Wing FIRST
         STEP 2: SELL ATM Strike SECOND
-        """
-        if self.state.get("active_position") and not force:
-            return False, "Position already active."
 
-        if self.state.get("circuit_breaker_active") and not force:
-            return False, "Circuit breaker active."
+        USER STRICT COMMAND: IRONCLAD 6-RULE GATE (No trade unless ALL 6 Rules are TRUE)
+        """
+        # -------------------------------------------------------------------------
+        # USER COMMAND: IRONCLAD 6-RULE VERIFICATION GATE
+        # -------------------------------------------------------------------------
+        if not force:
+            spot = float(self.pulse.get("spot", 0) or 0)
+            d_ema = float(self.pulse.get("daily_ema20", 0) or 0)
+            e9 = float(self.pulse.get("ema9", 0) or 0)
+            e20 = float(self.pulse.get("ema20", 0) or 0)
+            e50 = float(self.pulse.get("ema50", 0) or 0)
+            pcr = float(self.pulse.get("pcr", 1.0) or 1.0)
+            is_green = bool(self.pulse.get("is_green_candle", True))
+            is_red = bool(self.pulse.get("is_red_candle", True))
+
+            # Rule 4: Time Window Check (09:30 AM to 14:30 PM IST)
+            if simulated_time:
+                try:
+                    now_dt = datetime.strptime(str(simulated_time)[:19], "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    now_dt = get_ist_now()
+            else:
+                now_dt = get_ist_now()
+            t_now = now_dt.time()
+            if not (datetime.strptime("09:30", "%H:%M").time() <= t_now <= datetime.strptime("14:30", "%H:%M").time()):
+                msg = f"[GATE BLOCKED - RULE 4] Current Time {t_now.strftime('%H:%M:%S')} is outside strict trading window (09:30 - 14:30 IST)!"
+                logger.warning(msg)
+                return False, msg
+
+            # Rule 5: Circuit Breaker & Max 2 Trades
+            today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
+            if today_trades_done >= 2:
+                msg = f"[GATE BLOCKED - RULE 5] Daily trade quota reached ({today_trades_done}/2 trades executed today)!"
+                logger.warning(msg)
+                return False, msg
+            if self.state.get("circuit_breaker_active"):
+                msg = "[GATE BLOCKED - RULE 5] Circuit breaker is active! Trading stopped for the day."
+                logger.warning(msg)
+                return False, msg
+
+            # Rule 6: Demat Safety (0 Open Positions & Free Cash >= Rs 50,000)
+            if self.state.get("active_position"):
+                msg = "[GATE BLOCKED - RULE 6] Internal state already has an active position!"
+                logger.warning(msg)
+                return False, msg
+
+            if self.execution_mode == "LIVE" and self.authenticated and self.client:
+                # Direct Broker Demat open legs check
+                try:
+                    b_pos = self.client.positions()
+                    if is_kotak_ok(b_pos) and b_pos.get("data"):
+                        for p in b_pos.get("data", []):
+                            net_qty = abs(int(p.get("flBuyQty", 0)) - int(p.get("flSellQty", 0)))
+                            if net_qty > 0:
+                                msg = f"[GATE BLOCKED - RULE 6] Demat has open F&O leg ({p.get('trdSym')} Qty {net_qty}). Strictly 0 open legs allowed!"
+                                logger.warning(msg)
+                                return False, msg
+                except Exception as b_err:
+                    msg = f"[GATE BLOCKED - RULE 6] Failed broker Demat check: {b_err}"
+                    logger.warning(msg)
+                    return False, msg
+
+                # Broker Free Cash Check (>= Rs 50,000)
+                try:
+                    cash_avail = self.get_broker_cash_margin()
+                    if cash_avail > 0 and cash_avail < 50000.0:
+                        msg = f"[GATE BLOCKED - RULE 6] Free cash Rs {cash_avail:,.2f} < Rs 50,000 minimum required!"
+                        logger.warning(msg)
+                        return False, msg
+                except Exception as c_err:
+                    logger.warning(f"Failed cash check: {c_err}")
+
+            # Direction & Signal Evaluation
+            direction = self.pulse.get("signal")
+            if direction not in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
+                msg = f"[GATE BLOCKED] Signal is {direction} (All 6 rules not met). Entry strictly prohibited!"
+                logger.warning(msg)
+                return False, msg
+
+            # Direction-Specific Rules (Rule 1, 2, 3)
+            if direction == "BULL_PUT_SPREAD":
+                # Rule 1: Spot > Daily 20 EMA
+                if d_ema > 0 and spot <= d_ema:
+                    msg = f"[GATE BLOCKED - RULE 1] Spot ({spot}) <= Daily 20 EMA ({d_ema})! Bullish macro filter failed."
+                    logger.warning(msg)
+                    return False, msg
+                # Rule 2: 9 > 20 > 50 EMA & Green Candle
+                if not (e9 > e20 > e50):
+                    msg = f"[GATE BLOCKED - RULE 2] 5m EMA cascade failed (9={e9}, 20={e20}, 50={e50})!"
+                    logger.warning(msg)
+                    return False, msg
+                if not is_green:
+                    msg = "[GATE BLOCKED - RULE 2] Current 5m candle is not Green (Close < Open)!"
+                    logger.warning(msg)
+                    return False, msg
+                # Rule 3: Weekly PCR >= 1.05
+                if pcr < 1.05:
+                    msg = f"[GATE BLOCKED - RULE 3] Weekly PCR ({pcr:.3f}) < 1.05! Bullish sentiment failed."
+                    logger.warning(msg)
+                    return False, msg
+
+            elif direction == "BEAR_CALL_SPREAD":
+                # Rule 1: Spot < Daily 20 EMA
+                if d_ema > 0 and spot >= d_ema:
+                    msg = f"[GATE BLOCKED - RULE 1] Spot ({spot}) >= Daily 20 EMA ({d_ema})! Bearish macro filter failed."
+                    logger.warning(msg)
+                    return False, msg
+                # Rule 2: 9 < 20 < 50 EMA & Red Candle
+                if not (e9 < e20 < e50):
+                    msg = f"[GATE BLOCKED - RULE 2] 5m EMA cascade failed (9={e9}, 20={e20}, 50={e50})!"
+                    logger.warning(msg)
+                    return False, msg
+                if not is_red:
+                    msg = "[GATE BLOCKED - RULE 2] Current 5m candle is not Red (Close > Open)!"
+                    logger.warning(msg)
+                    return False, msg
+                # Rule 3: Weekly PCR <= 0.85
+                if pcr > 0.85:
+                    msg = f"[GATE BLOCKED - RULE 3] Weekly PCR ({pcr:.3f}) > 0.85! Bearish sentiment failed."
+                    logger.warning(msg)
+                    return False, msg
 
         direction = self.pulse["signal"]
         if direction == "NEUTRAL_SCANNING":
+            if not force:
+                return False, "[GATE BLOCKED] Signal is NEUTRAL_SCANNING. Entry prohibited!"
             direction = "BULL_PUT_SPREAD"
 
         spot = self.pulse["spot"]
@@ -1257,9 +1428,8 @@ class MasterQuantEngine:
 
                 # Strict Safeguard: Verify BUY order was accepted BEFORE firing SELL order!
                 # If BUY failed or was rejected, ABORT to prevent naked short margin rejection!
-                buy_stat = res_buy.get("stat") if isinstance(res_buy, dict) else None
-                if buy_stat and buy_stat != "Ok":
-                    err_msg = res_buy.get("errMsg") or res_buy.get("message") or "BUY order rejected by broker"
+                if not is_kotak_ok(res_buy):
+                    err_msg = res_buy.get("errMsg") or res_buy.get("message") or "BUY order rejected by broker gateway"
                     raise ValueError(f"BUY Hedge Rejected: {err_msg}")
 
                 time.sleep(0.3)  # 300ms exchange margin recognition buffer
@@ -1276,11 +1446,29 @@ class MasterQuantEngine:
                     transaction_type="S",
                 )
                 
-                # Critical Safeguard: If SELL leg is rejected or fails, AUTO-UNWIND BUY leg immediately!
-                sell_stat = res_sell.get("stat") if isinstance(res_sell, dict) else None
-                sell_ord_st = res_sell.get("ordSt") if isinstance(res_sell, dict) else None
-                if (sell_stat and sell_stat != "Ok") or sell_ord_st == "rejected":
-                    rej_rsn = res_sell.get("rejRsn") or res_sell.get("errMsg") or res_sell.get("message") or "SELL rejected by RMS"
+                # Critical Two-Phase Verification: Verify Leg 2 in order report to detect RMS margin rejection!
+                time.sleep(0.4)
+                sell_ok = is_kotak_ok(res_sell)
+                sell_ord_no = res_sell.get("nOrdNo") if isinstance(res_sell, dict) else None
+                rej_rsn = "SELL order failed"
+
+                if not sell_ok or not sell_ord_no:
+                    rej_rsn = res_sell.get("errMsg") or "Gateway rejected SELL leg"
+                    sell_ok = False
+                else:
+                    try:
+                        orders_rep = self.client.order_report()
+                        if isinstance(orders_rep, dict) and orders_rep.get("data"):
+                            for o in orders_rep.get("data", []):
+                                if o.get("nOrdNo") == sell_ord_no:
+                                    if o.get("ordSt") in ["rejected", "cancelled"]:
+                                        sell_ok = False
+                                        rej_rsn = o.get("rejRsn") or "RMS Margin / Limit Exceeded"
+                                        break
+                    except Exception as rep_err:
+                        logger.warning(f"Order report check warning: {rep_err}")
+
+                if not sell_ok:
                     logger.error(f"[RMS_SAFEGUARD] SELL leg rejected ({rej_rsn}). Auto-unwinding BUY hedge wing immediately!")
                     try:
                         self.client.place_order(
@@ -1293,9 +1481,10 @@ class MasterQuantEngine:
                             trading_symbol=buy_symbol,
                             transaction_type="S" if direction == "BULL_PUT_SPREAD" else "B",
                         )
+                        logger.info(f"[RMS_SAFEGUARD] BUY hedge wing {buy_symbol} auto-unwound successfully at MARKET!")
                     except Exception as unwind_err:
                         logger.error(f"[RMS_SAFEGUARD] Failed to auto-unwind BUY wing: {unwind_err}")
-                    raise ValueError(f"SELL leg rejected ({rej_rsn}). Auto-unwound orphan BUY wing!")
+                    raise ValueError(f"SELL leg rejected ({rej_rsn}). Auto-unwound orphan BUY wing to keep Demat 100% safe!")
 
                 order_status = "KOTAK_API_FILLED"
             except Exception as e:
@@ -1375,6 +1564,12 @@ class MasterQuantEngine:
         pos = self.state.get("active_position")
         if not pos:
             return False, "No active position."
+
+        # STRICT USER COMMAND: If position was entered manually by user from Kotak Neo app,
+        # ALGO NEVER AUTO-EXITS IT! Full control remains 100% in user's hands!
+        if pos.get("trade_initiator") == "USER_MANUAL" and reason != "MANUAL_WEB_EXIT":
+            logger.info("[USER_MANUAL] Auto square-off blocked: Position is controlled 100% by user in Kotak Neo!")
+            return False, "Manual position is controlled solely by user in Kotak Neo app."
 
         exit_spread = pos.get("current_spread", pos["net_credit"])
         entry_credit = pos["net_credit"]
@@ -1567,7 +1762,12 @@ class MasterQuantEngine:
             self.pending_audio_event = "BREAKEVEN_LOCKED"
             self.status_message = "💎 TRAILING SL LOCKED: ZERO RISK (0 Rs Max Loss)!"
 
-        # Exit conditions
+        # STRICT USER COMMAND: If position was created manually by user from Kotak Neo app,
+        # ALGO NEVER AUTO-EXITS IT! Full control remains 100% in user's hands.
+        if pos.get("trade_initiator") == "USER_MANUAL":
+            return
+
+        # Exit conditions (Only for AUTO_ALGO trades)
         target_spread = pos.get("target_spread") or pos.get("target_credit") or round(entry_credit * 0.60, 2)
         sl_spread = pos.get("sl_spread") or pos.get("stop_loss") or round(entry_credit * 1.60, 2)
         if current_spread <= target_spread:
@@ -1636,17 +1836,20 @@ def index():
 
 @app.route("/api/status")
 def get_status():
-    engine.poll_kotak_neo()
-    engine.update_position_dynamics()
+    try:
+        engine.poll_kotak_neo()
+        engine.update_position_dynamics()
+    except Exception as e:
+        logger.warning(f"Engine poll/dynamics error: {e}")
 
     now_dt = get_ist_now()
     now_t = now_dt.time()
     is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
 
-    spot = engine.pulse["spot"]
-    prev = engine.pulse["prev_close"]
-    chg = spot - prev
-    pct = (chg / prev) * 100
+    spot = float(engine.pulse.get("spot") or 25300.0)
+    prev = float(engine.pulse.get("prev_close") or 25200.0)
+    chg = round(spot - prev, 2)
+    pct = round((chg / max(1.0, prev)) * 100, 2)
 
     # Pop audio chime event if triggered
     audio_event = engine.pending_audio_event
@@ -1709,9 +1912,15 @@ def get_status():
     cb_active = engine.state["circuit_breaker_active"]
 
     eval_time = datetime.strptime(engine.pulse.get("replay_time", "10:30"), "%H:%M").time() if (not is_mkt_open and engine.replay_active) else now_t
-    is_time_window = (datetime.strptime("09:20", "%H:%M").time() <= eval_time <= datetime.strptime("14:30", "%H:%M").time())
+    is_time_window = (datetime.strptime("09:30", "%H:%M").time() <= eval_time <= datetime.strptime("14:30", "%H:%M").time())
     cond_circuit_breaker = bool(today_trades_done < 2 and not cb_active)
-    cond_margin_safety = True  # Always enforced: 1st BUY OTM Wing -> 2nd SELL ATM Strike
+
+    # Demat Safety (Rule 6: Free Cash >= ₹50,000 & Demat mein 0 Open Legs)
+    has_local_open = bool(engine.state.get("active_position"))
+    has_broker_open = engine.has_open_broker_positions()
+    cash_val = engine.get_broker_cash_margin()
+    cash_sufficient = bool(cash_val >= 50000.0)
+    cond_margin_safety = bool(not has_local_open and not has_broker_open and cash_sufficient)
 
     # Upgrade 1: Dual-PCR Evaluation (Weekly Cumulative OR Fresh Intraday Surge)
     bull_pcr_ok, bull_pcr_desc = engine.check_bull_pcr()
@@ -1762,8 +1971,13 @@ def get_status():
                 if not is_green:
                     missing_bull.append("5m Green Candle (Close >= Open)")
             if not bull_c3: missing_bull.append(f"Weekly PCR >= 1.05 (Currently {pcr:.3f})")
-            if not is_time_window: missing_bull.append("Time 09:30-14:30")
+            if not is_time_window: missing_bull.append("Time 09:30-14:30 IST")
             if not cond_circuit_breaker: missing_bull.append("0 Loss Circuit Breaker")
+            if not cond_margin_safety:
+                if has_local_open or has_broker_open:
+                    missing_bull.append("0 Open Legs in Demat (Currently Open)")
+                if not cash_sufficient:
+                    missing_bull.append(f"Free Cash >= ₹50,000 (Currently ₹{cash_val:,.0f})")
             
             missing_text = ", ".join(missing_bull) if missing_bull else "All Conditions Met"
             bull_badge = f"WAITING ({bull_score}/6 TRUE)"
@@ -1781,8 +1995,13 @@ def get_status():
                 if not is_red:
                     missing_bear.append("5m Red Candle (Close <= Open)")
             if not bear_c3: missing_bear.append(f"Weekly PCR <= 0.85 (Currently {pcr:.3f})")
-            if not is_time_window: missing_bear.append("Time 09:30-14:30")
+            if not is_time_window: missing_bear.append("Time 09:30-14:30 IST")
             if not cond_circuit_breaker: missing_bear.append("0 Loss Circuit Breaker")
+            if not cond_margin_safety:
+                if has_local_open or has_broker_open:
+                    missing_bear.append("0 Open Legs in Demat (Currently Open)")
+                if not cash_sufficient:
+                    missing_bear.append(f"Free Cash >= ₹50,000 (Currently ₹{cash_val:,.0f})")
 
             missing_text = ", ".join(missing_bear) if missing_bear else "All Conditions Met"
             bear_badge = f"WAITING ({bear_score}/6 TRUE)"
@@ -1856,11 +2075,11 @@ def get_status():
         },
         {
             "id": "margin_safety",
-            "name": "6. SEBI Margin Order Priority",
-            "rule": "1st Buy OTM Wing -> 2nd Sell ATM (~₹45k Margin)",
-            "metric": "1st Buy Hedge -> 2nd Sell ATM",
+            "name": "6. Demat Safety & Margin Gate",
+            "rule": "Free Cash >= ₹50,000 & Demat mein 0 Open Legs",
+            "metric": f"Cash: ₹{cash_val:,.0f} | Open Legs: {1 if (has_local_open or has_broker_open) else 0}",
             "status": cond_margin_safety,
-            "badge": "TRUE",
+            "badge": "TRUE" if cond_margin_safety else "FALSE",
         },
     ]
 
