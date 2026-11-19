@@ -38,6 +38,20 @@
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.4; transform: scale(0.95); }
         }
+        @keyframes flashGreen {
+            0% { background-color: rgba(16, 185, 129, 0.5); color: #34d399; font-weight: 900; }
+            100% { background-color: transparent; }
+        }
+        @keyframes flashRed {
+            0% { background-color: rgba(239, 68, 68, 0.5); color: #f87171; font-weight: 900; }
+            100% { background-color: transparent; }
+        }
+        .flash-green {
+            animation: flashGreen 0.75s ease-out;
+        }
+        .flash-red {
+            animation: flashRed 0.75s ease-out;
+        }
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -573,12 +587,21 @@
                     </div>
                 </div>
 
-                <div class="flex items-center space-x-3 text-xs mono">
-                    <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded bg-amber-400"></span><span class="text-amber-300">ATM Sold Strike</span></span>
-                    <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded bg-cyan-400"></span><span class="text-cyan-300">350 OTM Bought Hedge Wing</span></span>
+                <div class="flex flex-wrap items-center gap-2 text-xs mono">
+                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span>LIVE 2s:</span>
+                        <strong id="chain-live-time" class="text-white">SYNCING...</strong>
+                    </span>
+                    <button onclick="focusAtmStrike()" class="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition active:scale-95" title="Scroll directly to ATM Strike">
+                        <i class="fa-solid fa-crosshairs text-amber-400"></i>
+                        <span>Focus ATM</span>
+                    </button>
+                    <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded bg-amber-400"></span><span class="text-amber-300">ATM</span></span>
+                    <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded bg-cyan-400"></span><span class="text-cyan-300">Wing</span></span>
                     <a href="/api/download_option_chain_archive" target="_blank" class="px-2.5 py-1 bg-emerald-600/25 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
                         <i class="fa-solid fa-file-arrow-down"></i>
-                        <span>Download 1-Min Strikes (.CSV)</span>
+                        <span>CSV</span>
                     </a>
                 </div>
             </div>
@@ -603,7 +626,7 @@
                             <th class="py-2 px-2 text-center text-purple-300" title="Gamma: Rate of change of Delta">&Gamma; Gamma</th>
                             <th class="py-2 px-2 text-center text-indigo-300" title="Vega: Sensitivity to 1% IV change">V Vega</th>
                             <th class="py-2 px-3 text-center">Volume</th>
-                            <th class="py-2 px-3 text-center text-amber-200">OI</th>
+                            <th class="py-2 px-3 text-center text-amber-200">OI (Today Change)</th>
                             <th class="py-2 px-3 text-right font-bold text-white">LTP (₹)</th>
                             <th class="py-2 px-3 text-center font-black text-blue-300 bg-blue-950/60 border-r border-slate-800 tracking-wider">TRADE</th>
 
@@ -611,7 +634,7 @@
 
                             <th class="py-2 px-3 text-center font-black text-emerald-300 bg-emerald-950/60 border-l border-slate-800 tracking-wider">TRADE</th>
                             <th class="py-2 px-3 text-left font-bold text-white">LTP (₹)</th>
-                            <th class="py-2 px-3 text-center text-amber-200">OI</th>
+                            <th class="py-2 px-3 text-center text-amber-200">OI (Today Change)</th>
                             <th class="py-2 px-3 text-center">Volume</th>
                             <th class="py-2 px-2 text-center text-indigo-300" title="Vega: Sensitivity to 1% IV change">V Vega</th>
                             <th class="py-2 px-2 text-center text-purple-300" title="Gamma: Rate of change of Delta">&Gamma; Gamma</th>
@@ -1882,15 +1905,35 @@
             // Option Chain Table (ATM Sold + 350 OTM Hedge Wing Bought)
             if (data.option_chain_table) {
                 document.getElementById('chain-expiry').innerText = data.indicators.expiry;
+                if (document.getElementById('chain-live-time')) {
+                    document.getElementById('chain-live-time').innerText = data.chain_updated_at || data.time || 'LIVE';
+                }
+
+                window.lastOptionLTPs = window.lastOptionLTPs || {};
                 const tbody = document.getElementById('option-chain-body');
                 tbody.innerHTML = data.option_chain_table.map(r => {
                     const pos = data.active_position;
                     const isSoldLeg = pos && (r.strike === pos.sell_strike);
                     const isBoughtLeg = pos && (r.strike === pos.buy_strike);
 
+                    // Dynamic Tick Flashing
+                    const prevCall = window.lastOptionLTPs[`${r.strike}_CE`];
+                    const prevPut = window.lastOptionLTPs[`${r.strike}_PE`];
+                    let callFlash = '';
+                    if (prevCall !== undefined && r.call_ltp !== prevCall) {
+                        callFlash = (r.call_ltp > prevCall) ? 'flash-green' : 'flash-red';
+                    }
+                    let putFlash = '';
+                    if (prevPut !== undefined && r.put_ltp !== prevPut) {
+                        putFlash = (r.put_ltp > prevPut) ? 'flash-green' : 'flash-red';
+                    }
+                    window.lastOptionLTPs[`${r.strike}_CE`] = r.call_ltp;
+                    window.lastOptionLTPs[`${r.strike}_PE`] = r.put_ltp;
+
                     let strikeClass = 'text-white font-extrabold py-3 text-sm sm:text-base';
                     let strikeTag = '';
                     let rowBg = '';
+                    let rowAttr = '';
 
                     let callSellTag = '';
                     let callBuyTag = '';
@@ -1919,6 +1962,7 @@
                         strikeClass = 'bg-amber-400 text-slate-950 font-black text-sm sm:text-base py-3 shadow-lg shadow-amber-400/20';
                         strikeTag = '<span class="text-[9px] bg-slate-950 text-amber-400 px-1.5 py-0.5 rounded ml-1.5 font-bold">ATM (SELL TARGET)</span>';
                         rowBg = 'bg-amber-400/10 border-y border-amber-400/30';
+                        rowAttr = 'id="row-strike-atm"';
                     } else if (r.is_hedge_wing) {
                         strikeClass = 'bg-cyan-500/25 text-cyan-300 font-extrabold text-sm py-3 border border-cyan-500/40 glow-blue';
                         strikeTag = '<span class="text-[9px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded ml-1.5 border border-cyan-500/40 font-bold">HEDGE WING (BUY TARGET)</span>';
@@ -1928,51 +1972,83 @@
                     const cLtpClass = r.call_moneyness === 'ITM' ? 'text-blue-300 font-black bg-blue-500/10 text-sm sm:text-base' : 'text-slate-200 font-bold text-sm sm:text-base';
                     const pLtpClass = r.put_moneyness === 'ITM' ? 'text-emerald-300 font-black bg-emerald-500/10 text-sm sm:text-base' : 'text-slate-200 font-bold text-sm sm:text-base';
 
+                    // Call OI with Change badge
+                    const callOiChgHtml = (r.call_oi_chg_raw !== undefined && r.call_oi_chg_raw !== 0) ? `
+                        <span class="text-[9px] mono font-bold ${r.call_oi_chg_raw > 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                            ${r.call_oi_chg_raw > 0 ? '▲ +' : '▼ '}${r.call_oi_chg} (${r.call_chg_pct > 0 ? '+' : ''}${r.call_chg_pct}%)
+                        </span>
+                    ` : '';
+
                     const callOiDisplay = r.is_max_call_oi
-                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-amber-300 bg-amber-500/25 px-2 py-0.5 rounded border border-amber-500/50 glow-amber">${r.call_oi}</span><span class="text-[9px] text-amber-300 font-black uppercase mt-0.5 tracking-tight">★ MAX CALL OI (RESISTANCE)</span></div>`
-                        : `<span class="text-slate-300">${r.call_oi}</span>`;
+                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-amber-300 bg-amber-500/25 px-2 py-0.5 rounded border border-amber-500/50 glow-amber">${r.call_oi}</span>${callOiChgHtml}<span class="text-[8px] text-amber-300 font-black uppercase mt-0.5 tracking-tight">★ MAX RESISTANCE</span></div>`
+                        : `<div class="inline-flex flex-col items-center"><span class="text-slate-200 font-semibold">${r.call_oi}</span>${callOiChgHtml}</div>`;
+
+                    // Put OI with Change badge
+                    const putOiChgHtml = (r.put_oi_chg_raw !== undefined && r.put_oi_chg_raw !== 0) ? `
+                        <span class="text-[9px] mono font-bold ${r.put_oi_chg_raw > 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                            ${r.put_oi_chg_raw > 0 ? '▲ +' : '▼ '}${r.put_oi_chg} (${r.put_chg_pct > 0 ? '+' : ''}${r.put_chg_pct}%)
+                        </span>
+                    ` : '';
 
                     const putOiDisplay = r.is_max_put_oi
-                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-emerald-300 bg-emerald-500/25 px-2 py-0.5 rounded border border-emerald-500/50 glow-green">${r.put_oi}</span><span class="text-[9px] text-emerald-300 font-black uppercase mt-0.5 tracking-tight">★ MAX PUT OI (SUPPORT)</span></div>`
-                        : `<span class="text-slate-300">${r.put_oi}</span>`;
+                        ? `<div class="inline-flex flex-col items-center"><span class="font-black text-emerald-300 bg-emerald-500/25 px-2 py-0.5 rounded border border-emerald-500/50 glow-green">${r.put_oi}</span>${putOiChgHtml}<span class="text-[8px] text-emerald-300 font-black uppercase mt-0.5 tracking-tight">★ MAX SUPPORT</span></div>`
+                        : `<div class="inline-flex flex-col items-center"><span class="text-slate-200 font-semibold">${r.put_oi}</span>${putOiChgHtml}</div>`;
+
+                    // Net Price Changes
+                    const callChgHtml = (r.call_chg !== undefined && r.call_chg !== 0) ? `
+                        <span class="text-[9px] mono font-bold ${r.call_chg > 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                            ${r.call_chg > 0 ? '+' : ''}${r.call_chg}
+                        </span>
+                    ` : '';
+                    const putChgHtml = (r.put_chg !== undefined && r.put_chg !== 0) ? `
+                        <span class="text-[9px] mono font-bold ${r.put_chg > 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                            ${r.put_chg > 0 ? '+' : ''}${r.put_chg}
+                        </span>
+                    ` : '';
 
                     return `
-                        <tr class="hover:bg-slate-800/60 transition ${rowBg}">
-                            <td class="px-2 py-3 text-center mono text-blue-300 font-semibold">${r.call_delta}</td>
-                            <td class="px-2 py-3 text-center mono text-rose-300 font-semibold">${r.call_theta}</td>
-                            <td class="px-2 py-3 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
-                            <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
-                            <td class="px-2 py-3 text-slate-400 mono text-xs">${r.call_vol}</td>
-                            <td class="px-2 py-3 text-center mono text-xs">${callOiDisplay}</td>
-                            <td class="px-3 py-3 text-right mono ${cLtpClass}">
-                                <span class="font-bold">₹${r.call_ltp}</span>
+                        <tr ${rowAttr} class="hover:bg-slate-800/60 transition ${rowBg}">
+                            <td class="px-2 py-2 text-center mono text-blue-300 font-semibold">${r.call_delta}</td>
+                            <td class="px-2 py-2 text-center mono text-rose-300 font-semibold">${r.call_theta}</td>
+                            <td class="px-2 py-2 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
+                            <td class="px-2 py-2 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
+                            <td class="px-2 py-2 text-slate-400 mono text-xs">${r.call_vol}</td>
+                            <td class="px-2 py-2 text-center mono text-xs">${callOiDisplay}</td>
+                            <td class="px-3 py-2 text-right mono ${cLtpClass}">
+                                <div class="inline-flex flex-col items-end">
+                                    <span class="font-bold px-1.5 py-0.5 rounded transition ${callFlash}">₹${r.call_ltp}</span>
+                                    ${callChgHtml}
+                                </div>
                                 ${callSellTag} ${callBuyTag}
                             </td>
-                            <td class="px-2 py-3 text-center border-r border-slate-800 bg-blue-950/25 whitespace-nowrap">
+                            <td class="px-2 py-2 text-center border-r border-slate-800 bg-blue-950/25 whitespace-nowrap">
                                 <div class="inline-flex items-center space-x-1">
                                     <button onclick="placeManualOrder(${r.strike}, 'CE', 'B', ${r.call_ltp})" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white rounded text-xs font-black tracking-wider transition shadow-md shadow-blue-600/40" title="BUY 1 Lot ${r.strike} CE">BUY</button>
                                     <button onclick="placeManualOrder(${r.strike}, 'CE', 'S', ${r.call_ltp})" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white rounded text-xs font-black tracking-wider transition shadow-md shadow-rose-600/40" title="SELL 1 Lot ${r.strike} CE">SELL</button>
                                 </div>
                             </td>
 
-                            <td class="px-5 py-3 ${strikeClass}">${r.strike} ${strikeTag}</td>
+                            <td class="px-5 py-2 ${strikeClass}">${r.strike} ${strikeTag}</td>
 
-                            <td class="px-2 py-3 text-center border-l border-slate-800 bg-emerald-950/25 whitespace-nowrap">
+                            <td class="px-2 py-2 text-center border-l border-slate-800 bg-emerald-950/25 whitespace-nowrap">
                                 <div class="inline-flex items-center space-x-1">
                                     <button onclick="placeManualOrder(${r.strike}, 'PE', 'B', ${r.put_ltp})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded text-xs font-black tracking-wider transition shadow-md shadow-emerald-600/40" title="BUY 1 Lot ${r.strike} PE">BUY</button>
                                     <button onclick="placeManualOrder(${r.strike}, 'PE', 'S', ${r.put_ltp})" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white rounded text-xs font-black tracking-wider transition shadow-md shadow-rose-600/40" title="SELL 1 Lot ${r.strike} PE">SELL</button>
                                 </div>
                             </td>
-                            <td class="px-3 py-3 text-left mono ${pLtpClass}">
-                                <span class="font-bold">₹${r.put_ltp}</span>
+                            <td class="px-3 py-2 text-left mono ${pLtpClass}">
+                                <div class="inline-flex flex-col items-start">
+                                    <span class="font-bold px-1.5 py-0.5 rounded transition ${putFlash}">₹${r.put_ltp}</span>
+                                    ${putChgHtml}
+                                </div>
                                 ${putSellTag} ${putBuyTag}
                             </td>
-                            <td class="px-2 py-3 text-center mono text-xs">${putOiDisplay}</td>
-                            <td class="px-2 py-3 text-slate-400 mono text-xs">${r.put_vol}</td>
-                            <td class="px-2 py-3 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
-                            <td class="px-2 py-3 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
-                            <td class="px-2 py-3 text-center mono text-rose-300 font-semibold">${r.put_theta}</td>
-                            <td class="px-2 py-3 text-center mono text-emerald-300 font-semibold">${r.put_delta}</td>
+                            <td class="px-2 py-2 text-center mono text-xs">${putOiDisplay}</td>
+                            <td class="px-2 py-2 text-slate-400 mono text-xs">${r.put_vol}</td>
+                            <td class="px-2 py-2 text-center mono text-indigo-300 font-semibold">${r.vega}</td>
+                            <td class="px-2 py-2 text-center mono text-purple-300 font-semibold">${r.gamma}</td>
+                            <td class="px-2 py-2 text-center mono text-rose-300 font-semibold">${r.put_theta}</td>
+                            <td class="px-2 py-2 text-center mono text-emerald-300 font-semibold">${r.put_delta}</td>
                         </tr>
                     `;
                 }).join('');
@@ -2749,6 +2825,14 @@
                     </tr>
                 `;
             }).join('');
+        }
+
+        // Focus ATM helper
+        function focusAtmStrike() {
+            const atm = document.getElementById('row-strike-atm');
+            if (atm) {
+                atm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
 
         // Live polling loops & Chart Initialization
