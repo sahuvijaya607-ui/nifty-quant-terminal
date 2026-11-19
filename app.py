@@ -1192,8 +1192,9 @@ class MasterQuantEngine:
         try:
             lims = self.client.limits()
             if isinstance(lims, dict):
-                lim_data = lims.get("data", {})
-                cash = float(lim_data.get("cashAvailable") or lim_data.get("availableMargin") or getattr(self, "account_free_cash", 0.0) or 0.0)
+                # Kotak Neo API returns live available margin directly at root key 'Net' or 'cashAvailable'
+                lim_data = lims.get("data", {}) if isinstance(lims.get("data"), dict) else {}
+                cash = float(lims.get("Net") or lim_data.get("cashAvailable") or lim_data.get("availableMargin") or getattr(self, "account_free_cash", 0.0) or 0.0)
                 if cash > 0:
                     self.account_free_cash = cash
                     return cash
@@ -1464,20 +1465,30 @@ class MasterQuantEngine:
 
                 if not sell_ok:
                     logger.error(f"[RMS_SAFEGUARD] SELL leg rejected ({rej_rsn}). Auto-unwinding BUY hedge wing immediately!")
-                    try:
-                        self.client.place_order(
-                            exchange_segment="nse_fo",
-                            product="NRML",
-                            price="0",
-                            order_type="MKT",
-                            quantity=str(total_qty),
-                            validity="DAY",
-                            trading_symbol=buy_symbol,
-                            transaction_type="S",
-                        )
-                        logger.info(f"[RMS_SAFEGUARD] BUY hedge wing {buy_symbol} auto-unwound successfully at MARKET!")
-                    except Exception as unwind_err:
-                        logger.error(f"[RMS_SAFEGUARD] Failed to auto-unwind BUY wing: {unwind_err}")
+                    unwind_success = False
+                    for attempt in range(3):
+                        try:
+                            res_unwind = self.client.place_order(
+                                exchange_segment="nse_fo",
+                                product="NRML",
+                                price="0",
+                                order_type="MKT",
+                                quantity=str(total_qty),
+                                validity="DAY",
+                                trading_symbol=buy_symbol,
+                                transaction_type="S",
+                            )
+                            if is_kotak_ok(res_unwind):
+                                unwind_success = True
+                                logger.info(f"[RMS_SAFEGUARD] BUY hedge wing {buy_symbol} auto-unwound successfully at MARKET (Attempt {attempt+1})!")
+                                break
+                            time.sleep(0.15)
+                        except Exception as unwind_err:
+                            logger.error(f"[RMS_SAFEGUARD] Unwind attempt {attempt+1} failed: {unwind_err}")
+                            time.sleep(0.15)
+
+                    if not unwind_success:
+                        logger.critical(f"[RMS_CRITICAL] Market unwind failed after 3 attempts! Alerting user immediately.")
                     raise ValueError(f"SELL leg rejected ({rej_rsn}). Auto-unwound orphan BUY wing to keep Demat 100% safe!")
 
                 order_status = "KOTAK_API_FILLED"
