@@ -1416,7 +1416,22 @@ class MasterQuantEngine:
                     err_msg = res_buy.get("errMsg") or res_buy.get("message") or "BUY order rejected by broker gateway"
                     raise ValueError(f"BUY Hedge Rejected: {err_msg}")
 
+                buy_ord_no = res_buy.get("nOrdNo") if isinstance(res_buy, dict) else None
                 time.sleep(0.3)  # 300ms exchange margin recognition buffer
+
+                # Verify in order report during the buffer that BUY wasn't rejected by exchange RMS
+                if buy_ord_no:
+                    try:
+                        rep = self.client.order_report()
+                        if is_kotak_ok(rep) and rep.get("data"):
+                            for o in rep.get("data", []):
+                                if o.get("nOrdNo") == buy_ord_no and o.get("ordSt") in ["rejected", "cancelled"]:
+                                    rej = o.get("rejRsn") or "Exchange rejected BUY order"
+                                    raise ValueError(f"BUY Hedge Rejected on Exchange: {rej}")
+                    except ValueError:
+                        raise
+                    except Exception as b_check_err:
+                        logger.warning(f"BUY order report check notice: {b_check_err}")
 
                 # 2. Place SELL ATM Strike Second
                 res_sell = self.client.place_order(
