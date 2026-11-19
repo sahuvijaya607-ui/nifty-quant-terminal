@@ -19,6 +19,7 @@ SYNC_TARGETS = [
     (os.path.join("results", "daily_reports", "daily_report_2026-11-19.json"), os.path.join("results", "daily_reports", "daily_report_2026-11-19.json")),
     (os.path.join("results", "daily_reports", "daily_report_2026-11-19.html"), os.path.join("results", "daily_reports", "daily_report_2026-11-19.html")),
     (os.path.join("results", "cached_emas.json"), os.path.join("results", "cached_emas.json")),
+    ("gunicorn.conf.py", "gunicorn.conf.py"),
 ]
 
 print("=== RUNNING RENDER AUTO-SYNC ENGINE ===")
