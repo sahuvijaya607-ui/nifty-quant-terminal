@@ -220,7 +220,10 @@ class MasterQuantEngine:
         self.lot_size = self.active_lots * int(self.pulse.get("mkt_lot", 65))
         self.load_cached_emas()
         self.authenticate()
-        self.poll_kotak_neo(force=True)
+        try:
+            self.poll_kotak_neo(force=True)
+        except Exception as e:
+            logger.warning(f"Initial Kotak poll skipped: {e}")
         self.init_replay_data()
 
         # Dedicated Autonomous Background Workers (Live Poller, Watchdog & Replay)
@@ -693,8 +696,8 @@ class MasterQuantEngine:
         now_dt = get_ist_now()
         is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
 
-        # In market hours poll every 2s; outside market hours poll every 30s to keep official closing settlement price fresh
-        min_poll_interval = 2 if is_mkt_open else 30
+        # In market hours poll every 2s; outside market hours poll at most every 300s
+        min_poll_interval = 2 if is_mkt_open else 300
         if not force and (now - self.last_api_poll < min_poll_interval):
             return
 
@@ -948,18 +951,27 @@ class MasterQuantEngine:
         """
         while True:
             try:
-                self.poll_kotak_neo(force=False)
-                self.update_position_dynamics()
-                # Update broker positions and cash periodically in background (every 60s)
+                now_dt = get_ist_now()
+                is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
                 now = time.time()
-                if now - getattr(self, "last_bg_margin_check", 0) > 60:
-                    self.get_broker_cash_margin()
-                    self.has_open_broker_positions()
-                    self.last_bg_margin_check = now
-            except Exception:
-                pass
-            # Upgrade 6: Adaptive Fast-Tick Proximity Sleep
-            sleep_sec = 1.0 if getattr(self, "proximity_polling", False) else 2.0
+
+                if is_mkt_open:
+                    self.poll_kotak_neo(force=False)
+                    self.update_position_dynamics()
+                    if now - getattr(self, "last_bg_margin_check", 0) > 60:
+                        self.get_broker_cash_margin()
+                        self.has_open_broker_positions()
+                        self.last_bg_margin_check = now
+                    sleep_sec = 1.0 if getattr(self, "proximity_polling", False) else 2.0
+                else:
+                    # Off-market: poll at most once every 5 minutes to avoid night maintenance socket hangs
+                    if now - getattr(self, "last_api_poll", 0) > 300:
+                        self.poll_kotak_neo(force=False)
+                    sleep_sec = 10.0
+
+            except Exception as e:
+                logger.warning(f"Live engine loop iteration error: {e}")
+                sleep_sec = 5.0
             time.sleep(sleep_sec)
 
     def _replay_loop(self):
