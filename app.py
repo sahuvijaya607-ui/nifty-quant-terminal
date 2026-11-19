@@ -2512,6 +2512,96 @@ def api_manual_order():
         return jsonify({"success": False, "message": f"Manual Order Handler Error: {str(e)}"}), 500
 
 
+@app.route("/api/orders")
+def get_orders():
+    """Fetches real order book directly from Kotak Neo API, or fallback to saved today's orders."""
+    raw_orders = []
+    source = "EMPTY"
+    
+    # 1. Try Live Kotak Neo API first if authenticated
+    if engine.authenticated and engine.client:
+        try:
+            orders_res = engine.client.order_report()
+            if is_kotak_ok(orders_res) and orders_res.get("data"):
+                raw_orders = orders_res.get("data", [])
+                engine.last_orders_cache = raw_orders
+                source = "KOTAK_NEO_API"
+        except Exception as e:
+            logger.warning(f"Error fetching live Kotak order report: {e}")
+
+    # 2. Check in-memory cache
+    if not raw_orders and hasattr(engine, "last_orders_cache") and engine.last_orders_cache:
+        raw_orders = engine.last_orders_cache
+        source = "CACHE"
+
+    # 3. Fallback to today's archived CSV if cache empty
+    if not raw_orders:
+        today_str = date.today().strftime("%Y-%m-%d")
+        archived_orders_file = RESULTS_DIR / f"closed_orders_{today_str}.csv"
+        if archived_orders_file.exists():
+            try:
+                df = pd.read_csv(archived_orders_file, on_bad_lines="skip")
+                raw_orders = df.to_dict(orient="records")
+                source = "ARCHIVED_CSV"
+            except Exception:
+                raw_orders = []
+
+    # Normalize orders
+    formatted_orders = []
+    open_count = 0
+    complete_count = 0
+    rejected_count = 0
+
+    for o in raw_orders:
+        status_raw = str(o.get("ordSt", "")).lower()
+        is_open = status_raw in ["open", "pending", "trigger_pending", "modify_pending", "trigger pending"]
+        is_complete = status_raw in ["complete", "traded", "filled"]
+        is_rejected = status_raw in ["rejected", "cancelled"]
+
+        if is_open:
+            open_count += 1
+            status_display = "OPEN"
+        elif is_complete:
+            complete_count += 1
+            status_display = "COMPLETE"
+        elif is_rejected:
+            rejected_count += 1
+            status_display = "REJECTED"
+        else:
+            status_display = status_raw.upper() or "UNKNOWN"
+
+        trns = str(o.get("trnsTp", "")).upper()
+        action = "BUY" if trns == "B" else ("SELL" if trns == "S" else trns)
+
+        avg_prc = float(o.get("avgPrc", 0.0) or 0.0)
+        lmt_prc = float(o.get("prc", 0.0) or 0.0)
+
+        formatted_orders.append({
+            "order_id": str(o.get("nOrdNo", "")),
+            "time": str(o.get("ordDtTm", o.get("ordEntTm", o.get("hsUpTm", "--")))),
+            "symbol": str(o.get("trdSym", "")),
+            "action": action,
+            "qty": int(float(o.get("qty", o.get("flBuyQty", o.get("flSellQty", 0))) or 0)),
+            "limit_price": lmt_prc,
+            "avg_price": avg_prc,
+            "status": status_display,
+            "status_raw": status_raw,
+            "is_open": is_open,
+            "reject_reason": str(o.get("rejRsn", o.get("rejShortDesc", "--"))),
+            "product": str(o.get("prod", "NRML")),
+        })
+
+    return jsonify({
+        "status": "success",
+        "source": source,
+        "total_count": len(formatted_orders),
+        "open_count": open_count,
+        "complete_count": complete_count,
+        "rejected_count": rejected_count,
+        "orders": formatted_orders
+    })
+
+
 @app.route("/api/trades")
 def get_trades():
     if TRADES_FILE.exists():
