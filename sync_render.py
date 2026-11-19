@@ -12,7 +12,12 @@ RENDER_DIR = os.path.join(ROOT, "RENDER_DEPLOY_FILES")
 SYNC_TARGETS = [
     ("app.py", "app.py"),
     (os.path.join("templates", "index.html"), os.path.join("templates", "index.html")),
+    (os.path.join("templates", "index.html"), "index.html"),
     (os.path.join("results", "paper_engine_state.json"), os.path.join("results", "paper_engine_state.json")),
+    (os.path.join("results", "live_paper_trades.csv"), os.path.join("results", "live_paper_trades.csv")),
+    (os.path.join("results", "closed_orders_2026-11-19.csv"), os.path.join("results", "closed_orders_2026-11-19.csv")),
+    (os.path.join("results", "daily_reports", "daily_report_2026-11-19.json"), os.path.join("results", "daily_reports", "daily_report_2026-11-19.json")),
+    (os.path.join("results", "daily_reports", "daily_report_2026-11-19.html"), os.path.join("results", "daily_reports", "daily_report_2026-11-19.html")),
 ]
 
 print("=== RUNNING RENDER AUTO-SYNC ENGINE ===")

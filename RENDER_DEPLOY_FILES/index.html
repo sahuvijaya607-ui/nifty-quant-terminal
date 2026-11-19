@@ -822,18 +822,60 @@
                         </div>
                     </div>
 
-                    <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs">
-                        <div>
-                            <span class="text-slate-400">Profit Target (50%): </span>
-                            <strong class="text-emerald-400 mono">Rs <span id="pos-target-val">42.13</span></strong>
+                    <!-- 4-Card Target, Max Profit & Trailing HUD -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                        <!-- Card 1: Max Potential Profit (Total Net Credit) -->
+                        <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex flex-col justify-between">
+                            <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                                <span>MAX POTENTIAL</span>
+                                <i class="fa-solid fa-coins text-cyan-400"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-cyan-300 mono" id="pos-max-credit-inr">₹0.00</div>
+                                <div class="text-[10px] text-slate-400 mono mt-0.5">Spread: <span id="pos-max-credit-pts">0.00 pts</span></div>
+                            </div>
                         </div>
-                        <div>
-                            <span class="text-slate-400">Stop Loss: </span>
-                            <strong class="text-rose-400 mono">Rs <span id="pos-sl-val">117.98</span></strong>
+
+                        <!-- Card 2: 40% Target Goal -->
+                        <div class="p-3 bg-slate-900/80 border border-emerald-500/30 rounded-xl flex flex-col justify-between bg-emerald-500/5">
+                            <div class="flex items-center justify-between text-[11px] text-emerald-400 font-semibold">
+                                <span>40% TARGET EXIT</span>
+                                <i class="fa-solid fa-bullseye text-emerald-400"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-emerald-400 mono" id="pos-target-profit-inr">+₹0.00</div>
+                                <div class="text-[10px] text-slate-400 mono mt-0.5">Exit Spread: <strong class="text-emerald-300" id="pos-target-spread-val">₹0.00</strong></div>
+                            </div>
                         </div>
-                        <div>
-                            <span class="text-slate-400">Margin Used: </span>
-                            <strong class="text-cyan-400 mono">Rs 45,000</strong>
+
+                        <!-- Card 3: 25% Auto-Trail Threshold -->
+                        <div id="pos-trail-card" class="p-3 bg-slate-900/80 border border-amber-500/30 rounded-xl flex flex-col justify-between bg-amber-500/5 transition">
+                            <div class="flex items-center justify-between text-[11px] text-amber-400 font-semibold">
+                                <span id="pos-trail-title">25% AUTO-TRAIL</span>
+                                <i class="fa-solid fa-shield-halved text-amber-400" id="pos-trail-icon"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-amber-300 mono" id="pos-trail-profit-inr">+₹0.00</div>
+                                <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
+                                    <span class="text-slate-400">Trigger: <strong class="text-amber-300" id="pos-trail-spread-val">₹0.00</strong></span>
+                                    <span id="pos-trail-badge" class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">WAITING</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 4: Stop Loss & Max Risk -->
+                        <div id="pos-sl-card" class="p-3 bg-slate-900/80 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5 transition">
+                            <div class="flex items-center justify-between text-[11px] text-rose-400 font-semibold">
+                                <span id="pos-sl-title">STOP LOSS</span>
+                                <i class="fa-solid fa-hand text-rose-400" id="pos-sl-icon"></i>
+                            </div>
+                            <div class="mt-1">
+                                <div class="text-base font-extrabold text-rose-400 mono" id="pos-max-risk-inr">-₹0.00</div>
+                                <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
+                                    <span class="text-slate-400">Cut Spread: <strong class="text-rose-300" id="pos-sl-spread-val">₹0.00</strong></span>
+                                    <span id="pos-sl-status" class="text-[9px] font-bold text-slate-400">ACTIVE</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -860,16 +902,77 @@
 
         </div>
 
-        <!-- 📋 7. TRADE AUDIT LEDGER & 1-CLICK CSV EXPORT -->
+        <!-- 📑 7. KOTAK NEO REAL ORDER BOOK & OPEN ORDERS -->
+        <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-6 space-y-4">
+            
+            <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-lg">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wider">KOTAK NEO REAL ORDER BOOK</h3>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"><i class="fa-solid fa-circle-check mr-1"></i>100% REAL KOTAK DEMAT</span>
+                            <span id="open-orders-alert-badge" class="hidden px-2.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse"><i class="fa-solid fa-clock mr-1"></i><span id="open-orders-count-text">0 OPEN</span></span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5">Live Demat Orders &bull; Direct Kotak Neo Trade API Sync (Auto-Refreshed)</p>
+                    </div>
+                </div>
+
+                <!-- Filter Tabs -->
+                <div class="flex items-center space-x-1.5 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800 text-xs">
+                    <button onclick="setOrderFilter('ALL')" id="filter-btn-ALL" class="px-3 py-1.5 rounded-lg font-semibold transition bg-blue-600 text-white shadow">
+                        All Orders (<span id="count-all">0</span>)
+                    </button>
+                    <button onclick="setOrderFilter('OPEN')" id="filter-btn-OPEN" class="px-3 py-1.5 rounded-lg font-semibold transition text-slate-400 hover:text-white">
+                        Open (<span id="count-open">0</span>)
+                    </button>
+                    <button onclick="setOrderFilter('COMPLETE')" id="filter-btn-COMPLETE" class="px-3 py-1.5 rounded-lg font-semibold transition text-slate-400 hover:text-white">
+                        Completed (<span id="count-complete">0</span>)
+                    </button>
+                    <button onclick="setOrderFilter('REJECTED')" id="filter-btn-REJECTED" class="px-3 py-1.5 rounded-lg font-semibold transition text-slate-400 hover:text-white">
+                        Rejected (<span id="count-rejected">0</span>)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Orders Table Container -->
+            <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="sticky top-0 bg-[#101726] border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider z-10">
+                        <tr>
+                            <th class="py-2.5 px-3">Time</th>
+                            <th class="py-2.5 px-3">Order ID</th>
+                            <th class="py-2.5 px-3">Action</th>
+                            <th class="py-2.5 px-3">Symbol</th>
+                            <th class="py-2.5 px-3 text-right">Qty</th>
+                            <th class="py-2.5 px-3 text-right">Limit Price</th>
+                            <th class="py-2.5 px-3 text-right">Avg / Fill Price</th>
+                            <th class="py-2.5 px-3 text-center">Status</th>
+                            <th class="py-2.5 px-3 text-left">Broker Remarks / Error Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-table-body" class="divide-y divide-slate-800/60 mono">
+                        <tr>
+                            <td colspan="9" class="py-6 text-center text-slate-500 italic">Syncing with Kotak Neo Order Book...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+
+        <!-- 📋 8. REAL KOTAK DEMAT TRADE JOURNAL & LEDGER -->
         <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-6 space-y-4">
             
             <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
                     <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center space-x-2">
                         <i class="fa-solid fa-receipt text-indigo-400"></i>
-                        <span>TRADE AUDIT LEDGER</span>
+                        <span>REAL KOTAK DEMAT TRADE JOURNAL & LEDGER</span>
                     </h3>
-                    <p class="text-xs text-slate-400 mt-0.5">Recorded to <code class="text-slate-300">results/live_paper_trades.csv</code></p>
+                    <p class="text-xs text-slate-400 mt-0.5"><span class="text-emerald-400 font-bold">100% REAL KOTAK NEO LIVE DEMAT TRADES</span> &bull; Strategy Cycles & Net Realized PnL</p>
                 </div>
 
                 <div class="flex items-center space-x-3">
@@ -1623,6 +1726,115 @@
             }
         }
 
+        // 📑 Real Kotak Neo Order Book Polling & Filtering
+        let currentOrderFilter = 'ALL';
+        let allOrdersData = [];
+
+        async function fetchOrders() {
+            try {
+                const res = await fetch('/api/orders');
+                const data = await res.json();
+                if (data && data.orders) {
+                    allOrdersData = data.orders;
+                    renderOrdersTable(data);
+                }
+            } catch (err) {
+                console.error("Orders fetch error:", err);
+            }
+        }
+
+        function setOrderFilter(filter) {
+            currentOrderFilter = filter;
+            ['ALL', 'OPEN', 'COMPLETE', 'REJECTED'].forEach(f => {
+                const btn = document.getElementById(`filter-btn-${f}`);
+                if (btn) {
+                    if (f === filter) {
+                        btn.className = 'px-3 py-1.5 rounded-lg font-semibold transition bg-blue-600 text-white shadow';
+                    } else {
+                        btn.className = 'px-3 py-1.5 rounded-lg font-semibold transition text-slate-400 hover:text-white';
+                    }
+                }
+            });
+            renderOrdersTable();
+        }
+
+        function renderOrdersTable(apiData) {
+            const tbody = document.getElementById('orders-table-body');
+            if (!tbody) return;
+
+            if (apiData) {
+                const elAll = document.getElementById('count-all');
+                const elOpen = document.getElementById('count-open');
+                const elComp = document.getElementById('count-complete');
+                const elRej = document.getElementById('count-rejected');
+                if (elAll) elAll.innerText = apiData.total_count || 0;
+                if (elOpen) elOpen.innerText = apiData.open_count || 0;
+                if (elComp) elComp.innerText = apiData.complete_count || 0;
+                if (elRej) elRej.innerText = apiData.rejected_count || 0;
+
+                const openAlert = document.getElementById('open-orders-alert-badge');
+                const openText = document.getElementById('open-orders-count-text');
+                if (openAlert && openText) {
+                    if (apiData.open_count > 0) {
+                        openAlert.classList.remove('hidden');
+                        openText.innerText = `${apiData.open_count} OPEN ORDER${apiData.open_count > 1 ? 'S' : ''}`;
+                    } else {
+                        openAlert.classList.add('hidden');
+                    }
+                }
+            }
+
+            let ordersToDisplay = allOrdersData;
+            if (currentOrderFilter === 'OPEN') {
+                ordersToDisplay = allOrdersData.filter(o => o.is_open);
+            } else if (currentOrderFilter === 'COMPLETE') {
+                ordersToDisplay = allOrdersData.filter(o => o.status === 'COMPLETE');
+            } else if (currentOrderFilter === 'REJECTED') {
+                ordersToDisplay = allOrdersData.filter(o => o.status === 'REJECTED');
+            }
+
+            if (!ordersToDisplay || ordersToDisplay.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-500 italic">No ${currentOrderFilter !== 'ALL' ? currentOrderFilter.toLowerCase() : ''} orders recorded today.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = ordersToDisplay.map(o => {
+                const actionBadge = o.action === 'BUY' ?
+                    '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/40">BUY</span>' :
+                    '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40">SELL</span>';
+
+                let statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">UNKNOWN</span>';
+                if (o.status === 'COMPLETE') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"><i class="fa-solid fa-check mr-1"></i>TRADED</span>';
+                } else if (o.status === 'OPEN') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/50 animate-pulse"><i class="fa-solid fa-spinner fa-spin mr-1"></i>OPEN</span>';
+                } else if (o.status === 'REJECTED') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40"><i class="fa-solid fa-xmark mr-1"></i>REJECTED</span>';
+                }
+
+                const priceDisplay = o.avg_price > 0 ? `₹${o.avg_price.toFixed(2)}` : '--';
+                const limitDisplay = o.limit_price > 0 ? `₹${o.limit_price.toFixed(2)}` : 'MKT';
+
+                const rsn = o.reject_reason && o.reject_reason !== '--' ?
+                    `<span class="text-rose-400/90 font-sans text-[11px] block max-w-sm truncate" title="${o.reject_reason}">${o.reject_reason}</span>` :
+                    '<span class="text-slate-500 font-sans text-xs">Cleanly executed on Kotak Neo</span>';
+
+                return `
+                    <tr class="hover:bg-slate-900/50 transition">
+                        <td class="py-2.5 px-3 text-slate-300 whitespace-nowrap">${o.time}</td>
+                        <td class="py-2.5 px-3 text-slate-400 text-[11px]">${o.order_id}</td>
+                        <td class="py-2.5 px-3">${actionBadge}</td>
+                        <td class="py-2.5 px-3 text-white font-semibold">${o.symbol}</td>
+                        <td class="py-2.5 px-3 text-right text-slate-300 font-bold">${o.qty}</td>
+                        <td class="py-2.5 px-3 text-right text-slate-400">${limitDisplay}</td>
+                        <td class="py-2.5 px-3 text-right text-emerald-400 font-bold">${priceDisplay}</td>
+                        <td class="py-2.5 px-3 text-center">${statusBadge}</td>
+                        <td class="py-2.5 px-3 text-left">${rsn}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
         function renderUI(data) {
             // Check connection status & trigger warning siren/countdown if disconnected
             checkConnectionStatus(data);
@@ -2158,8 +2370,76 @@
                     }
                 }
 
-                document.getElementById('pos-target-val').innerText = pos.target_spread;
-                document.getElementById('pos-sl-val').innerText = pos.sl_spread;
+                // Bind 4-Card Target, Max Profit & Trailing HUD
+                const maxCreditInr = pos.max_credit_inr || (pos.net_credit * (pos.lot_size || 65));
+                const tgtProfitInr = pos.target_profit_inr || (pos.net_credit * 0.40 * (pos.lot_size || 65));
+                const trailProfitInr = pos.trail_trigger_inr || (pos.net_credit * 0.25 * (pos.lot_size || 65));
+                const trailSpread = pos.trail_trigger_spread || (pos.net_credit * 0.75);
+                const maxRiskInr = pos.breakeven_active ? 0.0 : (pos.max_risk_inr || (pos.net_credit * 0.60 * (pos.lot_size || 65)));
+
+                const elMaxCredit = document.getElementById('pos-max-credit-inr');
+                if (elMaxCredit) elMaxCredit.innerText = `₹${maxCreditInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+                const elMaxCreditPts = document.getElementById('pos-max-credit-pts');
+                if (elMaxCreditPts) elMaxCreditPts.innerText = `${Number(pos.net_credit).toFixed(2)} pts`;
+
+                const elTgtProfit = document.getElementById('pos-target-profit-inr');
+                if (elTgtProfit) elTgtProfit.innerText = `+₹${tgtProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+                const elTgtSpread = document.getElementById('pos-target-spread-val');
+                if (elTgtSpread) elTgtSpread.innerText = `₹${Number(pos.target_spread).toFixed(2)}`;
+
+                const elTrailProfit = document.getElementById('pos-trail-profit-inr');
+                if (elTrailProfit) elTrailProfit.innerText = `+₹${trailProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+                const elTrailSpread = document.getElementById('pos-trail-spread-val');
+                if (elTrailSpread) elTrailSpread.innerText = `₹${Number(trailSpread).toFixed(2)}`;
+
+                const elTrailBadge = document.getElementById('pos-trail-badge');
+                const elTrailCard = document.getElementById('pos-trail-card');
+                const elSlCard = document.getElementById('pos-sl-card');
+                const elSlStatus = document.getElementById('pos-sl-status');
+
+                if (pos.breakeven_active) {
+                    if (elTrailBadge) {
+                        elTrailBadge.innerText = '💎 LOCKED';
+                        elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 glow-cyan';
+                    }
+                    if (elTrailCard) {
+                        elTrailCard.className = 'p-3 bg-slate-900/80 border border-cyan-500/40 rounded-xl flex flex-col justify-between bg-cyan-500/10 transition';
+                    }
+                    if (elSlCard) {
+                        elSlCard.className = 'p-3 bg-slate-900/80 border border-emerald-500/40 rounded-xl flex flex-col justify-between bg-emerald-500/10 transition';
+                    }
+                    if (elSlStatus) {
+                        elSlStatus.innerText = '💎 0 RISK';
+                        elSlStatus.className = 'text-[9px] font-bold text-cyan-300';
+                    }
+                } else {
+                    if (elTrailBadge) {
+                        elTrailBadge.innerText = 'WAITING';
+                        elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+                    }
+                    if (elTrailCard) {
+                        elTrailCard.className = 'p-3 bg-slate-900/80 border border-amber-500/30 rounded-xl flex flex-col justify-between bg-amber-500/5 transition';
+                    }
+                    if (elSlCard) {
+                        elSlCard.className = 'p-3 bg-slate-900/80 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5 transition';
+                    }
+                    if (elSlStatus) {
+                        elSlStatus.innerText = 'ACTIVE';
+                        elSlStatus.className = 'text-[9px] font-bold text-slate-400';
+                    }
+                }
+
+                const elMaxRisk = document.getElementById('pos-max-risk-inr');
+                if (elMaxRisk) {
+                    elMaxRisk.innerText = pos.breakeven_active ? '₹0.00 (Zero Risk)' : `-₹${maxRiskInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                    elMaxRisk.className = pos.breakeven_active ? 'text-base font-extrabold text-cyan-300 mono' : 'text-base font-extrabold text-rose-400 mono';
+                }
+
+                const elSlSpread = document.getElementById('pos-sl-spread-val');
+                if (elSlSpread) elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)}`;
 
                 // Bind Sticky Cockpit Active Values
                 const cTitle = document.getElementById('cockpit-pos-title');
@@ -2337,6 +2617,8 @@
                 const res = await fetch('/api/trigger', {method: 'POST'});
                 const data = await res.json();
                 fetchStatus();
+                fetchTrades();
+                fetchOrders();
             } catch (e) {
                 alert("Trigger error: " + e);
             }
@@ -2356,6 +2638,7 @@
                 const data = await res.json();
                 fetchStatus();
                 fetchTrades();
+                fetchOrders();
             } catch (e) {
                 alert("Square-off error: " + e);
             }
@@ -2839,8 +3122,10 @@
         setTimeout(initTradingViewChart, 300);
         fetchStatus();
         fetchTrades();
+        fetchOrders();
         setInterval(fetchStatus, 2000);
         setInterval(fetchTrades, 5000);
+        setInterval(fetchOrders, 3000);
         setInterval(loadChartCandles, 30000); // 30s background candle sync
     </script>
 </body>
