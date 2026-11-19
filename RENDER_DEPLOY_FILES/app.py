@@ -735,8 +735,13 @@ class MasterQuantEngine:
                             elif net > 0 and not long_leg:
                                 long_leg = p
 
-                    # If Kotak Neo reports NO open position, clear any phantom active position!
+                    # If Kotak Neo reports NO open position, record closed position to Ledger before clearing!
                     if not has_real_pos and self.state.get("active_position"):
+                        old_pos = self.state.get("active_position")
+                        try:
+                            self.record_external_close_to_ledger(old_pos, reason="BROKER_MANUAL_SQUAREOFF")
+                        except Exception as log_err:
+                            logger.error(f"Failed to record external close to ledger: {log_err}")
                         self.state["active_position"] = None
                         self.save_state()
                     elif has_real_pos and not self.state.get("active_position") and short_leg and long_leg:
@@ -1559,6 +1564,51 @@ class MasterQuantEngine:
             f"• Nifty Spot Entry: {spot}"
         )
         return True, "Trade executed safely."
+
+    def record_external_close_to_ledger(self, pos, reason="BROKER_MANUAL_SQUAREOFF"):
+        """Records an externally closed position (e.g. closed via mobile app) into the CSV audit ledger."""
+        if not pos:
+            return
+        entry_credit = float(pos.get("net_credit", 0.0) or 0.0)
+        exit_spread = float(pos.get("current_spread", entry_credit) or entry_credit)
+        pos_lots = int(pos.get("lot_count", 1) or 1)
+        total_qty = int(pos.get("lot_size", self.lot_size) or self.lot_size)
+        points_gain = entry_credit - exit_spread
+        gross_pnl = round(points_gain * total_qty, 2)
+        charges = self.calculate_kotak_charges(entry_credit, exit_spread, total_qty)
+        net_pnl = round(gross_pnl - charges["total_charges"], 2)
+        exit_spot = self.pulse.get("spot", pos.get("entry_spot", 0.0))
+        exit_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        trade_rec = {
+            "date": date.today().strftime("%Y-%m-%d"),
+            "entry_time": pos.get("entry_time", exit_time_str),
+            "exit_time": exit_time_str,
+            "mode": pos.get("execution_mode", "LIVE"),
+            "direction": pos.get("direction", "SPREAD"),
+            "strikes": f"Sell {pos.get('sell_strike')}{pos.get('sell_type', '')} / Buy {pos.get('buy_strike')}{pos.get('buy_type', '')}",
+            "lots": pos_lots,
+            "quantity": total_qty,
+            "net_credit": entry_credit,
+            "exit_spread": exit_spread,
+            "points": round(points_gain, 2),
+            "entry_spot": pos.get("entry_spot", exit_spot),
+            "exit_spot": exit_spot,
+            "spot_move": round(exit_spot - pos.get("entry_spot", exit_spot), 2),
+            "trade_initiator": pos.get("trade_initiator", "USER_MANUAL"),
+            "why_trade_taken": pos.get("why_trade_taken", "Kotak Neo Position"),
+            "gross_pnl": gross_pnl,
+            "brokerage_taxes": charges["total_charges"],
+            "net_pnl": net_pnl,
+            "result": "WIN" if net_pnl > 0 else ("BREAKEVEN" if net_pnl == 0 else "LOSS"),
+            "exit_reason": reason,
+        }
+        df_new = pd.DataFrame([trade_rec])
+        if TRADES_FILE.exists():
+            df_new.to_csv(TRADES_FILE, mode="a", header=False, index=False)
+        else:
+            df_new.to_csv(TRADES_FILE, index=False)
+        logger.info(f"[LEDGER] Externally closed position recorded to {TRADES_FILE}: Net PnL Rs {net_pnl}")
 
     def square_off_position(self, reason="MANUAL_WEB_EXIT"):
         pos = self.state.get("active_position")

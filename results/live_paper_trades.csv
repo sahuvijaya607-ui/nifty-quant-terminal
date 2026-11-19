@@ -1,1 +1,4 @@
-date,entry_time,exit_time,mode,direction,strikes,net_credit,exit_spread,points,spot_move,gross_pnl,brokerage_taxes,net_pnl,exit_reason
+date,entry_time,exit_time,mode,direction,strikes,lots,quantity,net_credit,exit_spread,points,entry_spot,exit_spot,spot_move,trade_initiator,why_trade_taken,gross_pnl,brokerage_taxes,net_pnl,result,exit_reason
+2026-11-19,2026-11-19 10:33:47,2026-11-19 11:36:12,LIVE,BULL_PUT_SPREAD,Sell 25250PE @ 135.05 / Buy 24950PE @ 41.20,1,65,93.85,67.3,26.55,25240.0,25290.0,50.0,AUTO_ALGO,Spot > Daily 20 EMA | 5m Cascade (9>20>50) | Green Candle | PCR >= 1.05,1725.75,80.0,1645.75,WIN,MANUAL_PROFIT_LOCK
+2026-11-19,2026-11-19 10:45:41,2026-11-19 11:11:54,LIVE,ORPHAN_HEDGE,Buy 25000PE @ 46.60 / Sell Rejected (Margin Shortage),1,65,-46.6,-40.8,-5.8,25255.0,25265.0,10.0,AUTO_ALGO,Signal attempt (Sell leg failed RMS margin shortage),-377.0,30.0,-407.0,LOSS,ORPHAN_HEDGE_UNWIND
+2026-11-19,2026-11-19 11:46:03,2026-11-19 12:50:41,LIVE,BULL_PUT_SPREAD,Sell 25350PE (130 Qty) / Buy 25050PE (195 Qty),2,130,85.8,84.75,1.05,25340.0,25345.0,5.0,RENDER_CLOUD,Render cloud background signal attempt,136.5,225.25,-88.75,BREAKEVEN,MANUAL_APP_SQUAREOFF
