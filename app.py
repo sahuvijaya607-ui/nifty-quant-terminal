@@ -1535,9 +1535,13 @@ class MasterQuantEngine:
             "trade_initiator": "AUTO_ALGO" if not force else "MANUAL_TRIGGER",
             "why_trade_taken": trade_reason,
             "current_spread": net_credit,
+            "max_credit_inr": round(net_credit * total_qty, 2),
             "target_spread": round(net_credit * 0.60, 2),
-            "sl_spread": round(min(net_credit * 1.60, net_credit + ((2800.0 * active_lots) / total_qty)), 2),
             "target_profit_inr": round((net_credit * 0.40) * total_qty, 2),
+            "trail_trigger_spread": round(net_credit * 0.75, 2),
+            "trail_trigger_inr": round((net_credit * 0.25) * total_qty, 2),
+            "trail_pts_needed": round(net_credit * 0.25, 2),
+            "sl_spread": round(min(net_credit * 1.60, net_credit + ((2800.0 * active_lots) / total_qty)), 2),
             "max_risk_inr": round(min((net_credit * 0.60) * total_qty, 2800.0 * active_lots), 2),
             "breakeven_active": False,
             "mtm_gross_pnl": 0.0,
@@ -1805,12 +1809,24 @@ class MasterQuantEngine:
             self.proximity_polling = False
             pos["proximity_fast_polling"] = False
 
+        # Target, Trailing and Risk calculations for Cockpit HUD
+        pos["max_credit_inr"] = round(entry_credit * pos_qty, 2)
+        pos["target_spread"] = round(entry_credit * 0.60, 2)
+        pos["target_profit_inr"] = round((entry_credit * 0.40) * pos_qty, 2)
+        pos["trail_trigger_spread"] = round(entry_credit * 0.75, 2)
+        pos["trail_trigger_inr"] = round((entry_credit * 0.25) * pos_qty, 2)
+        pos["trail_pts_needed"] = max(0.0, round((entry_credit * 0.25) - pts_gain, 2))
+
         # Trailing Breakeven Trigger (+25% Profit -> 0 Risk Lock)
         if not pos.get("breakeven_active") and (pts_gain >= entry_credit * 0.25):
             pos["breakeven_active"] = True
             pos["sl_spread"] = entry_credit
+            pos["be_locked"] = True
+            pos["be_locked_time"] = datetime.now().strftime("%H:%M:%S")
             self.pending_audio_event = "BREAKEVEN_LOCKED"
             self.status_message = "💎 TRAILING SL LOCKED: ZERO RISK (0 Rs Max Loss)!"
+
+        pos["max_risk_inr"] = 0.0 if pos.get("breakeven_active") else round(min((entry_credit * 0.60) * pos_qty, 2800.0 * pos.get("lot_count", 1)), 2)
 
         # STRICT USER COMMAND: If position was created manually by user from Kotak Neo app,
         # ALGO NEVER AUTO-EXITS IT! Full control remains 100% in user's hands.
