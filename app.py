@@ -774,10 +774,21 @@ class MasterQuantEngine:
                 except Exception as recon_err:
                     logger.error(f"[RECONCILIATION_ERROR] {recon_err}")
 
-            # Upgrade 5: Calculate India VIX & Adaptive Wing Distance
-            atm_call = next((c for c in chain.get("call", []) if abs(float(c.get("inst", {}).get("strkPrc", 0)) - atm) < 25), None)
-            atm_put = next((p for p in chain.get("put", []) if abs(float(p.get("inst", {}).get("strkPrc", 0)) - atm) < 25), None)
-            if atm_call and atm_put:
+            # Upgrade 5: Real Live India VIX from Kotak Neo Quotes API
+            real_vix = None
+            if self.client and self.authenticated and self.execution_mode == "LIVE":
+                try:
+                    v_quote = self.client.quotes(instrument_tokens=[{'instrument_token': 'INDIA VIX', 'exchange_segment': 'nse_cm'}])
+                    if isinstance(v_quote, list) and len(v_quote) > 0:
+                        v_ltp = float(v_quote[0].get("ltp", 0.0) or 0.0)
+                        if v_ltp > 0:
+                            real_vix = round(v_ltp, 2)
+                except Exception as v_err:
+                    logger.warning(f"Notice: Failed to fetch live India VIX quote: {v_err}")
+
+            if real_vix:
+                self.pulse["india_vix"] = real_vix
+            elif atm_call and atm_put:
                 c_ltp = float(atm_call.get("quote", {}).get("ltp", 0.0))
                 p_ltp = float(atm_put.get("quote", {}).get("ltp", 0.0))
                 straddle = c_ltp + p_ltp
@@ -785,7 +796,7 @@ class MasterQuantEngine:
                 vix_est = round((straddle / spot) * np.sqrt(365.0 / 5.0) * np.sqrt(np.pi / 2.0) * 100.0, 1)
                 self.pulse["india_vix"] = max(9.5, min(vix_est, 35.0))
             else:
-                self.pulse["india_vix"] = 13.5
+                self.pulse["india_vix"] = 16.0
             self.get_adaptive_wing_distance()
 
             self.pulse["calls_count"] = len(chain.get("call", []))
