@@ -303,7 +303,7 @@ class MasterQuantEngine:
 
     def load_state(self):
         """Upgrade 3: Crash-Proof State Loader with automatic backup recovery & Persistent Lot Size."""
-        today_str = date.today().strftime("%Y-%m-%d")
+        today_str = get_ist_now().strftime("%Y-%m-%d")
         default_state = {
             "date": today_str,
             "circuit_breaker_active": False,
@@ -354,8 +354,8 @@ class MasterQuantEngine:
         try:
             cur_equity = round(self.initial_capital + float(self.state.get("today_realized_net_pnl", 0.0)), 2)
             record = {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "date": date.today().strftime("%Y-%m-%d"),
+                "timestamp": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
+                "date": get_ist_now().strftime("%Y-%m-%d"),
                 "equity": cur_equity,
                 "net_pnl": net_pnl,
                 "reason": reason,
@@ -456,13 +456,13 @@ class MasterQuantEngine:
         try:
             os.makedirs(os.path.dirname(cache_file), exist_ok=True)
             data = {
-                "date": date.today().strftime("%Y-%m-%d"),
+                "date": get_ist_now().strftime("%Y-%m-%d"),
                 "ema9": getattr(self, "base_ema9", 25311.88),
                 "ema20": getattr(self, "base_ema20", 25267.0),
                 "ema50": getattr(self, "base_ema50", 25245.26),
                 "daily_ema20": getattr(self, "base_daily20", 24483.43),
                 "last_spot": float(self.pulse.get("spot", 25514.3) or 25514.3),
-                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "updated_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
             }
             with open(cache_file, "w") as f:
                 json.dump(data, f, indent=2)
@@ -482,8 +482,9 @@ class MasterQuantEngine:
             return
         self.last_ema_calc_time = now
         try:
-            today_str = date.today().strftime("%Y-%m-%d")
-            start_5m = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
+            today_dt = get_ist_now().date()
+            today_str = today_dt.strftime("%Y-%m-%d")
+            start_5m = (today_dt - timedelta(days=3)).strftime("%Y-%m-%d")
             res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
             if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
                 self.ema_backoff_until = now + 300
@@ -497,7 +498,7 @@ class MasterQuantEngine:
                 self.base_ema20 = round(float(s_close.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
                 self.base_ema50 = round(float(s_close.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
 
-            start_d = (date.today() - timedelta(days=60)).strftime("%Y-%m-%d")
+            start_d = (today_dt - timedelta(days=60)).strftime("%Y-%m-%d")
             res_d = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="D", from_date=start_d, to_date=today_str)
             candles_d = res_d.get("data", {}).get("candles", []) if isinstance(res_d, dict) else []
             if candles_d and len(candles_d) >= 20:
@@ -547,8 +548,8 @@ class MasterQuantEngine:
 
     def generate_daily_report(self):
         """Upgrade 7: Automated 15:35 IST EOD Daily Performance Report Generator."""
-        today_str = date.today().strftime("%Y-%m-%d")
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        today_str = get_ist_now().strftime("%Y-%m-%d")
+        now_str = get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
         ending_capital = round(self.initial_capital + float(self.state.get("today_realized_net_pnl", 0.0)), 2)
         roi_pct = round((float(self.state.get("today_realized_net_pnl", 0.0)) / self.initial_capital) * 100.0, 2)
 
@@ -952,6 +953,18 @@ class MasterQuantEngine:
         while True:
             try:
                 now_dt = get_ist_now()
+                today_ist = now_dt.strftime("%Y-%m-%d")
+                if self.state.get("date") != today_ist:
+                    logger.info(f"[DAILY_ROLLOVER] IST date changed from {self.state.get('date')} to {today_ist}. Resetting daily trade quota & PnL.")
+                    self.state["date"] = today_ist
+                    self.state["today_losses"] = 0
+                    self.state["today_wins"] = 0
+                    self.state["today_realized_gross_pnl"] = 0.0
+                    self.state["today_total_charges"] = 0.0
+                    self.state["today_realized_net_pnl"] = 0.0
+                    self.state["circuit_breaker_active"] = False
+                    self.save_state()
+
                 is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
                 now = time.time()
 
@@ -1649,7 +1662,7 @@ class MasterQuantEngine:
         else:
             order_status = "PAPER_VIRTUAL"
 
-        entry_time_str = simulated_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry_time_str = simulated_time or get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
         pcr_val = self.pulse.get("pcr")
         pcr_str = f"{pcr_val:.2f}" if pcr_val is not None else "1.15"
         trade_reason = (
@@ -1732,10 +1745,10 @@ class MasterQuantEngine:
         charges = self.calculate_kotak_charges(entry_credit, exit_spread, total_qty)
         net_pnl = round(gross_pnl - charges["total_charges"], 2)
         exit_spot = self.pulse.get("spot", pos.get("entry_spot", 0.0))
-        exit_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        exit_time_str = get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
 
         trade_rec = {
-            "date": date.today().strftime("%Y-%m-%d"),
+            "date": get_ist_now().strftime("%Y-%m-%d"),
             "entry_time": pos.get("entry_time", exit_time_str),
             "exit_time": exit_time_str,
             "mode": pos.get("execution_mode", "LIVE"),
@@ -1787,7 +1800,7 @@ class MasterQuantEngine:
         net_pnl = round(gross_pnl - charges["total_charges"], 2)
 
         exit_spot = self.pulse["spot"]
-        exit_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        exit_time_str = get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
 
         # If LIVE mode, send real squareoff orders
         if pos.get("execution_mode") == "LIVE" and self.authenticated and self.client:
@@ -1881,7 +1894,7 @@ class MasterQuantEngine:
         )
 
         trade_rec = {
-            "date": date.today().strftime("%Y-%m-%d"),
+            "date": get_ist_now().strftime("%Y-%m-%d"),
             "entry_time": pos["entry_time"],
             "exit_time": exit_time_str,
             "mode": pos.get("execution_mode", "PAPER"),
@@ -2002,7 +2015,7 @@ class MasterQuantEngine:
             pos["breakeven_active"] = True
             pos["sl_spread"] = entry_credit
             pos["be_locked"] = True
-            pos["be_locked_time"] = datetime.now().strftime("%H:%M:%S")
+            pos["be_locked_time"] = get_ist_now().strftime("%H:%M:%S")
             self.pending_audio_event = "BREAKEVEN_LOCKED"
             self.status_message = "💎 TRAILING SL LOCKED: ZERO RISK (0 Rs Max Loss)!"
 
@@ -2099,6 +2112,20 @@ def get_status():
 
     now_dt = get_ist_now()
     now_t = now_dt.time()
+    today_ist = now_dt.strftime("%Y-%m-%d")
+
+    # Daily Rollover Check: Reset daily quota & PnL when new IST day starts!
+    if engine.state.get("date") != today_ist:
+        logger.info(f"[DAILY_ROLLOVER] IST date changed from {engine.state.get('date')} to {today_ist}. Resetting daily trade quota & PnL.")
+        engine.state["date"] = today_ist
+        engine.state["today_losses"] = 0
+        engine.state["today_wins"] = 0
+        engine.state["today_realized_gross_pnl"] = 0.0
+        engine.state["today_total_charges"] = 0.0
+        engine.state["today_realized_net_pnl"] = 0.0
+        engine.state["circuit_breaker_active"] = False
+        engine.save_state()
+
     is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
 
     spot = float(engine.pulse.get("spot") or 25300.0)
@@ -2528,7 +2555,7 @@ def api_reconnect():
             "message": engine.status_message,
             "greeting": getattr(engine, "greeting", "RAHUL"),
             "balance": engine.real_balance,
-            "time": datetime.now().strftime("%H:%M:%S")
+            "time": get_ist_now().strftime("%H:%M:%S")
         })
     except Exception as e:
         return jsonify({"success": False, "authenticated": False, "message": f"Reconnect Exception: {str(e)}"}), 500
@@ -2665,7 +2692,7 @@ def get_orders():
 
     # 3. Fallback to today's archived CSV if cache empty
     if not raw_orders:
-        today_str = date.today().strftime("%Y-%m-%d")
+        today_str = get_ist_now().strftime("%Y-%m-%d")
         archived_orders_file = RESULTS_DIR / f"closed_orders_{today_str}.csv"
         if archived_orders_file.exists():
             try:
@@ -2756,7 +2783,7 @@ def get_trades():
             pass
 
     # Ensure today's trades from daily report are present if CSV was cached or desynced
-    today_str = date.today().strftime("%Y-%m-%d")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
     today_trades_exist = any(str(t.get("date", "")) == today_str for t in trades)
     if not today_trades_exist:
         today_rep_file = REPORTS_DIR / f"daily_report_{today_str}.json"
@@ -2783,7 +2810,7 @@ def export_csv():
             return Response(
                 csv_buffer.getvalue(),
                 mimetype="text/csv",
-                headers={"Content-Disposition": f"attachment;filename=nifty_quant_trades_ledger_{date.today().strftime('%Y%m%d')}.csv"}
+                headers={"Content-Disposition": f"attachment;filename=nifty_quant_trades_ledger_{get_ist_now().strftime('%Y%m%d')}.csv"}
             )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -2792,7 +2819,7 @@ def export_csv():
 
 @app.route("/api/download_option_chain_archive")
 def download_option_chain_archive():
-    today_str = date.today().strftime("%Y-%m-%d")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
     opt_csv_path = Path("data") / "daily_archive" / f"nifty_options_strikes_{today_str}.csv"
     opt_parquet_path = Path("data") / "daily_archive" / f"nifty_options_strikes_{today_str}.parquet"
     

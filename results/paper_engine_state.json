@@ -1,31 +1,14 @@
 {
-  "date": "2026-11-19",
+  "date": "2026-11-20",
   "circuit_breaker_active": false,
   "today_losses": 0,
-  "today_wins": 1,
-  "today_realized_gross_pnl": 1348.75,
-  "today_total_charges": 80.0,
-  "today_realized_net_pnl": 1268.75,
+  "today_wins": 0,
+  "today_realized_gross_pnl": 0.0,
+  "today_total_charges": 0.0,
+  "today_realized_net_pnl": 0.0,
   "active_position": null,
   "user_configured_lots": 1,
   "execution_mode": "LIVE",
-  "total_realized_pnl": 1268.75,
-  "closed_trades": [
-    {
-      "trade_id": "TRD-LIVE-20261119-01",
-      "strategy": "BULL_PUT_SPREAD",
-      "short_strike": 25250,
-      "long_strike": 24950,
-      "entry_credit": 93.85,
-      "exit_spread": 67.3,
-      "points_captured": 26.55,
-      "qty": 65,
-      "gross_pnl": 1725.75,
-      "extra_leg_unwind": -377.0,
-      "net_realized_pnl": 1268.75,
-      "exit_reason": "MANUAL_SQUARE_OFF_REQUESTED",
-      "exit_time": "11:36:10",
-      "status": "WIN"
-    }
-  ]
+  "total_realized_pnl": 0.0,
+  "closed_trades": []
 }
