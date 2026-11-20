@@ -441,9 +441,9 @@ class MasterQuantEngine:
             if os.path.exists(cache_file):
                 with open(cache_file, "r") as f:
                     c = json.load(f)
-                    self.base_ema9 = float(c.get("ema9", 25311.88))
-                    self.base_ema20 = float(c.get("ema20", 25267.0))
-                    self.base_ema50 = float(c.get("ema50", 25245.26))
+                    self.base_ema9 = float(c.get("ema9", 25499.15))
+                    self.base_ema20 = float(c.get("ema20", 25479.22))
+                    self.base_ema50 = float(c.get("ema50", 25430.58))
                     self.base_daily20 = float(c.get("daily_ema20", 24483.43))
                     return True
         except Exception as e:
@@ -484,10 +484,10 @@ class MasterQuantEngine:
         try:
             today_dt = get_ist_now().date()
             today_str = today_dt.strftime("%Y-%m-%d")
-            start_5m = (today_dt - timedelta(days=3)).strftime("%Y-%m-%d")
+            start_5m = (today_dt - timedelta(days=7)).strftime("%Y-%m-%d")
             res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
             if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
-                self.ema_backoff_until = now + 300
+                self.ema_backoff_until = now + 60
                 self.load_cached_emas()
                 return
             candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
@@ -497,6 +497,9 @@ class MasterQuantEngine:
                 self.base_ema9 = round(float(s_close.ewm(span=9, adjust=False).mean().iloc[-1]), 2)
                 self.base_ema20 = round(float(s_close.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
                 self.base_ema50 = round(float(s_close.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
+                self.pulse["ema9"] = self.base_ema9
+                self.pulse["ema20"] = self.base_ema20
+                self.pulse["ema50"] = self.base_ema50
 
             start_d = (today_dt - timedelta(days=60)).strftime("%Y-%m-%d")
             res_d = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="D", from_date=start_d, to_date=today_str)
@@ -742,9 +745,9 @@ class MasterQuantEngine:
             a20 = 2.0 / 21.0
             a50 = 2.0 / 51.0
 
-            base_e9 = getattr(self, "base_ema9", 25261.28)
-            base_e20 = getattr(self, "base_ema20", 25240.97)
-            base_e50 = getattr(self, "base_ema50", 25234.28)
+            base_e9 = getattr(self, "base_ema9", 25499.15)
+            base_e20 = getattr(self, "base_ema20", 25479.22)
+            base_e50 = getattr(self, "base_ema50", 25430.58)
             base_daily = getattr(self, "base_daily20", 24483.43)
 
             self.pulse["ema9"] = round(spot * a9 + base_e9 * (1.0 - a9), 2)
@@ -878,9 +881,9 @@ class MasterQuantEngine:
                     # Live Spot Memory EMA Calculation:
                     # Previous 5-min candle completed: organically evolve base EMAs in memory from real tick close!
                     prev_c_close = spot
-                    self.base_ema9 = round(prev_c_close * a9 + base_e9 * (1.0 - a9), 2)
-                    self.base_ema20 = round(prev_c_close * a20 + base_e20 * (1.0 - a20), 2)
-                    self.base_ema50 = round(prev_c_close * a50 + base_e50 * (1.0 - a50), 2)
+                    self.base_ema9 = round(prev_c_close * a9 + self.base_ema9 * (1.0 - a9), 2)
+                    self.base_ema20 = round(prev_c_close * a20 + self.base_ema20 * (1.0 - a20), 2)
+                    self.base_ema50 = round(prev_c_close * a50 + self.base_ema50 * (1.0 - a50), 2)
                     self.save_cached_emas()
                 self.current_5m_bucket = bucket_5m
                 self.candle_5m_open = spot
