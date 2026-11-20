@@ -1,0 +1,32 @@
+{
+  "audit_name": "6-Year Real Historical Backtest: Backtest Rules vs LIVE Rules",
+  "generated_at": "2026-11-21 01:41:40",
+  "historical_period": "2020-01-01 to 2026-03-16 (75 Months, 1540+ Sessions)",
+  "dataset": "data/nifty_options_master_2020_2026_1min.parquet (74.3M rows) + Spot Parquet",
+  "capital_tested": 200000.0,
+  "lot_sizing": "1 Lot (SEBI official schedule via get_nifty_lot_size)",
+  "risk_rules": "40% Target Profit, 25% Auto-Trail to Breakeven, Rs 2800 Hard SL per lot, Max 2 Trades/Day",
+  "costs": "Kotak Neo Rs 0 Brokerage + Exchange/STT/GST + 0.5% Slippage per leg",
+  "comparison_summary": [
+    {
+      "configuration": "Original Backtest (PCR>=1.0/<=1.0, 5m Close vs 50 EMA & 9>=20 EMA)",
+      "total_trades": 1201,
+      "win_rate_pct": 51.2,
+      "gross_pnl_inr": 199744.33,
+      "net_pnl_inr": 110439.44,
+      "max_drawdown_inr": -46521.86,
+      "profit_factor": 1.27,
+      "avg_trade_pnl_inr": 91.96
+    },
+    {
+      "configuration": "LIVE Engine Production Rules (PCR>=1.05/<=0.85 Dead Zone, 9>20>50 Cascade, Daily 20 EMA)",
+      "total_trades": 819,
+      "win_rate_pct": 57.3,
+      "gross_pnl_inr": 228536.38,
+      "net_pnl_inr": 169768.27,
+      "max_drawdown_inr": -18657.59,
+      "profit_factor": 1.55,
+      "avg_trade_pnl_inr": 207.29
+    }
+  ]
+}

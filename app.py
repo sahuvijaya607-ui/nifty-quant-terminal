@@ -16,6 +16,7 @@ import os
 import sys
 import time
 import json
+import sqlite3
 import threading
 from datetime import datetime, date, timedelta, time as d_time
 from pathlib import Path
@@ -60,17 +61,20 @@ def send_telegram_alert(message):
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
-# Persistence paths (Guaranteed Absolute Paths relative to app.py)
+# Persistence paths (Guaranteed Absolute Paths relative to app.py with Persistent Disk support)
 BASE_DIR = Path(__file__).resolve().parent
-RESULTS_DIR = BASE_DIR / "results"
+RESULTS_DIR = Path(os.getenv("RESULTS_DIR", str(BASE_DIR / "results")))
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = RESULTS_DIR / "paper_engine_state.json"
 STATE_BACKUP_FILE = RESULTS_DIR / "paper_engine_state_backup.json"
+STATE_DB_FILE = RESULTS_DIR / "quant_state.db"
 ENGINE_MODE_FILE = RESULTS_DIR / "engine_mode.json"
 EQUITY_CURVE_FILE = RESULTS_DIR / "equity_curve_history.json"
 TRADES_FILE = RESULTS_DIR / "live_paper_trades.csv"
 MASTER_SPOT_PARQUET = BASE_DIR / "data" / "nifty_1min_5yr.parquet"
 REPORTS_DIR = RESULTS_DIR / "daily_reports"
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+ORDER_REGISTRY_FILE = RESULTS_DIR / "order_registry.json"
+EMA_CACHE_FILE = RESULTS_DIR / "ema_state_cache.json"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -165,9 +169,19 @@ class MasterQuantEngine:
         self.paused_reason = ""
         self.last_trade_exit_time = 0
         self.security_mpin = "031995"
+        self.state_lock = threading.RLock()
+        self.emas_seeded_for_today = False
+        self._init_sqlite_db()
         self.load_engine_mode()
         self.terminal_order_ids = set()
         self.closed_trade_ids = set()
+
+        # Render Free Plan Safety Invariant:
+        # Before initial broker sync finishes, block live trade entries
+        self.broker_sync_status = "PENDING_RECONCILIATION"
+        self.reconciliation_alert = False
+        self.reconciliation_blocked = True if self.execution_mode == "LIVE" else False
+        self.reconciliation_reason = "Initial broker position reconciliation pending on startup."
 
         # Capital Tracking (Real Kotak Neo Account Balance)
         self.initial_capital = 101244.91
@@ -209,8 +223,14 @@ class MasterQuantEngine:
             "calls_count": 0,
             "puts_count": 0,
             "candle_5m_open": 25040.00,
+            "candle_5m_close": 25040.00,
+            "candle_5m_high": 25040.00,
+            "candle_5m_low": 25040.00,
             "is_green_candle": True,
             "is_red_candle": False,
+            "candle_status": "WAITING_FOR_FIRST_5M_CLOSE",
+            "candle_bar_time": None,
+            "candle_data_lag": 0.0,
             "signal": "NEUTRAL_SCANNING",
             "option_chain": None,
         }
@@ -223,6 +243,10 @@ class MasterQuantEngine:
         self.last_archive_time = 0
 
         self.state = self.load_state()
+        # 5-Minute Candle Close Confirmation Latch State (Strict Backtest Alignment)
+        self.running_5m_bar = None
+        self.finalized_5m_candle = None
+        self.last_evaluated_bar = self.state.get("last_evaluated_candle_bar", None)
         self.active_lots = int(self.state.get("user_configured_lots", 1))
         self.lot_size = self.active_lots * int(self.pulse.get("mkt_lot", 65))
         self.load_cached_emas()
@@ -308,8 +332,60 @@ class MasterQuantEngine:
             self.status_message = f"API Standby ({str(e)[:25]})"
             return False
 
+    def _init_sqlite_db(self):
+        """Initializes SQLite persistent storage tables on Persistent Disk."""
+        try:
+            with sqlite3.connect(STATE_DB_FILE) as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS engine_kv (
+                        key TEXT PRIMARY KEY,
+                        val_json TEXT NOT NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS order_registry (
+                        order_id TEXT PRIMARY KEY,
+                        order_src TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[SQLITE_INIT_ERR] Failed to initialize state database: {e}")
+
+    def _sqlite_save_kv(self, key: str, val):
+        """Persists key-value JSON to SQLite DB on persistent disk."""
+        try:
+            val_str = json.dumps(val, default=str)
+            with sqlite3.connect(STATE_DB_FILE) as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT OR REPLACE INTO engine_kv (key, val_json, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, (key, val_str))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[SQLITE_SAVE_ERR] Failed to persist key '{key}': {e}")
+
+    def _sqlite_load_kv(self, key: str, default=None):
+        """Loads key-value JSON from SQLite DB on persistent disk."""
+        try:
+            if not STATE_DB_FILE.exists():
+                return default
+            with sqlite3.connect(STATE_DB_FILE) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT val_json FROM engine_kv WHERE key = ?", (key,))
+                row = cur.fetchone()
+                if row and row[0]:
+                    return json.loads(row[0])
+        except Exception as e:
+            logger.warning(f"[SQLITE_LOAD_WARN] Failed to load key '{key}': {e}")
+        return default
+
     def load_state(self):
-        """Upgrade 3: Crash-Proof State Loader with automatic backup recovery & Persistent Lot Size."""
+        """Upgrade 3: Crash-Proof State Loader with SQLite Dual-Mirror recovery & Persistent Lot Size."""
         today_str = get_ist_now().strftime("%Y-%m-%d")
         default_state = {
             "date": today_str,
@@ -321,6 +397,8 @@ class MasterQuantEngine:
             "today_realized_net_pnl": 0.0,
             "active_position": None,
             "user_configured_lots": 1,
+            "terminal_order_ids": [],
+            "closed_trade_ids": [],
         }
         for state_path in [STATE_FILE, STATE_BACKUP_FILE]:
             if state_path.exists():
@@ -330,50 +408,125 @@ class MasterQuantEngine:
                         if isinstance(saved, dict):
                             user_lots = saved.get("user_configured_lots", 1)
                             default_state["user_configured_lots"] = user_lots
+                            if "terminal_order_ids" in saved and isinstance(saved["terminal_order_ids"], list):
+                                self.terminal_order_ids = set(str(x) for x in saved["terminal_order_ids"])
+                            if "closed_trade_ids" in saved and isinstance(saved["closed_trade_ids"], list):
+                                self.closed_trade_ids = set(str(x) for x in saved["closed_trade_ids"])
                             if saved.get("date") == today_str:
                                 if "user_configured_lots" not in saved:
                                     saved["user_configured_lots"] = user_lots
                                 return saved
                             else:
                                 return default_state
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"[STATE_LOAD_NOTICE] Could not read {state_path}: {e}")
                     continue
+
+        # Fallback to SQLite Persistent Disk DB if JSON was wiped or corrupted
+        sqlite_state = self._sqlite_load_kv("state")
+        if isinstance(sqlite_state, dict):
+            logger.info("[STATE_LOAD_SQLITE] Restored engine state from SQLite Persistent Storage.")
+            if "terminal_order_ids" in sqlite_state and isinstance(sqlite_state["terminal_order_ids"], list):
+                self.terminal_order_ids = set(str(x) for x in sqlite_state["terminal_order_ids"])
+            if "closed_trade_ids" in sqlite_state and isinstance(sqlite_state["closed_trade_ids"], list):
+                self.closed_trade_ids = set(str(x) for x in sqlite_state["closed_trade_ids"])
+            if sqlite_state.get("date") == today_str:
+                return sqlite_state
+
         return default_state
 
     def save_state(self):
-        """Upgrade 3: Crash-Proof Atomic State Persistence with Secondary Backup Mirror."""
+        """Upgrade 3: Crash-Proof Atomic State Persistence with Secondary Backup Mirror & SQLite DB Dual-Persistence."""
+        lock = getattr(self, "state_lock", None)
+        if lock:
+            lock.acquire()
         try:
+            self.state["terminal_order_ids"] = list(getattr(self, "terminal_order_ids", set()))
+            self.state["closed_trade_ids"] = list(getattr(self, "closed_trade_ids", set()))
             tmp_file = STATE_FILE.with_suffix(".tmp")
             with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(self.state, f, indent=2)
+                json.dump(self.state, f, indent=2, default=str)
             tmp_file.replace(STATE_FILE)
             with open(STATE_BACKUP_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.state, f, indent=2)
+                json.dump(self.state, f, indent=2, default=str)
+
+            # Dual-Mirror to SQLite on Persistent Disk
+            self._sqlite_save_kv("state", self.state)
+            try:
+                with sqlite3.connect(STATE_DB_FILE) as conn:
+                    cur = conn.cursor()
+                    for ord_id in self.terminal_order_ids:
+                        cur.execute("INSERT OR IGNORE INTO order_registry (order_id, order_src) VALUES (?, 'RENDER_APP')", (str(ord_id),))
+                    conn.commit()
+            except Exception as sql_e:
+                logger.warning(f"[SQLITE_ORDER_SYNC_ERR] {sql_e}")
         except Exception as e:
+            logger.error(f"[STATE_SAVE_ERR] Atomic state write failed: {e}. Attempting direct fallback write...")
             try:
                 with open(STATE_FILE, "w", encoding="utf-8") as f:
-                    json.dump(self.state, f, indent=2)
-            except Exception:
-                pass
+                    json.dump(self.state, f, indent=2, default=str)
+                self._sqlite_save_kv("state", self.state)
+            except Exception as direct_err:
+                logger.error(f"[STATE_SAVE_CRITICAL] Direct state write fallback also failed: {direct_err}")
+        finally:
+            if lock:
+                lock.release()
 
     def load_engine_mode(self):
-        """Loads persistent execution mode, manual pause latch, and cooldown timestamps."""
+        """Loads persistent execution mode, manual pause latch, and cooldown timestamps with Render Free Plan safety."""
         try:
             if ENGINE_MODE_FILE.exists():
                 with open(ENGINE_MODE_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.execution_mode = data.get("execution_mode", "LIVE")
-                    self.manual_paused = bool(data.get("manual_paused", False))
-                    self.paused_reason = str(data.get("paused_reason", ""))
+                    saved_paused = bool(data.get("manual_paused", False))
                     self.last_trade_exit_time = float(data.get("last_trade_exit_time", 0) or 0)
+
+                    # SAFETY INVARIANT FOR RENDER FREE PLAN:
+                    # Restart/redeploy must NEVER auto-arm LIVE mode automatically!
+                    if self.execution_mode == "LIVE":
+                        self.manual_paused = True
+                        if saved_paused and data.get("paused_reason"):
+                            self.paused_reason = str(data.get("paused_reason"))
+                        else:
+                            self.paused_reason = "RESTART_SAFETY: LIVE engine started in safe disarmed mode after reboot. Click Resume on Cockpit to arm."
+                    else:
+                        self.manual_paused = saved_paused
+                        self.paused_reason = str(data.get("paused_reason", ""))
                     logger.info(f"[ENGINE_MODE] Loaded: mode={self.execution_mode}, paused={self.manual_paused}, reason={self.paused_reason}")
-            else:
-                self.save_engine_mode()
+                    return
+
+            # SQLite fallback (within container session)
+            sqlite_mode = self._sqlite_load_kv("engine_mode")
+            if isinstance(sqlite_mode, dict):
+                self.execution_mode = sqlite_mode.get("execution_mode", "LIVE")
+                saved_paused = bool(sqlite_mode.get("manual_paused", False))
+                self.last_trade_exit_time = float(sqlite_mode.get("last_trade_exit_time", 0) or 0)
+                if self.execution_mode == "LIVE":
+                    self.manual_paused = True
+                    if saved_paused and sqlite_mode.get("paused_reason"):
+                        self.paused_reason = str(sqlite_mode.get("paused_reason"))
+                    else:
+                        self.paused_reason = "RESTART_SAFETY: LIVE engine started in safe disarmed mode after reboot. Click Resume on Cockpit to arm."
+                else:
+                    self.manual_paused = saved_paused
+                    self.paused_reason = str(sqlite_mode.get("paused_reason", ""))
+                logger.info(f"[ENGINE_MODE_SQLITE] Restored from SQLite: mode={self.execution_mode}, paused={self.manual_paused}, reason={self.paused_reason}")
+                return
+
+            # Cold boot without state file (Render Free fresh container)
+            if self.execution_mode == "LIVE":
+                self.manual_paused = True
+                self.paused_reason = "RESTART_SAFETY: LIVE engine cold start on Render Free. Click Resume on Cockpit to arm."
+            self.save_engine_mode()
         except Exception as e:
             logger.warning(f"[ENGINE_MODE] Failed to load engine mode file: {e}")
+            if self.execution_mode == "LIVE":
+                self.manual_paused = True
+                self.paused_reason = "RESTART_SAFETY: LIVE trading safely disarmed after engine mode load exception."
 
     def save_engine_mode(self):
-        """Persists execution mode, manual pause latch, and cooldown timestamps to disk."""
+        """Persists execution mode, manual pause latch, and cooldown timestamps to disk & SQLite."""
         try:
             data = {
                 "execution_mode": getattr(self, "execution_mode", "LIVE"),
@@ -386,6 +539,7 @@ class MasterQuantEngine:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             tmp.replace(ENGINE_MODE_FILE)
+            self._sqlite_save_kv("engine_mode", data)
         except Exception as e:
             logger.error(f"[ENGINE_MODE] Failed to save engine mode: {e}")
 
@@ -410,8 +564,8 @@ class MasterQuantEngine:
             history.append(record)
             with open(EQUITY_CURVE_FILE, "w", encoding="utf-8") as f:
                 json.dump(history, f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[EQUITY_CURVE_ERR] Failed to write equity curve point: {e}")
 
     def get_compounding_lot_sizing(self):
         """Lot Sizing: Strictly honors User-Configured Lots if set, else auto-compounds."""
@@ -474,20 +628,25 @@ class MasterQuantEngine:
             return True, f"Weekly PCR ({pcr:.3f} <= 0.85, Call Writers Dominant)"
         return False, f"Weekly PCR ({pcr:.3f} > 0.85, Put Writers Dominant)"
 
-    def load_cached_emas(self):
-        """Loads persistent Daily and 5m base EMAs from results/cached_emas.json."""
+    def load_cached_emas(self, fallback_only=False):
+        """Loads persistent Daily and 5m base EMAs from results/cached_emas.json with date protection."""
         cache_file = os.path.join(os.path.dirname(__file__), "results", "cached_emas.json")
         try:
             if os.path.exists(cache_file):
                 with open(cache_file, "r") as f:
                     c = json.load(f)
-                    self.base_ema9 = float(c.get("ema9", 25499.15))
-                    self.base_ema20 = float(c.get("ema20", 25479.22))
-                    self.base_ema50 = float(c.get("ema50", 25430.58))
-                    self.base_daily20 = float(c.get("daily_ema20", 24483.43))
+                    today_str = get_ist_now().strftime("%Y-%m-%d")
+                    # Fix 6: Never let stale historical cache from an earlier date overwrite today's live organic EMAs!
+                    if (fallback_only or (hasattr(self, "base_ema9") and getattr(self, "base_ema9", 0) > 0)) and c.get("date") != today_str:
+                        logger.info(f"[EMA_CACHE_GUARD] Retaining live organic EMAs. Stale cache date: {c.get('date')} vs today: {today_str}")
+                        return False
+                    self.base_ema9 = float(c.get("ema9", getattr(self, "base_ema9", 25499.15)))
+                    self.base_ema20 = float(c.get("ema20", getattr(self, "base_ema20", 25479.22)))
+                    self.base_ema50 = float(c.get("ema50", getattr(self, "base_ema50", 25430.58)))
+                    self.base_daily20 = float(c.get("daily_ema20", getattr(self, "base_daily20", 24483.43)))
                     return True
         except Exception as e:
-            logger.warning(f"Notice: Failed to load cached EMAs: {e}")
+            logger.warning(f"[EMA_LOAD_ERR] Failed to load cached EMAs: {e}")
         return False
 
     def save_cached_emas(self):
@@ -507,28 +666,36 @@ class MasterQuantEngine:
             with open(cache_file, "w") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
-            logger.warning(f"Notice: Failed to save cached EMAs: {e}")
+            logger.warning(f"[EMA_SAVE_ERR] Failed to save cached EMAs: {e}")
 
     def update_real_emas_from_candles(self):
-        """Fetches real historical 5-minute and Daily candle data from Kotak Neo API and calculates exact EMAs with persistent cache fallback."""
+        """Fetches real historical 5-minute and Daily candle data from Kotak Neo API and seeds exact EMAs with persistent cache fallback."""
         if not self.client or not self.authenticated:
-            self.load_cached_emas()
+            self.load_cached_emas(fallback_only=True)
             return
         now = time.time()
+        now_dt = get_ist_now()
+        is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+
+        # Fix 6: Once seeded for the day, intraday EMAs evolve organically on confirmed 5m closes.
+        # Do not allow periodic historical API calls to unexpectedly clobber intraday organic EMAs during market hours!
+        if getattr(self, "emas_seeded_for_today", False) and is_mkt_open:
+            return
+
         if now < getattr(self, "ema_backoff_until", 0):
-            self.load_cached_emas()
+            self.load_cached_emas(fallback_only=True)
             return
         if now - getattr(self, "last_ema_calc_time", 0) < 300:
             return
         self.last_ema_calc_time = now
         try:
-            today_dt = get_ist_now().date()
+            today_dt = now_dt.date()
             today_str = today_dt.strftime("%Y-%m-%d")
             start_5m = (today_dt - timedelta(days=7)).strftime("%Y-%m-%d")
             res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
             if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
                 self.ema_backoff_until = now + 60
-                self.load_cached_emas()
+                self.load_cached_emas(fallback_only=True)
                 return
             candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
             if candles_5m and len(candles_5m) >= 50:
@@ -548,11 +715,15 @@ class MasterQuantEngine:
                 d_closes = [float(c[4]) for c in candles_d]
                 s_d = pd.Series(d_closes)
                 self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+                self.pulse["daily_ema20"] = self.base_daily20
+
+            self.emas_seeded_for_today = True
             self.save_cached_emas()
         except Exception as e:
+            logger.warning(f"[EMA_CALC_ERR] Error fetching historical candles: {e}")
             if "429" in str(e) or "rate" in str(e).lower():
                 self.ema_backoff_until = now + 300
-            self.load_cached_emas()
+            self.load_cached_emas(fallback_only=True)
 
     def _watchdog_loop(self):
         """Upgrade 9: Self-Healing Server Watchdog & Heartbeat Monitor Daemon."""
@@ -586,8 +757,8 @@ class MasterQuantEngine:
                         self.pre_market_reauth_done = True
                 elif now_dt.time() > datetime.strptime("09:15", "%H:%M").time():
                     self.pre_market_reauth_done = False
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[WATCHDOG_NOTICE] Watchdog loop iteration notice: {e}")
 
     def generate_daily_report(self):
         """Upgrade 7: Automated 15:35 IST EOD Daily Performance Report Generator."""
@@ -790,9 +961,10 @@ class MasterQuantEngine:
             base_e50 = getattr(self, "base_ema50", 25430.58)
             base_daily = getattr(self, "base_daily20", 24483.43)
 
-            self.pulse["ema9"] = round(spot * a9 + base_e9 * (1.0 - a9), 2)
-            self.pulse["ema20"] = round(spot * a20 + base_e20 * (1.0 - a20), 2)
-            self.pulse["ema50"] = round(spot * a50 + base_e50 * (1.0 - a50), 2)
+            # Fix 3: Strict Backtest Purity - EMAs are derived strictly from finalized 5m candle closes (Zero tick noise)
+            self.pulse["ema9"] = base_e9
+            self.pulse["ema20"] = base_e20
+            self.pulse["ema50"] = base_e50
             self.pulse["daily_ema20"] = base_daily
 
             # Live Option Chain OI & High-Precision PCR (Sanitized & Bounded)
@@ -859,8 +1031,8 @@ class MasterQuantEngine:
                                     short_leg = p
                                 elif net > 0 and not long_leg:
                                     long_leg = p
-                            except Exception:
-                                pass
+                            except Exception as parse_leg_err:
+                                logger.warning(f"[RECON_PARSE_NOTICE] Error parsing broker position leg: {parse_leg_err}")
 
                         # Consecutive empty position check counter
                         if not hasattr(self, "zero_pos_consecutive_count"):
@@ -926,8 +1098,8 @@ class MasterQuantEngine:
                                                 if b_sym and b_sym in trd_sym and tt == "S" and buy_close_qty == 0:
                                                     buy_close_qty += fld_qty
                                                     buy_close_val += fld_qty * fl_prc
-                                except Exception:
-                                    pass
+                                except Exception as trd_rep_err:
+                                    logger.warning(f"[RECON_TRD_REP_NOTICE] Error parsing trade report: {trd_rep_err}")
 
                             # Reconcile quantities: effective closed spread quantity
                             closed_qty = min(sell_close_qty, buy_close_qty)
@@ -1021,6 +1193,12 @@ class MasterQuantEngine:
                         else:
                             # Position found or no active position: reset consecutive counter
                             self.zero_pos_consecutive_count = 0
+                            if not has_real_pos and not self.state.get("active_position"):
+                                if getattr(self, "reconciliation_blocked", False) and getattr(self, "broker_sync_status", "") == "PENDING_RECONCILIATION":
+                                    self.broker_sync_status = "SYNCED"
+                                    self.reconciliation_blocked = False
+                                    self.reconciliation_reason = ""
+                                    logger.info("[RECON_INIT_CLEAN] Broker position reconciliation verified: 0 positions on broker, 0 positions in terminal.")
                             if has_real_pos and self.state.get("active_position"):
                                 pos_obj = self.state.get("active_position")
                                 if pos_obj.get("reconciliation_status") == "RECONCILIATION_REQUIRED":
@@ -1058,8 +1236,8 @@ class MasterQuantEngine:
                                                     if "NEOTRADEAPI" in ord_src or ord_no in getattr(self, "terminal_order_ids", set()):
                                                         is_render_trade = True
                                                         break
-                                    except Exception:
-                                        pass
+                                    except Exception as ord_chk_err:
+                                        logger.warning(f"[ADOPT_ORD_CHECK_ERR] Error checking order source in position adoption: {ord_chk_err}")
 
                                     if not is_render_trade:
                                         # This is user's personal mobile/web trade (e.g. ADMINCPPAPI_MOB). DO NOT ADOPT!
@@ -1239,8 +1417,15 @@ class MasterQuantEngine:
                                 logger.error(f"[ADOPT_ERROR] Failed to synchronize live broker position: {adopt_err}")
                     else:
                         logger.warning(f"Skipping broker position reconciliation - Kotak API returned non-OK: {real_pos}")
+                        if getattr(self, "broker_sync_status", "") == "PENDING_RECONCILIATION":
+                            self.reconciliation_blocked = True
+                            err_desc = real_pos.get("errMsg", "No Data") if isinstance(real_pos, dict) else "non-OK response"
+                            self.reconciliation_reason = f"Broker API non-OK during reconciliation: {err_desc}"
                 except Exception as recon_err:
                     logger.error(f"[RECONCILIATION_ERROR] {recon_err}")
+                    if getattr(self, "broker_sync_status", "") == "PENDING_RECONCILIATION":
+                        self.reconciliation_blocked = True
+                        self.reconciliation_reason = f"Broker reconciliation exception: {recon_err}"
 
             # Upgrade 5: Real Live India VIX from Kotak Neo Quotes API
             real_vix = None
@@ -1275,48 +1460,162 @@ class MasterQuantEngine:
             e20 = self.pulse["ema20"]
             e50 = self.pulse["ema50"]
 
-            # 5-Minute Candle Tracking (Vikalp 2 Green vs Red Rule)
+            # -------------------------------------------------------------------------
+            # 5-MINUTE CANDLE CLOSE CONFIRMATION LATCH (Backtest Convention 1:1)
+            # -------------------------------------------------------------------------
             now_min = now_dt.minute
             bucket_5m = (now_min // 5) * 5
-            if getattr(self, "current_5m_bucket", None) != bucket_5m:
-                if getattr(self, "current_5m_bucket", None) is not None:
-                    # Live Spot Memory EMA Calculation:
-                    # Previous 5-min candle completed: organically evolve base EMAs in memory from real tick close!
-                    prev_c_close = spot
-                    self.base_ema9 = round(prev_c_close * a9 + self.base_ema9 * (1.0 - a9), 2)
-                    self.base_ema20 = round(prev_c_close * a20 + self.base_ema20 * (1.0 - a20), 2)
-                    self.base_ema50 = round(prev_c_close * a50 + self.base_ema50 * (1.0 - a50), 2)
-                    self.save_cached_emas()
-                self.current_5m_bucket = bucket_5m
-                self.candle_5m_open = spot
-            c_open = getattr(self, "candle_5m_open", spot)
-            is_green = bool(spot >= c_open)
-            is_red = bool(spot <= c_open)
-            self.pulse["candle_5m_open"] = round(c_open, 2)
-            self.pulse["is_green_candle"] = is_green
-            self.pulse["is_red_candle"] = is_red
+            bar_start_dt = now_dt.replace(minute=bucket_5m, second=0, microsecond=0)
+            bar_close_dt = bar_start_dt + timedelta(minutes=5)
 
-            # Upgrade 1: Dual-PCR Adaptive Signal Engine
+            # Accumulate running candle OHLC from live ticks
+            if getattr(self, "running_5m_bar", None) is None:
+                self.running_5m_bar = {
+                    "bar_start": bar_start_dt,
+                    "bar_close": bar_close_dt,
+                    "open": float(spot),
+                    "high": float(spot),
+                    "low": float(spot),
+                    "close": float(spot),
+                    "last_tick_time": now_dt,
+                    "tick_count": 1
+                }
+            elif self.running_5m_bar["bar_start"] != bar_start_dt:
+                # The previous 5-minute bucket has COMPLETED and CLOSED!
+                prev_bar = self.running_5m_bar
+                final_close = float(prev_bar["close"])  # True last tick of completed bar
+
+                # Calculate Exchange vs Received Timestamps and Data Lag from actual tick timestamp
+                exchange_bar_close = prev_bar["bar_close"]
+                last_tick_ts = prev_bar.get("last_tick_time", exchange_bar_close)
+                tick_age = max(0.0, (now_dt - last_tick_ts).total_seconds())
+                boundary_lag = max(0.0, (now_dt - exchange_bar_close).total_seconds())
+                data_lag = max(tick_age, boundary_lag)
+                tick_cnt = prev_bar.get("tick_count", 0)
+
+                # Strict validation: data_lag <= 15s, tick_age <= 15s, and minimum 2 ticks accumulated
+                is_candle_valid = bool(
+                    final_close > 0 and
+                    prev_bar["open"] > 0 and
+                    data_lag <= 15.0 and
+                    tick_age <= 15.0 and
+                    tick_cnt >= 2
+                )
+
+                self.finalized_5m_candle = {
+                    "bar_start": prev_bar["bar_start"],
+                    "bar_close": prev_bar["bar_close"],
+                    "open": prev_bar["open"],
+                    "high": prev_bar["high"],
+                    "low": prev_bar["low"],
+                    "close": final_close,
+                    "tick_count": tick_cnt,
+                    "last_tick_time": last_tick_ts,
+                    "last_tick_age": round(tick_age, 2),
+                    "finalized_at": now_dt,
+                    "data_lag": round(data_lag, 2),
+                    "is_green": bool(final_close >= prev_bar["open"]),
+                    "is_red": bool(final_close <= prev_bar["open"]),
+                    "is_valid": is_candle_valid
+                }
+
+                # Organically evolve base EMAs in memory from confirmed final candle close
+                a9 = 2.0 / 10.0
+                a20 = 2.0 / 21.0
+                a50 = 2.0 / 51.0
+                self.base_ema9 = round(final_close * a9 + self.base_ema9 * (1.0 - a9), 2)
+                self.base_ema20 = round(final_close * a20 + self.base_ema20 * (1.0 - a20), 2)
+                self.base_ema50 = round(final_close * a50 + self.base_ema50 * (1.0 - a50), 2)
+                self.pulse["ema9"] = self.base_ema9
+                self.pulse["ema20"] = self.base_ema20
+                self.pulse["ema50"] = self.base_ema50
+                self.save_cached_emas()
+
+                # Start new running bar for current bucket
+                self.running_5m_bar = {
+                    "bar_start": bar_start_dt,
+                    "bar_close": bar_close_dt,
+                    "open": float(spot),
+                    "high": float(spot),
+                    "low": float(spot),
+                    "close": float(spot),
+                    "last_tick_time": now_dt,
+                    "tick_count": 1
+                }
+            else:
+                # Accumulate high, low, close on active running bar
+                b = self.running_5m_bar
+                b["high"] = max(b["high"], float(spot))
+                b["low"] = min(b["low"], float(spot))
+                b["close"] = float(spot)
+                b["last_tick_time"] = now_dt
+                b["tick_count"] += 1
+
+            # Update pulse HUD candle indicators
+            fc = getattr(self, "finalized_5m_candle", None)
+            if fc and fc.get("is_valid"):
+                self.pulse["candle_5m_open"] = round(fc["open"], 2)
+                self.pulse["candle_5m_close"] = round(fc["close"], 2)
+                self.pulse["candle_5m_high"] = round(fc["high"], 2)
+                self.pulse["candle_5m_low"] = round(fc["low"], 2)
+                self.pulse["is_green_candle"] = fc["is_green"]
+                self.pulse["is_red_candle"] = fc["is_red"]
+                self.pulse["candle_status"] = "CONFIRMED_CLOSED"
+                self.pulse["candle_bar_time"] = fc["bar_start"].strftime("%H:%M")
+                self.pulse["candle_data_lag"] = round(fc["data_lag"], 2)
+            else:
+                b = self.running_5m_bar
+                self.pulse["candle_5m_open"] = round(b["open"], 2)
+                self.pulse["candle_5m_close"] = round(b["close"], 2)
+                self.pulse["is_green_candle"] = bool(b["close"] >= b["open"])
+                self.pulse["is_red_candle"] = bool(b["close"] <= b["open"])
+                self.pulse["candle_status"] = "ACCUMULATING_RUNNING_BAR"
+                self.pulse["candle_bar_time"] = b["bar_start"].strftime("%H:%M")
+                self.pulse["candle_data_lag"] = 0.0
+
+            # Signal Evaluation: STRICTLY on Confirmed Closed Candle
+            # Timing rule: At XX:XX:00 (exact boundary), finalize only (no trade).
+            # Signal evaluated at XX:XX:01+ per backtest convention.
+            is_boundary_second = (now_dt.second == 0)
             bull_pcr_ok, bull_pcr_desc = self.check_bull_pcr()
             bear_pcr_ok, bear_pcr_desc = self.check_bear_pcr()
 
-            if bull_pcr_ok and (spot > d_ema) and (e9 > e20 > e50) and is_green:
-                self.pulse["signal"] = "BULL_PUT_SPREAD"
-            elif bear_pcr_ok and (spot < d_ema) and (e9 < e20 < e50) and is_red:
-                self.pulse["signal"] = "BEAR_CALL_SPREAD"
+            can_evaluate_signal = (
+                not is_boundary_second
+                and fc is not None
+                and fc.get("is_valid", False)
+                and fc.get("data_lag", 999.0) <= 15.0
+            )
+
+            if can_evaluate_signal:
+                c_close = fc["close"]
+                c_green = fc["is_green"]
+                c_red = fc["is_red"]
+                if bull_pcr_ok and (c_close > d_ema) and (e9 > e20 > e50) and c_green:
+                    self.pulse["signal"] = "BULL_PUT_SPREAD"
+                elif bear_pcr_ok and (c_close < d_ema) and (e9 < e20 < e50) and c_red:
+                    self.pulse["signal"] = "BEAR_CALL_SPREAD"
+                else:
+                    self.pulse["signal"] = "NEUTRAL_SCANNING"
             else:
                 self.pulse["signal"] = "NEUTRAL_SCANNING"
 
             # Autonomous Live Trigger (09:30 - 14:30 IST, strictly Max 2 trades/day)
-            # STRICT GUARD: Live Option Chain must be downloaded and PCR verified!
+            # Idempotency Gate: Exactly 1 evaluation/trade per finalized 5m candle bar!
             today_trades_count = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
             if is_mkt_open and (not self.state.get("active_position")) and (not self.state.get("circuit_breaker_active")):
-                if today_trades_count < 2:
-                    t_time = now_dt.time()
-                    if datetime.strptime("09:30", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
-                        if self.pulse.get("option_chain") is not None and (bull_pcr_ok or bear_pcr_ok):
-                            if self.pulse["signal"] in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
-                                self.trigger_trade(force=False)
+                if today_trades_count < 2 and can_evaluate_signal:
+                    bar_key = fc["bar_start"].strftime("%Y-%m-%d %H:%M:%S")
+                    last_eval = getattr(self, "last_evaluated_bar", None) or self.state.get("last_evaluated_candle_bar")
+                    if last_eval != bar_key:
+                        t_time = now_dt.time()
+                        if datetime.strptime("09:30", "%H:%M").time() <= t_time <= datetime.strptime("14:30", "%H:%M").time():
+                            if self.pulse.get("option_chain") is not None and (bull_pcr_ok or bear_pcr_ok):
+                                if self.pulse["signal"] in ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"]:
+                                    self.last_evaluated_bar = bar_key
+                                    self.state["last_evaluated_candle_bar"] = bar_key
+                                    self.save_state()
+                                    self.trigger_trade(force=False, simulated_time=now_dt)
 
             # Minute-by-Minute Live Archiving (Zero Data Gaps!)
             if (is_mkt_open or force) and (now - getattr(self, "last_archive_time", 0) >= 60):
@@ -1342,6 +1641,8 @@ class MasterQuantEngine:
                 self.kotak_rate_limit_backoff_until = now + 60
             elif "401" in err_str or "token" in err_str or "session" in err_str or "unauth" in err_str:
                 self.authenticate()
+            else:
+                logger.warning(f"[POLL_EXCEPTION] Kotak polling exception: {e}")
 
     def _live_engine_loop(self):
         """
@@ -1361,14 +1662,16 @@ class MasterQuantEngine:
                 today_ist = now_dt.strftime("%Y-%m-%d")
                 if self.state.get("date") != today_ist:
                     logger.info(f"[DAILY_ROLLOVER] IST date changed from {self.state.get('date')} to {today_ist}. Resetting daily trade quota & PnL.")
-                    self.state["date"] = today_ist
-                    self.state["today_losses"] = 0
-                    self.state["today_wins"] = 0
-                    self.state["today_realized_gross_pnl"] = 0.0
-                    self.state["today_total_charges"] = 0.0
-                    self.state["today_realized_net_pnl"] = 0.0
-                    self.state["circuit_breaker_active"] = False
-                    self.save_state()
+                    with self.state_lock:
+                        self.state["date"] = today_ist
+                        self.state["today_losses"] = 0
+                        self.state["today_wins"] = 0
+                        self.state["today_realized_gross_pnl"] = 0.0
+                        self.state["today_total_charges"] = 0.0
+                        self.state["today_realized_net_pnl"] = 0.0
+                        self.state["circuit_breaker_active"] = False
+                        self.save_state()
+                    self.emas_seeded_for_today = False
 
                 is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
                 now = time.time()
@@ -1684,8 +1987,8 @@ class MasterQuantEngine:
                         for o in rep.get("data", []):
                             if "NEOTRADEAPI" in str(o.get("ordSrc", "")).upper() or str(o.get("nOrdNo", "")) in getattr(self, "terminal_order_ids", set()):
                                 terminal_symbols.add(str(o.get("trdSym", "")).upper())
-                except Exception:
-                    pass
+                except Exception as ord_rep_err:
+                    logger.warning(f"[OPEN_POS_ORD_NOTICE] Error checking terminal order report: {ord_rep_err}")
 
                 for p in b_pos.get("data", []):
                     ex_seg = str(p.get("exSeg", "")).lower()
@@ -1754,12 +2057,18 @@ class MasterQuantEngine:
                 return False, msg
 
             cur_pos_recon = self.state.get("active_position")
-            if cur_pos_recon and cur_pos_recon.get("reconciliation_status") == "RECONCILIATION_REQUIRED":
-                msg = "[GATE BLOCKED - RECONCILIATION] Active position marked RECONCILIATION_REQUIRED! New trades blocked."
-                logger.warning(msg)
-                return False, msg
+            if cur_pos_recon:
+                if cur_pos_recon.get("reconciliation_status") == "RECONCILIATION_REQUIRED":
+                    msg = f"[GATE BLOCKED - RECONCILIATION] Active position marked RECONCILIATION_REQUIRED ({cur_pos_recon.get('reconciliation_reason', '')})! New trades blocked."
+                    logger.warning(msg)
+                    return False, msg
+                rem_qty = int(cur_pos_recon.get("lot_size", 0) or 0)
+                if rem_qty > 0:
+                    msg = f"[GATE BLOCKED - RULE 6] Render Terminal already has an active position ({rem_qty} Qty open)! New trade prohibited until current position 100% closed."
+                    logger.warning(msg)
+                    return False, msg
 
-            # Gate 0C: Mandatory 30-Minute Cooldown Between Trades (Prevents 2-Second Trap)
+            # Gate 0C: Mandatory 30-Minute Cooldown Between Trades (Only applies when prior trade is 100% closed)
             now_ts = time.time()
             last_exit = float(getattr(self, "last_trade_exit_time", 0) or 0)
             today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
@@ -1773,14 +2082,25 @@ class MasterQuantEngine:
                     logger.warning(msg)
                     return False, msg
 
+            # Gate 0D: 5-Minute Candle Close Confirmation Latch Gate (Strict Backtest Alignment)
+            fc = getattr(self, "finalized_5m_candle", None)
+            if not fc or not fc.get("is_valid", False):
+                msg = "[GATE BLOCKED - 5M CANDLE] No confirmed finalized 5-minute candle available. Entry prohibited on running candle or stale/insufficient ticks!"
+                logger.warning(msg)
+                return False, msg
+            if fc.get("data_lag", 0) > 15.0 or fc.get("last_tick_age", 0) > 15.0:
+                msg = f"[GATE BLOCKED - STALE DATA] Finalized candle tick lag ({max(fc.get('data_lag', 0), fc.get('last_tick_age', 0)):.1f}s) > 15.0s maximum allowed threshold!"
+                logger.warning(msg)
+                return False, msg
+
             spot = float(self.pulse.get("spot", 0) or 0)
             d_ema = float(self.pulse.get("daily_ema20", 0) or 0)
             e9 = float(self.pulse.get("ema9", 0) or 0)
             e20 = float(self.pulse.get("ema20", 0) or 0)
             e50 = float(self.pulse.get("ema50", 0) or 0)
             pcr = float(self.pulse.get("pcr", 1.0) or 1.0)
-            is_green = bool(self.pulse.get("is_green_candle", True))
-            is_red = bool(self.pulse.get("is_red_candle", True))
+            is_green = bool(fc.get("is_green", self.pulse.get("is_green_candle", True)))
+            is_red = bool(fc.get("is_red", self.pulse.get("is_red_candle", True)))
 
             # Rule 4: Time Window Check (09:30 AM to 14:30 PM IST)
             if simulated_time:
@@ -1976,6 +2296,8 @@ class MasterQuantEngine:
                     raise ValueError(f"BUY Hedge Rejected: {err_msg}")
 
                 buy_ord_no = res_buy.get("nOrdNo") if isinstance(res_buy, dict) else None
+                if buy_ord_no:
+                    self.terminal_order_ids.add(str(buy_ord_no))
                 
                 # Active Verification: Wait up to 1.4s for BUY order to reach 'complete' / 'traded' status
                 buy_filled = False
@@ -2030,6 +2352,8 @@ class MasterQuantEngine:
                 time.sleep(0.3)
                 sell_ok = is_kotak_ok(res_sell)
                 sell_ord_no = res_sell.get("nOrdNo") if isinstance(res_sell, dict) else None
+                if sell_ord_no:
+                    self.terminal_order_ids.add(str(sell_ord_no))
                 rej_rsn = "SELL order failed"
 
                 if not sell_ok or not sell_ord_no:
@@ -2093,6 +2417,27 @@ class MasterQuantEngine:
                         logger.critical(f"[RMS_CRITICAL] Market unwind failed after 3 attempts! Alerting user immediately.")
                     raise ValueError(f"SELL leg rejected ({rej_rsn}). Auto-unwound orphan BUY wing to keep Demat 100% safe!")
 
+                # Fix 5: Extract actual average traded fill prices from order report
+                actual_buy_price = exec_buy
+                actual_sell_price = exec_sell
+                try:
+                    rep_fills = self.client.order_report()
+                    if is_kotak_ok(rep_fills) and rep_fills.get("data"):
+                        for o in rep_fills.get("data", []):
+                            o_no = str(o.get("nOrdNo", ""))
+                            fl_pr = float(o.get("flPr", 0.0) or o.get("avgPrc", 0.0) or 0.0)
+                            if fl_pr > 0:
+                                if buy_ord_no and o_no == str(buy_ord_no):
+                                    actual_buy_price = round(fl_pr, 2)
+                                elif sell_ord_no and o_no == str(sell_ord_no):
+                                    actual_sell_price = round(fl_pr, 2)
+                except Exception as fill_err:
+                    logger.warning(f"[FILL_PRC_NOTICE] Could not fetch real fill prices, using limit price: {fill_err}")
+
+                net_credit = round(actual_sell_price - actual_buy_price, 2)
+                exec_buy = actual_buy_price
+                exec_sell = actual_sell_price
+
                 order_status = "KOTAK_API_FILLED"
             except Exception as e:
                 order_status = f"API_ERROR: {str(e)[:35]}"
@@ -2101,7 +2446,12 @@ class MasterQuantEngine:
         else:
             order_status = "PAPER_VIRTUAL"
 
-        entry_time_str = simulated_time or get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(simulated_time, datetime):
+            entry_time_str = simulated_time.strftime("%Y-%m-%d %H:%M:%S")
+        elif simulated_time:
+            entry_time_str = str(simulated_time)
+        else:
+            entry_time_str = get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
         pcr_val = self.pulse.get("pcr")
         pcr_str = f"{pcr_val:.2f}" if pcr_val is not None else "1.15"
         trade_reason = (
@@ -2151,8 +2501,9 @@ class MasterQuantEngine:
             "status": "OPEN",
         }
 
-        self.state["active_position"] = new_pos
-        self.save_state()
+        with self.state_lock:
+            self.state["active_position"] = new_pos
+            self.save_state()
         self.pending_audio_event = "ENTRY"
         self.status_message = f"[{self.execution_mode}] Trade Triggered ({active_lots} Lots, {total_qty} Qty): Bought {buy_strike}{opt_type} -> Sold {sell_strike}{opt_type}"
 
@@ -2226,33 +2577,35 @@ class MasterQuantEngine:
         logger.info(f"[LEDGER] Externally closed position recorded to {TRADES_FILE}: Net PnL Rs {net_pnl}")
 
         # Update Daily Metrics in state
-        self.state["today_realized_gross_pnl"] = round(float(self.state.get("today_realized_gross_pnl", 0.0)) + gross_pnl, 2)
-        self.state["today_total_charges"] = round(float(self.state.get("today_total_charges", 0.0)) + charges["total_charges"], 2)
-        self.state["today_realized_net_pnl"] = round(float(self.state.get("today_realized_net_pnl", 0.0)) + net_pnl, 2)
+        with self.state_lock:
+            self.state["today_realized_gross_pnl"] = round(float(self.state.get("today_realized_gross_pnl", 0.0)) + gross_pnl, 2)
+            self.state["today_total_charges"] = round(float(self.state.get("today_total_charges", 0.0)) + charges["total_charges"], 2)
+            self.state["today_realized_net_pnl"] = round(float(self.state.get("today_realized_net_pnl", 0.0)) + net_pnl, 2)
 
-        if net_pnl >= 0:
-            self.state["today_wins"] = int(self.state.get("today_wins", 0)) + 1
-            self.pending_audio_event = "TARGET"
-            outcome_tag = "🎯 TARGET / MANUAL PROFIT"
-        else:
-            self.state["today_losses"] = int(self.state.get("today_losses", 0)) + 1
-            self.pending_audio_event = "STOP_LOSS"
-            outcome_tag = "🛑 STOP LOSS / MANUAL EXIT"
+            # Issue 1 Fix: Partial exit does NOT complete the trade!
+            # Only full 100% exit increments trade count and starts cooldown timer!
+            if reason != "PARTIAL_SQUAREOFF":
+                if net_pnl >= 0:
+                    self.state["today_wins"] = int(self.state.get("today_wins", 0)) + 1
+                    self.pending_audio_event = "TARGET"
+                    outcome_tag = "🎯 TARGET / MANUAL PROFIT"
+                else:
+                    self.state["today_losses"] = int(self.state.get("today_losses", 0)) + 1
+                    self.pending_audio_event = "STOP_LOSS"
+                    outcome_tag = "🛑 STOP LOSS / MANUAL EXIT"
 
-        today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
-        if today_trades_done >= 2:
-            self.state["circuit_breaker_active"] = True
+                today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
+                if today_trades_done >= 2:
+                    self.state["circuit_breaker_active"] = True
 
-        # CRITICAL SAFETY LATCH & COOLDOWN:
-        # If it was a full square-off, engage safety latch!
-        # If it was only a PARTIAL square-off, do NOT pause algo because remainder is active!
-        if reason != "PARTIAL_SQUAREOFF":
-            self.last_trade_exit_time = time.time()
-            self.manual_paused = True
-            self.paused_reason = f"External square-off detected on Kotak Neo app ({reason}). Auto-trading paused to protect capital."
-            self.save_engine_mode()
-            self.status_message = "SAFETY LOCK: Trade closed on mobile app. Algo paused to prevent Trade 2 unexpected entry."
-        self.save_state()
+                self.last_trade_exit_time = time.time()
+                self.manual_paused = True
+                self.paused_reason = f"External square-off detected on Kotak Neo app ({reason}). Auto-trading paused to protect capital."
+                self.save_engine_mode()
+                self.status_message = "SAFETY LOCK: Trade closed on mobile app. Algo paused to prevent Trade 2 unexpected entry."
+            else:
+                logger.info(f"[PARTIAL_SQUAREOFF_LEDGER] Booked partial P&L Rs {net_pnl} ({total_qty} qty). Remaining position stays OPEN - trade NOT completed.")
+            self.save_state()
 
     def square_off_position(self, reason="MANUAL_WEB_EXIT"):
         pos = self.state.get("active_position")
@@ -2279,11 +2632,17 @@ class MasterQuantEngine:
         exit_spot = self.pulse["spot"]
         exit_time_str = get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # If LIVE mode, send real squareoff orders
+        # Fix 1 & 5: If LIVE mode, send real squareoff orders with verification and fill price capture
         if pos.get("execution_mode") == "LIVE" and self.authenticated and self.client:
+            sell_exit_ord_no = None
+            buy_exit_ord_no = None
+            exit_orders_failed = False
+            exit_failure_reason = ""
+
             try:
                 # 1. Buy back short leg first (releases margin obligation safely)
                 # Attempt Market Order first; if rejected by NSE options RMS, fallback to aggressive marketable limit
+                s_symbol = pos.get("sell_symbol") or f"NIFTY{pos.get('sell_strike', '')}{pos.get('sell_type', '')}"
                 res_exit_sell = self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
@@ -2291,7 +2650,7 @@ class MasterQuantEngine:
                     order_type="MKT",
                     quantity=str(total_qty),
                     validity="DAY",
-                    trading_symbol=pos.get("sell_symbol", f"NIFTY{pos['sell_strike']}{pos['sell_type']}"),
+                    trading_symbol=s_symbol,
                     transaction_type="B",
                 )
                 if not is_kotak_ok(res_exit_sell):
@@ -2304,12 +2663,20 @@ class MasterQuantEngine:
                         order_type="L",
                         quantity=str(total_qty),
                         validity="DAY",
-                        trading_symbol=pos.get("sell_symbol", f"NIFTY{pos['sell_strike']}{pos['sell_type']}"),
+                        trading_symbol=s_symbol,
                         transaction_type="B",
                     )
-                logger.info(f"[EXIT_SQUAREOFF] Short leg buyback result: {res_exit_sell}")
+
+                if is_kotak_ok(res_exit_sell):
+                    sell_exit_ord_no = res_exit_sell.get("nOrdNo")
+                    if sell_exit_ord_no:
+                        self.terminal_order_ids.add(str(sell_exit_ord_no))
+                else:
+                    exit_orders_failed = True
+                    exit_failure_reason = res_exit_sell.get("errMsg") or "Short leg buyback order rejected"
 
                 # 2. Sell back long wing second
+                b_symbol = pos.get("buy_symbol") or f"NIFTY{pos.get('buy_strike', '')}{pos.get('buy_type', '')}"
                 res_exit_buy = self.client.place_order(
                     exchange_segment="nse_fo",
                     product="NRML",
@@ -2317,7 +2684,7 @@ class MasterQuantEngine:
                     order_type="MKT",
                     quantity=str(total_qty),
                     validity="DAY",
-                    trading_symbol=pos.get("buy_symbol", f"NIFTY{pos['buy_strike']}{pos['buy_type']}"),
+                    trading_symbol=b_symbol,
                     transaction_type="S",
                 )
                 if not is_kotak_ok(res_exit_buy):
@@ -2330,34 +2697,138 @@ class MasterQuantEngine:
                         order_type="L",
                         quantity=str(total_qty),
                         validity="DAY",
-                        trading_symbol=pos.get("buy_symbol", f"NIFTY{pos['buy_strike']}{pos['buy_type']}"),
+                        trading_symbol=b_symbol,
                         transaction_type="S",
                     )
-                logger.info(f"[EXIT_SQUAREOFF] Long wing squareoff result: {res_exit_buy}")
+
+                if is_kotak_ok(res_exit_buy):
+                    buy_exit_ord_no = res_exit_buy.get("nOrdNo")
+                    if buy_exit_ord_no:
+                        self.terminal_order_ids.add(str(buy_exit_ord_no))
+                else:
+                    exit_orders_failed = True
+                    exit_failure_reason += f" | {res_exit_buy.get('errMsg') or 'Long wing exit rejected'}"
+
             except Exception as exit_err:
+                exit_orders_failed = True
+                exit_failure_reason = str(exit_err)
                 logger.error(f"[EXIT_ERROR] Live squareoff order failed: {exit_err}")
 
+            # Active Order Verification: Check order report for fill confirmation
+            short_filled_qty = 0
+            short_fill_prc = 0.0
+            long_filled_qty = 0
+            long_fill_prc = 0.0
+
+            if not exit_orders_failed:
+                for _ in range(6):
+                    time.sleep(0.2)
+                    try:
+                        rep = self.client.order_report()
+                        if is_kotak_ok(rep) and rep.get("data"):
+                            for o in rep.get("data", []):
+                                o_no = str(o.get("nOrdNo", ""))
+                                st = str(o.get("ordSt", "")).lower()
+                                f_qty = int(float(o.get("fldQty", 0) or 0))
+                                f_prc = float(o.get("flPr", 0.0) or o.get("avgPrc", 0.0) or 0.0)
+                                if sell_exit_ord_no and o_no == str(sell_exit_ord_no):
+                                    if st in ["complete", "traded"]:
+                                        short_filled_qty = f_qty
+                                        short_fill_prc = f_prc
+                                elif buy_exit_ord_no and o_no == str(buy_exit_ord_no):
+                                    if st in ["complete", "traded"]:
+                                        long_filled_qty = f_qty
+                                        long_fill_prc = f_prc
+                        if short_filled_qty > 0 and long_filled_qty > 0:
+                            break
+                    except Exception as rep_chk_err:
+                        logger.warning(f"[EXIT_REP_ERR] Error checking exit order report: {rep_chk_err}")
+
+            # Fix 1 SAFEGUARD: If exit order failed or timed out with zero confirmed fills,
+            # NEVER CLEAR ACTIVE POSITION! Keep OPEN and alert immediately!
+            confirmed_closed_qty = min(short_filled_qty, long_filled_qty) if (short_filled_qty > 0 and long_filled_qty > 0) else 0
+
+            if exit_orders_failed or (sell_exit_ord_no and buy_exit_ord_no and confirmed_closed_qty == 0):
+                fail_msg = f"Square-off failed at broker ({exit_failure_reason or 'Orders not filled on exchange'}). Retaining position OPEN!"
+                logger.critical(f"[SQUAREOFF_SAFETY_BLOCKED] {fail_msg}")
+                with self.state_lock:
+                    pos["exit_status"] = "SQUAREOFF_FAILED_RETRYING"
+                    pos["last_exit_error"] = exit_failure_reason or "Broker fill timeout"
+                    self.reconciliation_blocked = True
+                    self.reconciliation_reason = f"Square-off order failed ({pos['last_exit_error']})"
+                    self.save_state()
+                send_telegram_alert(
+                    f"🚨 <b>CRITICAL EXIT FAILURE</b>: {fail_msg}\n"
+                    f"Position remains OPEN and protected by SL/Target monitors."
+                )
+                return False, fail_msg
+
+            # Handle Partial Exit: Close only confirmed filled quantity, keep remainder open
+            if confirmed_closed_qty < total_qty:
+                logger.warning(f"[PARTIAL_EXIT_CONFIRMED] Partial square-off: {confirmed_closed_qty}/{total_qty} qty closed.")
+                if confirmed_closed_qty > 0:
+                    sell_exit_actual = short_fill_prc if short_fill_prc > 0 else float(pos.get("current_sell_ltp", 0.0))
+                    buy_exit_actual = long_fill_prc if long_fill_prc > 0 else float(pos.get("current_buy_ltp", 0.0))
+                    act_spread = round(sell_exit_actual - buy_exit_actual, 2)
+                    self.record_external_close_to_ledger(
+                        pos,
+                        reason="PARTIAL_SQUAREOFF",
+                        exit_spread_override=act_spread,
+                        closed_qty_override=confirmed_closed_qty
+                    )
+                with self.state_lock:
+                    rem_qty = total_qty - confirmed_closed_qty
+                    pos["lot_size"] = rem_qty
+                    pos["lot_count"] = max(1, rem_qty // self.lot_size)
+                    pos["max_credit_inr"] = round(entry_credit * rem_qty, 2)
+                    pos["target_profit_inr"] = round((entry_credit * 0.40) * rem_qty, 2)
+                    pos["max_risk_inr"] = round(min((entry_credit * 0.60) * rem_qty, 2800.0 * pos["lot_count"]), 2)
+                    pos["trail_trigger_inr"] = round((entry_credit * 0.25) * rem_qty, 2)
+                    pos["exit_status"] = "PARTIAL_REMAINING_OPEN"
+                    self.state["active_position"] = pos
+                    self.save_state()
+                return True, f"Partial squareoff: {confirmed_closed_qty}/{total_qty} closed. Remainder {rem_qty} OPEN."
+
+            # Fix 5: Full Fill Confirmed - Update exact fill prices from exchange execution
+            if short_fill_prc > 0 and long_fill_prc > 0:
+                actual_exit_spread = round(short_fill_prc - long_fill_prc, 2)
+                exit_spread = actual_exit_spread
+                points_gain = entry_credit - exit_spread
+                gross_pnl = round(points_gain * total_qty, 2)
+                charges = self.calculate_kotak_charges(entry_credit, exit_spread, total_qty)
+                net_pnl = round(gross_pnl - charges["total_charges"], 2)
+
         # Update Daily Metrics
-        self.state["today_realized_gross_pnl"] = round(self.state["today_realized_gross_pnl"] + gross_pnl, 2)
-        self.state["today_total_charges"] = round(self.state["today_total_charges"] + charges["total_charges"], 2)
-        self.state["today_realized_net_pnl"] = round(self.state["today_realized_net_pnl"] + net_pnl, 2)
+        with self.state_lock:
+            self.state["today_realized_gross_pnl"] = round(self.state["today_realized_gross_pnl"] + gross_pnl, 2)
+            self.state["today_total_charges"] = round(self.state["today_total_charges"] + charges["total_charges"], 2)
+            self.state["today_realized_net_pnl"] = round(self.state["today_realized_net_pnl"] + net_pnl, 2)
 
-        if net_pnl >= 0:
-            self.state["today_wins"] += 1
-            self.pending_audio_event = "TARGET"
-            outcome_tag = "🎯 TARGET ACHIEVED (+40% DECAY)"
-        else:
-            self.state["today_losses"] += 1
-            self.pending_audio_event = "STOP_LOSS"
-            outcome_tag = "🛑 STOP LOSS / EXIT"
+            if net_pnl >= 0:
+                self.state["today_wins"] += 1
+                self.pending_audio_event = "TARGET"
+                outcome_tag = "🎯 TARGET ACHIEVED (+40% DECAY)"
+            else:
+                self.state["today_losses"] += 1
+                self.pending_audio_event = "STOP_LOSS"
+                outcome_tag = "🛑 STOP LOSS / EXIT"
 
-        today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
-        if today_trades_done >= 2:
-            self.state["circuit_breaker_active"] = True
-            self.status_message = "Daily Quota Complete (Max 2 Trades Reached). Market locked for today."
-        else:
-            self.state["circuit_breaker_active"] = False
-            self.status_message = f"Trade 1 Closed ({outcome_tag}). Scanning for Trade 2 if valid signal forms before 14:30."
+            today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
+            if today_trades_done >= 2:
+                self.state["circuit_breaker_active"] = True
+                self.status_message = "Daily Quota Complete (Max 2 Trades Reached). Market locked for today."
+            else:
+                self.state["circuit_breaker_active"] = False
+                self.status_message = f"Trade 1 Closed ({outcome_tag}). Scanning for Trade 2 if valid signal forms before 14:30."
+
+            self.state["active_position"] = None
+            self.proximity_polling = False
+            self.last_trade_exit_time = time.time()
+            if reason == "MANUAL_WEB_EXIT":
+                self.manual_paused = True
+                self.paused_reason = "Manual square-off executed from Web Cockpit. Algo paused to protect capital."
+            self.save_engine_mode()
+            self.save_state()
 
         send_telegram_alert(
             f"{outcome_tag} — <b>NIFTY QUANT DESK</b>\n\n"
@@ -2405,14 +2876,6 @@ class MasterQuantEngine:
         # Upgrade 7: Update daily report
         self.generate_daily_report()
 
-        self.state["active_position"] = None
-        self.proximity_polling = False
-        self.last_trade_exit_time = time.time()
-        if reason == "MANUAL_WEB_EXIT":
-            self.manual_paused = True
-            self.paused_reason = "Manual square-off executed from Web Cockpit. Algo paused to protect capital."
-        self.save_engine_mode()
-        self.save_state()
         self.status_message = f"Closed ({reason}): Net PnL Rs {net_pnl:+,.2f} ({pos_lots} Lots, Charges: Rs {charges['total_charges']})"
         return True, f"Closed with Net PnL Rs {net_pnl:+,.2f}"
 
@@ -3014,6 +3477,10 @@ def get_status():
             "is_green_candle": engine.pulse.get("is_green_candle", True),
             "is_red_candle": engine.pulse.get("is_red_candle", False),
             "candle_5m_open": engine.pulse.get("candle_5m_open", spot),
+            "candle_5m_close": engine.pulse.get("candle_5m_close", spot),
+            "candle_status": engine.pulse.get("candle_status", "WAITING_FOR_FIRST_5M_CLOSE"),
+            "candle_bar_time": engine.pulse.get("candle_bar_time", "--:--"),
+            "candle_data_lag": engine.pulse.get("candle_data_lag", 0.0),
         },
         "option_chain_table": chain_table,
         "active_position": engine.state.get("active_position"),
@@ -3141,14 +3608,15 @@ def api_square_off():
 
 @app.route("/api/reset_circuit_breaker", methods=["POST"])
 def api_reset_circuit_breaker():
-    engine.state["circuit_breaker_active"] = False
-    engine.state["today_losses"] = 0
-    engine.state["today_wins"] = 0
-    engine.state["today_realized_gross_pnl"] = 0.0
-    engine.state["today_total_charges"] = 0.0
-    engine.state["today_realized_net_pnl"] = 0.0
-    engine.state["date"] = get_ist_now().strftime("%Y-%m-%d")
-    engine.save_state()
+    with engine.state_lock:
+        engine.state["circuit_breaker_active"] = False
+        engine.state["today_losses"] = 0
+        engine.state["today_wins"] = 0
+        engine.state["today_realized_gross_pnl"] = 0.0
+        engine.state["today_total_charges"] = 0.0
+        engine.state["today_realized_net_pnl"] = 0.0
+        engine.state["date"] = get_ist_now().strftime("%Y-%m-%d")
+        engine.save_state()
     engine.status_message = "Circuit Breaker & Daily Quota Reset (0 / 2 Trades Done)."
     return jsonify({"success": True, "message": "Circuit Breaker & Daily Quota Reset."})
 
@@ -3701,10 +4169,11 @@ def set_lot_size():
             return jsonify({"success": False, "error": "Maximum allowed lots is 100."}), 400
 
         mkt_lot = int(engine.pulse.get("mkt_lot", 65))
-        engine.state["user_configured_lots"] = lots
-        engine.active_lots = lots
-        engine.lot_size = lots * mkt_lot
-        engine.save_state()
+        with engine.state_lock:
+            engine.state["user_configured_lots"] = lots
+            engine.active_lots = lots
+            engine.lot_size = lots * mkt_lot
+            engine.save_state()
         engine.status_message = f"Lot size updated to {lots} Lots ({engine.lot_size} Qty)"
 
         return jsonify({

@@ -3,16 +3,28 @@ services:
     name: nifty-quant-terminal
     runtime: python
     plan: free
-    region: oregon
+    region: singapore # Lowest latency to NSE / Mumbai servers
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
-    autoDeploy: true
+    startCommand: gunicorn -c gunicorn.conf.py app:app
+    autoDeploy: false # Prevent accidental auto-redeploys during market hours
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: FLASK_ENV
         value: production
-      - key: EXECUTION_MODE
-        value: PAPER_TRADING
       - key: PORT
         value: 10000
+      - key: KOTAK_CONSUMER_KEY
+        sync: false
+      - key: KOTAK_ACCESS_TOKEN
+        sync: false
+      - key: KOTAK_USER_ID
+        sync: false
+      - key: KOTAK_PASSWORD
+        sync: false
+      - key: KOTAK_MPIN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

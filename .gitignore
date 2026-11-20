@@ -40,5 +40,7 @@ logs/*
 *.log
 
 # System Files
+*.db
+*.sqlite
 .DS_Store
 Thumbs.db
