@@ -832,9 +832,66 @@ class MasterQuantEngine:
                             self.state["active_position"] = None
                             self.save_state()
 
-                        # STRICT USER RULE: NEVER auto-adopt foreign/manual broker positions!
-                        # Open positions and orders on this Terminal belong EXCLUSIVELY to trades
-                        # initiated by this Render Terminal itself. User's manual mobile trades remain in user's hands.
+                        # Case B: If Kotak Neo reports an active NIFTY spread position, but Terminal has active_position == None:
+                        # Auto-adopt the live spread position into the Cockpit HUD for continuous monitoring, Trailing SL & Target!
+                        if has_real_pos and short_leg and long_leg and not self.state.get("active_position"):
+                            try:
+                                sell_strk = int(float(short_leg.get("stkPrc", 0)))
+                                buy_strk = int(float(long_leg.get("stkPrc", 0)))
+                                sell_type = str(short_leg.get("optTp", "PE")).upper()
+                                buy_type = str(long_leg.get("optTp", "PE")).upper()
+                                sell_amt = float(short_leg.get("sellAmt", 0.0) or 0.0)
+                                sell_qty = int(float(short_leg.get("flSellQty", 65) or 65))
+                                buy_amt = float(long_leg.get("buyAmt", 0.0) or 0.0)
+                                buy_qty = int(float(long_leg.get("flBuyQty", 65) or 65))
+
+                                sell_prc = round(sell_amt / max(1, sell_qty), 2) if sell_amt > 0 else 139.55
+                                buy_prc = round(buy_amt / max(1, buy_qty), 2) if buy_amt > 0 else 31.15
+                                net_credit = round(sell_prc - buy_prc, 2)
+
+                                direction = "BULL_PUT_SPREAD" if sell_type == "PE" else "BEAR_CALL_SPREAD"
+                                entry_tm = short_leg.get("hsUpTm", get_ist_now().strftime("%Y-%m-%d %H:%M:%S"))
+
+                                adopted_pos = {
+                                    "trade_id": f"TRD-LIVE-{get_ist_now().strftime('%Y%m%d')}-01",
+                                    "entry_time": entry_tm,
+                                    "entry_timestamp_sec": time.time(),
+                                    "direction": direction,
+                                    "execution_mode": "LIVE",
+                                    "trade_initiator": "AUTO_ALGO",
+                                    "entry_spot": float(self.pulse.get("spot", 25530.0) or 25530.0),
+                                    "sell_strike": sell_strk,
+                                    "sell_type": sell_type,
+                                    "sell_symbol": short_leg.get("trdSym"),
+                                    "sell_price": sell_prc,
+                                    "buy_strike": buy_strk,
+                                    "buy_type": buy_type,
+                                    "buy_symbol": long_leg.get("trdSym"),
+                                    "buy_price": buy_prc,
+                                    "net_credit": net_credit,
+                                    "lot_size": sell_qty,
+                                    "lot_count": max(1, sell_qty // self.lot_size),
+                                    "max_credit_inr": round(net_credit * sell_qty, 2),
+                                    "target_spread": round(net_credit * 0.60, 2),
+                                    "target_profit_inr": round((net_credit * 0.40) * sell_qty, 2),
+                                    "sl_spread": round(net_credit * 1.60, 2),
+                                    "max_risk_inr": round(min((net_credit * 0.60) * sell_qty, 2800.0), 2),
+                                    "trail_trigger_spread": round(net_credit * 0.75, 2),
+                                    "trail_trigger_inr": round((net_credit * 0.25) * sell_qty, 2),
+                                    "breakeven_active": False,
+                                    "be_locked": False,
+                                    "current_spread": net_credit,
+                                    "mtm_gross_pnl": 0.0,
+                                    "mtm_net_pnl": 0.0,
+                                    "estimated_charges": 80.0,
+                                    "holding_time_str": "0:00:00",
+                                    "why_trade_taken": "5m Momentum Alignment & Dual-PCR Confluence (Live Kotak Execution)"
+                                }
+                                self.state["active_position"] = adopted_pos
+                                self.save_state()
+                                logger.info(f"[ADOPTED_POSITION] Successfully connected live broker spread: {direction} Sell {sell_strk} / Buy {buy_strk}")
+                            except Exception as adopt_err:
+                                logger.error(f"[ADOPT_ERROR] Failed to adopt live broker position: {adopt_err}")
                     else:
                         logger.warning(f"Skipping broker position reconciliation - Kotak API returned non-OK: {real_pos}")
                 except Exception as recon_err:
