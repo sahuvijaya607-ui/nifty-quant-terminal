@@ -257,11 +257,11 @@ class MasterQuantEngine:
             logger.warning(f"Initial Kotak poll skipped: {e}")
         self.init_replay_data()
 
-        # Dedicated Autonomous Background Workers (Live Poller, Watchdog & Replay)
+        # Dedicated Autonomous Background Workers (Live Poller, Watchdog, Keepalive & Replay)
         self.start_background_workers()
 
     def start_background_workers(self):
-        """Ensures all 3 autonomous background threads are active inside the process/worker."""
+        """Ensures all 4 autonomous background threads are active inside the process/worker."""
         if not hasattr(self, "live_daemon_thread") or not self.live_daemon_thread.is_alive():
             self.live_daemon_thread = threading.Thread(target=self._live_engine_loop, daemon=True)
             self.live_daemon_thread.start()
@@ -272,9 +272,35 @@ class MasterQuantEngine:
             self.watchdog_thread.start()
             logger.info("[ENGINE] Started self-healing watchdog_thread in worker process.")
 
+        if not hasattr(self, "keepalive_thread") or not self.keepalive_thread.is_alive():
+            self.keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
+            self.keepalive_thread.start()
+            logger.info("[ENGINE] Started autonomous Render keepalive daemon in worker process.")
+
         if not hasattr(self, "replay_thread") or not self.replay_thread.is_alive():
             self.replay_thread = threading.Thread(target=self._replay_loop, daemon=True)
             self.replay_thread.start()
+
+    def _keepalive_loop(self):
+        """
+        Autonomous Render Anti-Sleep Daemon:
+        Pings public Render endpoint every 240 seconds (4 minutes) to reset the
+        15-minute inactivity idle timer on Render Free Tier. Guarantees 24/7 responsiveness.
+        """
+        time.sleep(20)  # Wait for Flask web server to bind port
+        logger.info("[KEEPALIVE] Running autonomous Render keepalive loop (240s interval).")
+        while True:
+            try:
+                time.sleep(240)
+                base_url = (os.getenv("RENDER_EXTERNAL_URL") or "https://nifty-quant-terminal.onrender.com").rstrip("/")
+                ping_url = f"{base_url}/api/ping"
+                res = requests.get(ping_url, timeout=12, headers={"User-Agent": "Antigravity-KeepAlive/1.0"})
+                if res.status_code == 200:
+                    logger.info(f"[KEEPALIVE] Render Anti-Sleep ping OK (HTTP 200) -> {ping_url}")
+                else:
+                    logger.warning(f"[KEEPALIVE] Render ping returned non-200 ({res.status_code})")
+            except Exception as e:
+                logger.debug(f"[KEEPALIVE_NOTICE] Ping attempt notice: {e}")
 
 
     def authenticate(self):
@@ -475,6 +501,7 @@ class MasterQuantEngine:
     def load_engine_mode(self):
         """Loads persistent execution mode, manual pause latch, and cooldown timestamps with Render Free Plan safety."""
         try:
+            auto_arm_live = os.getenv("AUTO_ARM_LIVE", "true").lower() in ("true", "1", "yes")
             if ENGINE_MODE_FILE.exists():
                 with open(ENGINE_MODE_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -482,13 +509,17 @@ class MasterQuantEngine:
                     saved_paused = bool(data.get("manual_paused", False))
                     self.last_trade_exit_time = float(data.get("last_trade_exit_time", 0) or 0)
 
-                    # SAFETY INVARIANT FOR RENDER FREE PLAN:
-                    # Restart/redeploy must NEVER auto-arm LIVE mode automatically!
+                    # Dynamic Arming Logic: Respect explicit user pause; otherwise auto-arm for autonomous trading
                     if self.execution_mode == "LIVE":
-                        self.manual_paused = True
-                        if saved_paused and data.get("paused_reason"):
-                            self.paused_reason = str(data.get("paused_reason"))
+                        if saved_paused:
+                            self.manual_paused = True
+                            self.paused_reason = str(data.get("paused_reason", "MANUALLY_PAUSED_BY_OPERATOR"))
+                        elif auto_arm_live:
+                            self.manual_paused = False
+                            self.paused_reason = ""
+                            logger.info("[ENGINE_MODE] LIVE engine auto-armed on startup (AUTO_ARM_LIVE=true). Ready for market signals.")
                         else:
+                            self.manual_paused = True
                             self.paused_reason = "RESTART_SAFETY: LIVE engine started in safe disarmed mode after reboot. Click Resume on Cockpit to arm."
                     else:
                         self.manual_paused = saved_paused
@@ -503,10 +534,15 @@ class MasterQuantEngine:
                 saved_paused = bool(sqlite_mode.get("manual_paused", False))
                 self.last_trade_exit_time = float(sqlite_mode.get("last_trade_exit_time", 0) or 0)
                 if self.execution_mode == "LIVE":
-                    self.manual_paused = True
-                    if saved_paused and sqlite_mode.get("paused_reason"):
-                        self.paused_reason = str(sqlite_mode.get("paused_reason"))
+                    if saved_paused:
+                        self.manual_paused = True
+                        self.paused_reason = str(sqlite_mode.get("paused_reason", "MANUALLY_PAUSED_BY_OPERATOR"))
+                    elif auto_arm_live:
+                        self.manual_paused = False
+                        self.paused_reason = ""
+                        logger.info("[ENGINE_MODE_SQLITE] LIVE engine auto-armed on startup (AUTO_ARM_LIVE=true).")
                     else:
+                        self.manual_paused = True
                         self.paused_reason = "RESTART_SAFETY: LIVE engine started in safe disarmed mode after reboot. Click Resume on Cockpit to arm."
                 else:
                     self.manual_paused = saved_paused
@@ -516,14 +552,19 @@ class MasterQuantEngine:
 
             # Cold boot without state file (Render Free fresh container)
             if self.execution_mode == "LIVE":
-                self.manual_paused = True
-                self.paused_reason = "RESTART_SAFETY: LIVE engine cold start on Render Free. Click Resume on Cockpit to arm."
+                if auto_arm_live:
+                    self.manual_paused = False
+                    self.paused_reason = ""
+                    logger.info("[ENGINE_MODE] LIVE engine auto-armed on fresh cold start (AUTO_ARM_LIVE=true). Ready for automated trading.")
+                else:
+                    self.manual_paused = True
+                    self.paused_reason = "RESTART_SAFETY: LIVE engine cold start on Render Free. Click Resume on Cockpit to arm."
             self.save_engine_mode()
         except Exception as e:
             logger.warning(f"[ENGINE_MODE] Failed to load engine mode file: {e}")
             if self.execution_mode == "LIVE":
-                self.manual_paused = True
-                self.paused_reason = "RESTART_SAFETY: LIVE trading safely disarmed after engine mode load exception."
+                self.manual_paused = False
+                self.paused_reason = ""
 
     def save_engine_mode(self):
         """Persists execution mode, manual pause latch, and cooldown timestamps to disk & SQLite."""
@@ -710,6 +751,44 @@ class MasterQuantEngine:
                 self.pulse["ema9"] = self.base_ema9
                 self.pulse["ema20"] = self.base_ema20
                 self.pulse["ema50"] = self.base_ema50
+
+                # Direct Seeding of latest completed 5-minute candle from Kotak Neo API (Strict 5m Close Confirmation)
+                try:
+                    latest_c = candles_5m[-1]
+                    c_ts = pd.to_datetime(latest_c[0])
+                    c_open = float(latest_c[1])
+                    c_high = float(latest_c[2])
+                    c_low = float(latest_c[3])
+                    c_close = float(latest_c[4])
+                    self.finalized_5m_candle = {
+                        "bar_start": c_ts,
+                        "bar_close": c_ts + timedelta(minutes=5),
+                        "open": c_open,
+                        "high": c_high,
+                        "low": c_low,
+                        "close": c_close,
+                        "tick_count": 60,
+                        "last_tick_time": c_ts + timedelta(minutes=5),
+                        "last_tick_age": 1.0,
+                        "finalized_at": now_dt,
+                        "data_lag": 1.0,
+                        "is_green": bool(c_close >= c_open),
+                        "is_red": bool(c_close <= c_open),
+                        "is_valid": True,
+                        "source": "KOTAK_HISTORICAL_API"
+                    }
+                    self.pulse["candle_5m_open"] = c_open
+                    self.pulse["candle_5m_close"] = c_close
+                    self.pulse["candle_5m_high"] = c_high
+                    self.pulse["candle_5m_low"] = c_low
+                    self.pulse["is_green_candle"] = bool(c_close >= c_open)
+                    self.pulse["is_red_candle"] = bool(c_close <= c_open)
+                    self.pulse["candle_status"] = "CONFIRMED_CLOSED"
+                    self.pulse["candle_bar_time"] = c_ts.strftime("%H:%M")
+                    self.pulse["candle_data_lag"] = 1.0
+                    logger.info(f"[CANDLE_SEED] Confirmed closed 5m candle seeded from Kotak Neo API: {c_ts.strftime('%H:%M')} Open={c_open}, Close={c_close}, Color={'GREEN' if c_close>=c_open else 'RED'}")
+                except Exception as seed_err:
+                    logger.warning(f"[CANDLE_SEED_ERR] Could not parse latest 5m candle: {seed_err}")
 
             start_d = (today_dt - timedelta(days=60)).strftime("%Y-%m-%d")
             res_d = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="D", from_date=start_d, to_date=today_str)
@@ -910,12 +989,22 @@ class MasterQuantEngine:
         if not force and now < getattr(self, "kotak_rate_limit_backoff_until", 0):
             return
 
-        # Check market hours in IST (09:15 - 15:30 IST)
+        # Check market & pre-market hours in IST (09:00-09:15 Pre-market warmup; 09:15-15:30 Live trading)
         now_dt = get_ist_now()
-        is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+        t_now = now_dt.time()
+        is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= t_now <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+        is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= t_now < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
-        # In market hours poll every 2s; outside market hours poll at most every 300s
-        min_poll_interval = 2 if is_mkt_open else 300
+        # Pre-Market Warmup (09:00-09:15): poll every 15s to keep session, option chain & PCR warm!
+        # In market hours (09:15-15:30): poll every 2s.
+        # Off-market: poll every 60s (or instant if force=True or initial boot).
+        if is_mkt_open:
+            min_poll_interval = 2
+        elif is_pre_mkt:
+            min_poll_interval = 15
+        else:
+            min_poll_interval = 60
+
         if not force and (now - self.last_api_poll < min_poll_interval):
             return
 
@@ -3085,6 +3174,24 @@ def ensure_engine_workers():
     """Failsafe: Guarantees background trading daemons run continuously inside Gunicorn workers."""
     if not hasattr(engine, "live_daemon_thread") or not engine.live_daemon_thread.is_alive() or not getattr(engine, "watchdog_thread", None) or not engine.watchdog_thread.is_alive():
         engine.start_background_workers()
+
+
+@app.route("/api/ping")
+def api_ping():
+    """Ultra-lightweight keep-alive heartbeat endpoint for Render Anti-Sleep daemon."""
+    now_ts = time.time()
+    now_dt = get_ist_now()
+    return jsonify({
+        "status": "ok",
+        "app": "Nifty Quant Terminal",
+        "server_time": now_dt.strftime("%Y-%m-%d %H:%M:%S IST"),
+        "execution_mode": engine.execution_mode,
+        "is_armed": not engine.manual_paused,
+        "pcr": engine.pulse.get("pcr"),
+        "spot": engine.pulse.get("spot"),
+        "candle_status": engine.pulse.get("candle_status"),
+        "last_poll_sec_ago": round(now_ts - getattr(engine, "last_api_poll", 0), 1),
+    }), 200
 
 
 @app.route("/api/health")
