@@ -941,9 +941,27 @@ class MasterQuantEngine:
                     exp_dt = datetime.strptime(raw_exp, "%Y-%m-%d").date()
                     today_dt = get_ist_now().date()
                     if exp_dt <= today_dt:
-                        rolled_exp = exp_dt + timedelta(days=7)
-                        self.pulse["next_expiry"] = rolled_exp.strftime("%Y-%m-%d")
+                        # Expiry Day! Roll to next weekly expiry strictly > today_dt
+                        # For Monday (2026-11-23), next Tuesday expiry is +8 days (2026-12-01)
+                        # For Tuesday, next Tuesday expiry is +7 days
+                        if exp_dt.weekday() == 0:  # Monday expiry (Holiday shift)
+                            rolled_exp = exp_dt + timedelta(days=8)
+                        else:
+                            days_to_tue = (1 - exp_dt.weekday()) % 7
+                            rolled_exp = exp_dt + timedelta(days=days_to_tue if days_to_tue > 0 else 7)
+
+                        target_exp_str = rolled_exp.strftime("%Y-%m-%d")
+                        self.pulse["next_expiry"] = target_exp_str
                         self.pulse["is_expiry_rolled"] = True
+
+                        # Fetch rolled option chain for next expiry from Kotak Neo
+                        try:
+                            rolled_chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY", expiry=target_exp_str)
+                            if rolled_chain and rolled_chain.get("common_data", {}).get("expiryDt"):
+                                chain = rolled_chain
+                        except Exception as e_rc:
+                            logger.warning(f"[EXPIRY_CHAIN] Rolled chain fetch failed for {target_exp_str}: {e_rc}")
+
                         logger.info(f"[EXPIRY_ROLL] Today is Expiry Day ({today_dt})! Rolling from 0-DTE ({exp_dt}) to Next Weekly Expiry: {self.pulse['next_expiry']}")
                     else:
                         self.pulse["next_expiry"] = raw_exp
