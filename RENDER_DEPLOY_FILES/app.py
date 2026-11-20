@@ -586,11 +586,14 @@ class MasterQuantEngine:
         return calculated_lots, self.lot_size
 
     def get_next_tuesday_expiry(self, base_date=None):
-        """Strictly calculates the current or upcoming Tuesday weekly expiry date for NIFTY."""
+        """Strictly calculates the upcoming Tuesday weekly expiry date for NIFTY.
+        On Tuesday (Expiry Day), strictly rolls to NEXT Tuesday (+7 days) to avoid high-gamma 0-DTE risk."""
         if base_date is None:
             base_date = get_ist_now().date()
         # Monday is 0, Tuesday is 1, Wednesday is 2, ..., Sunday is 6
         days_ahead = (1 - base_date.weekday()) % 7
+        if days_ahead == 0:  # Expiry Day (Tuesday) -> strictly roll to NEXT week!
+            days_ahead = 7
         tuesday_exp = base_date + timedelta(days=days_ahead)
         return tuesday_exp.strftime("%Y-%m-%d")
 
@@ -932,15 +935,16 @@ class MasterQuantEngine:
                 self.pulse["mkt_lot"] = int(chain["common_data"].get("mktLot", 65))
                 self.lot_size = self.pulse["mkt_lot"]
 
-                # Expiry Rule: On Tuesday expiry day, trade EXACT SAME-DAY Tuesday expiry for maximum 40% decay.
-                # Only roll to next week if current expiry date is already in the past (< today_dt).
+                # Expiry Rule (Golden Rule): On Expiry Day (exp_dt <= today_dt),
+                # NEVER trade high-gamma 0-DTE same-day contracts. ALWAYS roll to NEXT weekly expiry!
                 try:
                     exp_dt = datetime.strptime(raw_exp, "%Y-%m-%d").date()
                     today_dt = get_ist_now().date()
-                    if exp_dt < today_dt:
+                    if exp_dt <= today_dt:
                         rolled_exp = exp_dt + timedelta(days=7)
                         self.pulse["next_expiry"] = rolled_exp.strftime("%Y-%m-%d")
                         self.pulse["is_expiry_rolled"] = True
+                        logger.info(f"[EXPIRY_ROLL] Today is Expiry Day ({today_dt})! Rolling from 0-DTE ({exp_dt}) to Next Weekly Expiry: {self.pulse['next_expiry']}")
                     else:
                         self.pulse["next_expiry"] = raw_exp
                         self.pulse["is_expiry_rolled"] = False
