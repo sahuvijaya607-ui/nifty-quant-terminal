@@ -849,35 +849,55 @@
                             </div>
                         </div>
 
-                        <!-- Kotak Neo Broker PnL (Unrealised) -->
-                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                        <!-- Dedicated Box 4: Render Live MTM & Today's Cumulative Algo Net PnL -->
+                        <div class="p-3 bg-slate-900/80 rounded-xl border border-blue-500/30 flex flex-col justify-between bg-blue-500/5">
                             <div>
                                 <div class="flex items-center justify-between">
-                                    <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Kotak Unrealised P/L</div>
-                                    <span class="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> KOTAK SYNC
+                                    <div class="text-[11px] text-blue-300 uppercase tracking-wider font-bold flex items-center gap-1.5">
+                                        <i class="fa-solid fa-calculator text-blue-400"></i>
+                                        <span>RENDER LIVE MTM</span>
+                                    </div>
+                                    <span class="inline-flex items-center gap-1 text-[9px] font-black bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/40">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span> ALGO TRADES
                                     </span>
                                 </div>
-                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 283.00</div>
+                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 0.00</div>
                             </div>
-                            <div class="text-[10px] text-slate-400 mono mt-2 pt-2 border-t border-slate-800/80" id="pos-mtm-breakdown">
-                                Net: +Rs 173.12 (Taxes & Charges: -Rs 109.88)
+                            <div class="space-y-1 mt-2 pt-2 border-t border-slate-800 text-[10px] mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Live Trade Net:</span>
+                                    <strong class="text-emerald-300" id="pos-live-trade-net">+Rs 0.00</strong>
+                                </div>
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Today Realized:</span>
+                                    <strong class="text-slate-200" id="pos-today-algo-realized">+Rs 0.00</strong>
+                                </div>
+                                <div class="flex justify-between font-bold text-cyan-300 pt-1 border-t border-slate-800/80">
+                                    <span>Total Day Net:</span>
+                                    <span id="pos-today-algo-total-net">+Rs 0.00</span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- 4-Card Target, Max Profit & Trailing HUD -->
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-                        <!-- Card 1: Max Potential Profit (Total Net Credit) -->
-                        <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex flex-col justify-between">
-                            <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                                <span>MAX POTENTIAL</span>
+                        <!-- Card 1: 100% Max Potential (Total Net Credit) -->
+                        <div class="p-3 bg-slate-900/80 border border-cyan-500/30 rounded-xl flex flex-col justify-between bg-cyan-500/5">
+                            <div class="flex items-center justify-between text-[11px] text-cyan-400 font-semibold">
+                                <span>100% SPREAD POTENTIAL</span>
                                 <i class="fa-solid fa-coins text-cyan-400"></i>
                             </div>
                             <div class="mt-1">
                                 <div class="text-base font-extrabold text-cyan-300 mono" id="pos-max-credit-inr">₹0.00</div>
                                 <div class="text-[10px] text-slate-400 mono mt-0.5">Spread: <span id="pos-max-credit-pts">0.00 pts</span></div>
-                                <div class="text-[9px] text-cyan-400 font-semibold mt-1" id="pos-max-credit-pocketed">Pocketed: ₹0.00 (0.0%)</div>
+                                <div class="text-[9px] text-cyan-300 font-semibold mt-1 flex items-center justify-between">
+                                    <span id="pos-max-credit-pocketed">Pocketed: +₹0.00 (0.0%)</span>
+                                    <span id="pos-max-credit-rem-pct" class="text-slate-400 text-[8px]">100% left</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-max-credit-bar" class="bg-cyan-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -896,6 +916,10 @@
                                 </div>
                                 <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
                                     <div id="pos-target-progress-bar" class="bg-emerald-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <div class="text-[8px] text-slate-400 mono mt-1 flex justify-between">
+                                    <span id="pos-target-captured-sub">Decay: 0.0 pts</span>
+                                    <span id="pos-target-remaining-pct" class="text-emerald-300 font-semibold">100% to go</span>
                                 </div>
                             </div>
                         </div>
@@ -919,24 +943,35 @@
                                 <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
                                     <div id="pos-trail-progress-bar" class="bg-amber-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
                                 </div>
+                                <div class="text-[8px] text-slate-400 mono mt-1 flex justify-between">
+                                    <span id="pos-trail-captured-sub">Decay: 0.0 pts</span>
+                                    <span id="pos-trail-remaining-pct" class="text-amber-300 font-semibold">100% to BE</span>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Card 4: Stop Loss & Max Risk -->
                         <div id="pos-sl-card" class="p-3 bg-slate-900/80 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5 transition">
                             <div class="flex items-center justify-between text-[11px] text-rose-400 font-semibold">
-                                <span id="pos-sl-title">STOP LOSS</span>
+                                <span id="pos-sl-title">STOP LOSS (-₹2,800 CAP)</span>
                                 <i class="fa-solid fa-hand text-rose-400" id="pos-sl-icon"></i>
                             </div>
                             <div class="mt-1">
-                                <div class="text-base font-extrabold text-rose-400 mono" id="pos-max-risk-inr">-₹0.00</div>
+                                <div class="text-base font-extrabold text-rose-400 mono" id="pos-max-risk-inr">-₹2,800.00 CAP</div>
                                 <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
                                     <span class="text-slate-400">Cut Spread: <strong class="text-rose-300" id="pos-sl-spread-val">₹0.00</strong></span>
                                     <span id="pos-sl-status" class="text-[9px] font-bold text-slate-400">ACTIVE</span>
                                 </div>
                                 <div class="text-[9px] text-slate-400 font-semibold mt-1 flex items-center justify-between">
                                     <span>Buffer: <strong class="text-slate-300" id="pos-sl-buffer-val">₹0.00 Safe</strong></span>
-                                    <span id="pos-sl-lock-badge" class="text-[8px] text-emerald-400 font-bold">CAP ACTIVE</span>
+                                    <span id="pos-sl-lock-badge" class="text-[8px] text-emerald-400 font-bold">100% SAFE</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-sl-buffer-bar" class="bg-emerald-400 h-1 rounded-full transition-all duration-500" style="width: 100%"></div>
+                                </div>
+                                <div class="text-[8px] text-slate-400 mono mt-1 flex justify-between">
+                                    <span id="pos-sl-risk-consumed-text">Risk Used: 0.0%</span>
+                                    <span id="pos-sl-buffer-pct-text" class="text-emerald-300 font-bold">Buffer: 100.0%</span>
                                 </div>
                             </div>
                         </div>
@@ -952,6 +987,10 @@
                         <p class="text-xs text-slate-400 max-w-md mx-auto">
                             Continuous 6-Rule Gate Verification active. When all 6 rules align, the Credit Spread will execute with instant BUY-FIRST margin safety.
                         </p>
+                        <div class="inline-flex items-center gap-3 px-3 py-1 bg-slate-900/90 rounded-xl border border-slate-800 text-xs mono mt-1">
+                            <span class="text-slate-400">Render Algo Today Net:</span>
+                            <strong id="empty-card-day-pnl" class="text-slate-200 font-bold">+Rs 0.00</strong>
+                        </div>
                     </div>
 
                     <!-- 4-Card Target & Risk Architecture Rules Preview -->
@@ -2547,11 +2586,32 @@
                 const netPnl = Number(pos.mtm_net_pnl || 0);
                 const charges = Number(pos.estimated_charges || 0);
 
+                // Dedicated Box 4: Render Live MTM & Cumulative Day Algo PnL
                 const pnlEl = document.getElementById('pos-mtm-net');
                 if (pnlEl) {
                     pnlEl.innerText = `${brokerPnl >= 0 ? '+' : ''}Rs ${brokerPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                     pnlEl.className = brokerPnl >= 0 ? 'text-xl font-black text-emerald-400 mono mt-0.5 glow-green' : 'text-xl font-black text-rose-400 mono mt-0.5 glow-red';
                 }
+                const elLiveTradeNet = document.getElementById('pos-live-trade-net');
+                if (elLiveTradeNet) {
+                    elLiveTradeNet.innerText = `${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    elLiveTradeNet.className = netPnl >= 0 ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold';
+                }
+
+                const todayRealizedNet = Number(data.performance ? (data.performance.today_realized_net || 0) : 0);
+                const elTodayAlgoRealized = document.getElementById('pos-today-algo-realized');
+                if (elTodayAlgoRealized) {
+                    elTodayAlgoRealized.innerText = `${todayRealizedNet >= 0 ? '+' : ''}Rs ${todayRealizedNet.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    elTodayAlgoRealized.className = todayRealizedNet >= 0 ? 'text-slate-200' : 'text-rose-300';
+                }
+
+                const totalDayNet = Number(data.performance ? (data.performance.today_net_pnl || 0) : (netPnl + todayRealizedNet));
+                const elTodayAlgoTotalNet = document.getElementById('pos-today-algo-total-net');
+                if (elTodayAlgoTotalNet) {
+                    elTodayAlgoTotalNet.innerText = `${totalDayNet >= 0 ? '+' : ''}Rs ${totalDayNet.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    elTodayAlgoTotalNet.className = totalDayNet >= 0 ? 'text-cyan-300 font-bold' : 'text-rose-400 font-bold';
+                }
+
                 const breakdownEl = document.getElementById('pos-mtm-breakdown');
                 if (breakdownEl) {
                     breakdownEl.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)} (Taxes & Charges: -Rs ${charges.toFixed(2)})`;
@@ -2577,51 +2637,80 @@
                     }
                 }
 
-                // Bind 4-Card Target, Max Profit & Trailing HUD
+                // ==========================================
+                // Bind 4-Card Target, Max Profit & Risk HUD
+                // ==========================================
                 const maxCreditInr = pos.max_credit_inr || (pos.net_credit * (pos.lot_size || 65));
                 const tgtProfitInr = pos.target_profit_inr || (pos.net_credit * 0.40 * (pos.lot_size || 65));
                 const trailProfitInr = pos.trail_trigger_inr || (pos.net_credit * 0.25 * (pos.lot_size || 65));
                 const trailSpread = pos.trail_trigger_spread || (pos.net_credit * 0.75);
-                const maxRiskInr = pos.breakeven_active ? 0.0 : (pos.max_risk_inr || (pos.net_credit * 0.60 * (pos.lot_size || 65)));
+                const hardCapVal = pos.hard_sl_cap || (pos.lot_count ? pos.lot_count * 2800.0 : 2800.0);
 
-                // Card 1: Max Potential Profit
+                // --- Card 1: 100% SPREAD POTENTIAL ---
                 const elMaxCredit = document.getElementById('pos-max-credit-inr');
                 if (elMaxCredit) elMaxCredit.innerText = `₹${maxCreditInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
                 const elMaxCreditPts = document.getElementById('pos-max-credit-pts');
                 if (elMaxCreditPts) elMaxCreditPts.innerText = `${Number(pos.net_credit).toFixed(2)} pts`;
 
+                const pocketedInr = (pos.max_credit_captured_inr !== undefined) ? Number(pos.max_credit_captured_inr) : brokerPnl;
+                const pocketedPct = (pos.max_credit_captured_pct !== undefined) ? Number(pos.max_credit_captured_pct) : (maxCreditInr > 0 ? Math.min(100, Math.max(0, (pocketedInr / maxCreditInr) * 100)) : 0);
+                const remPocketPct = (pos.max_credit_remaining_pct !== undefined) ? Number(pos.max_credit_remaining_pct) : Math.max(0, 100 - pocketedPct);
+
                 const elMaxPocketed = document.getElementById('pos-max-credit-pocketed');
                 if (elMaxPocketed) {
-                    const pocketedPct = maxCreditInr > 0 ? Math.max(0, (brokerPnl / maxCreditInr) * 100).toFixed(1) : '0.0';
-                    elMaxPocketed.innerText = `Pocketed: ${brokerPnl >= 0 ? '+' : ''}₹${brokerPnl.toFixed(2)} (${pocketedPct}%)`;
+                    elMaxPocketed.innerText = `Pocketed: ${pocketedInr >= 0 ? '+' : ''}₹${pocketedInr.toFixed(2)} (${pocketedPct.toFixed(1)}%)`;
                 }
 
-                // Card 2: 40% Target Goal (Dynamic Progress & Distance)
+                const elMaxCreditBar = document.getElementById('pos-max-credit-bar');
+                if (elMaxCreditBar) {
+                    elMaxCreditBar.style.width = `${Math.min(100, Math.max(0, pocketedPct))}%`;
+                }
+
+                const elMaxCreditRemPct = document.getElementById('pos-max-credit-rem-pct');
+                if (elMaxCreditRemPct) {
+                    elMaxCreditRemPct.innerText = `${remPocketPct.toFixed(1)}% left`;
+                }
+
+                // --- Card 2: 40% TARGET EXIT ---
                 const elTgtProfit = document.getElementById('pos-target-profit-inr');
                 if (elTgtProfit) elTgtProfit.innerText = `+₹${tgtProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
                 const elTgtSpread = document.getElementById('pos-target-spread-val');
                 if (elTgtSpread) elTgtSpread.innerText = `₹${Number(pos.target_spread).toFixed(2)}`;
 
-                const elTgtPtsRem = document.getElementById('pos-target-pts-rem');
-                const elTgtBadge = document.getElementById('pos-target-progress-badge');
-                const elTgtBar = document.getElementById('pos-target-progress-bar');
-                const tgtRemainingInr = Math.max(0, tgtProfitInr - brokerPnl);
-                const tgtProgressPct = Math.min(100, Math.max(0, (brokerPnl / (tgtProfitInr || 1)) * 100));
+                const decayPtsGained = (pos.decay_pts_gained !== undefined) ? Number(pos.decay_pts_gained) : Math.max(0, Number(pos.net_credit) - Number(pos.current_spread || pos.net_credit));
+                const tgtRemainingInr = (pos.target_profit_remaining_inr !== undefined) ? Number(pos.target_profit_remaining_inr) : Math.max(0, tgtProfitInr - brokerPnl);
+                const tgtProgressPct = (pos.target_progress_pct !== undefined) ? Number(pos.target_progress_pct) : Math.min(100, Math.max(0, (brokerPnl / (tgtProfitInr || 1)) * 100));
+                const tgtRemPct = (pos.target_remaining_pct !== undefined) ? Number(pos.target_remaining_pct) : Math.max(0, 100 - tgtProgressPct);
 
+                const elTgtPtsRem = document.getElementById('pos-target-pts-rem');
                 if (elTgtPtsRem) {
-                    const ptsLeft = Math.max(0, Number(pos.current_spread || pos.net_credit) - Number(pos.target_spread));
+                    const ptsLeft = (pos.target_pts_needed !== undefined) ? Number(pos.target_pts_needed) : Math.max(0, Number(pos.current_spread || pos.net_credit) - Number(pos.target_spread));
                     elTgtPtsRem.innerText = `${ptsLeft.toFixed(2)} pts (₹${tgtRemainingInr.toFixed(0)}) to go`;
                 }
+
+                const elTgtBadge = document.getElementById('pos-target-progress-badge');
                 if (elTgtBadge) {
                     elTgtBadge.innerText = `${tgtProgressPct.toFixed(0)}%`;
                 }
+
+                const elTgtBar = document.getElementById('pos-target-progress-bar');
                 if (elTgtBar) {
                     elTgtBar.style.width = `${tgtProgressPct}%`;
                 }
 
-                // Card 3: 25% Auto-Trail (0-Risk Breakeven Trigger)
+                const elTgtCapturedSub = document.getElementById('pos-target-captured-sub');
+                if (elTgtCapturedSub) {
+                    elTgtCapturedSub.innerText = `Decay: +${decayPtsGained.toFixed(2)} pts`;
+                }
+
+                const elTgtRemPct = document.getElementById('pos-target-remaining-pct');
+                if (elTgtRemPct) {
+                    elTgtRemPct.innerText = `${tgtRemPct.toFixed(1)}% to goal`;
+                }
+
+                // --- Card 3: 25% AUTO-TRAIL (0-RISK BREAKEVEN) ---
                 const elTrailProfit = document.getElementById('pos-trail-profit-inr');
                 if (elTrailProfit) elTrailProfit.innerText = `+₹${trailProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
@@ -2630,33 +2719,32 @@
 
                 const elTrailBadge = document.getElementById('pos-trail-badge');
                 const elTrailCard = document.getElementById('pos-trail-card');
-                const elSlCard = document.getElementById('pos-sl-card');
-                const elSlStatus = document.getElementById('pos-sl-status');
                 const elTrailNeededText = document.getElementById('pos-trail-needed-text');
                 const elTrailProgBadge = document.getElementById('pos-trail-progress-badge');
                 const elTrailBar = document.getElementById('pos-trail-progress-bar');
+                const elTrailCapturedSub = document.getElementById('pos-trail-captured-sub');
+                const elTrailRemPct = document.getElementById('pos-trail-remaining-pct');
 
                 if (pos.breakeven_active) {
                     if (elTrailBadge) {
                         elTrailBadge.innerText = '💎 LOCKED';
-                        elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 glow-cyan';
+                        elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 glow-cyan animate-pulse';
                     }
                     if (elTrailCard) {
                         elTrailCard.className = 'p-3 bg-slate-900/80 border border-cyan-500/40 rounded-xl flex flex-col justify-between bg-cyan-500/10 transition';
                     }
-                    if (elSlCard) {
-                        elSlCard.className = 'p-3 bg-slate-900/80 border border-emerald-500/40 rounded-xl flex flex-col justify-between bg-emerald-500/10 transition';
-                    }
-                    if (elSlStatus) {
-                        elSlStatus.innerText = '💎 0 RISK';
-                        elSlStatus.className = 'text-[9px] font-bold text-cyan-300';
-                    }
-                    if (elTrailNeededText) elTrailNeededText.innerText = '💎 Cost Protected (SL = Cost)';
+                    if (elTrailNeededText) elTrailNeededText.innerText = '💎 Breakeven Hit! Cost Protected';
                     if (elTrailProgBadge) elTrailProgBadge.innerText = '100%';
-                    if (elTrailBar) elTrailBar.style.width = '100%';
+                    if (elTrailBar) {
+                        elTrailBar.style.width = '100%';
+                        elTrailBar.className = 'bg-cyan-400 h-1 rounded-full transition-all duration-500';
+                    }
+                    if (elTrailCapturedSub) elTrailCapturedSub.innerText = `Decay: +${decayPtsGained.toFixed(2)} pts (BE Hit!)`;
+                    if (elTrailRemPct) elTrailRemPct.innerText = `0.0% (LOCKED 💎)`;
                 } else {
-                    const trailRemainingInr = Math.max(0, trailProfitInr - brokerPnl);
-                    const trailProgressPct = Math.min(100, Math.max(0, (brokerPnl / (trailProfitInr || 1)) * 100));
+                    const trailRemainingInr = (pos.trail_profit_remaining_inr !== undefined) ? Number(pos.trail_profit_remaining_inr) : Math.max(0, trailProfitInr - brokerPnl);
+                    const trailProgressPct = (pos.trail_progress_pct !== undefined) ? Number(pos.trail_progress_pct) : Math.min(100, Math.max(0, (brokerPnl / (trailProfitInr || 1)) * 100));
+                    const trailRemPct = (pos.trail_remaining_pct !== undefined) ? Number(pos.trail_remaining_pct) : Math.max(0, 100 - trailProgressPct);
 
                     if (elTrailBadge) {
                         elTrailBadge.innerText = 'WAITING';
@@ -2665,48 +2753,121 @@
                     if (elTrailCard) {
                         elTrailCard.className = 'p-3 bg-slate-900/80 border border-amber-500/30 rounded-xl flex flex-col justify-between bg-amber-500/5 transition';
                     }
+                    if (elTrailNeededText) elTrailNeededText.innerText = `Need +₹${trailRemainingInr.toFixed(0)} more`;
+                    if (elTrailProgBadge) elTrailProgBadge.innerText = `${trailProgressPct.toFixed(0)}%`;
+                    if (elTrailBar) {
+                        elTrailBar.style.width = `${trailProgressPct}%`;
+                        elTrailBar.className = 'bg-amber-400 h-1 rounded-full transition-all duration-500';
+                    }
+                    if (elTrailCapturedSub) elTrailCapturedSub.innerText = `Decay: +${decayPtsGained.toFixed(2)} pts`;
+                    if (elTrailRemPct) elTrailRemPct.innerText = `${trailRemPct.toFixed(1)}% to BE`;
+                }
+
+                // --- Card 4: Stop Loss & Max Risk (-₹2,800 CAP) ---
+                const elSlCard = document.getElementById('pos-sl-card');
+                const elSlTitle = document.getElementById('pos-sl-title');
+                const elSlIcon = document.getElementById('pos-sl-icon');
+                const elMaxRisk = document.getElementById('pos-max-risk-inr');
+                const elSlSpread = document.getElementById('pos-sl-spread-val');
+                const elSlStatus = document.getElementById('pos-sl-status');
+                const elSlBuffer = document.getElementById('pos-sl-buffer-val');
+                const elSlLockBadge = document.getElementById('pos-sl-lock-badge');
+                const elSlBufferBar = document.getElementById('pos-sl-buffer-bar');
+                const elSlRiskConsumedText = document.getElementById('pos-sl-risk-consumed-text');
+                const elSlBufferPctText = document.getElementById('pos-sl-buffer-pct-text');
+
+                if (pos.breakeven_active) {
+                    // WHEN 25% AUTO-TRAIL IS HIT: STOP LOSS IS CANCELLED & MOVED TO COST (0 RISK)!
+                    if (elSlCard) {
+                        elSlCard.className = 'p-3 bg-slate-900/80 border border-cyan-500/40 rounded-xl flex flex-col justify-between bg-cyan-500/10 transition';
+                    }
+                    if (elSlTitle) {
+                        elSlTitle.innerText = 'STOP LOSS (CANCELLED & COST LOCKED)';
+                        elSlTitle.className = 'text-cyan-300 font-bold';
+                    }
+                    if (elSlIcon) {
+                        elSlIcon.className = 'fa-solid fa-gem text-cyan-300';
+                    }
+                    if (elMaxRisk) {
+                        elMaxRisk.innerText = '💎 ₹0.00 (Zero Risk)';
+                        elMaxRisk.className = 'text-base font-extrabold text-cyan-300 mono glow-cyan';
+                    }
+                    if (elSlSpread) {
+                        elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)} (Entry Cost)`;
+                        elSlSpread.className = 'text-cyan-300 font-bold';
+                    }
+                    if (elSlStatus) {
+                        elSlStatus.innerText = '💎 0 RISK (SL @ Cost)';
+                        elSlStatus.className = 'text-[9px] font-extrabold text-cyan-300 px-1 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/40';
+                    }
+                    if (elSlBuffer) {
+                        elSlBuffer.innerText = '100% Capital Safe (Cost Locked)';
+                        elSlBuffer.className = 'text-cyan-300 font-bold';
+                    }
+                    if (elSlLockBadge) {
+                        elSlLockBadge.innerText = '💎 0-RISK LOCKED';
+                        elSlLockBadge.className = 'text-[8px] text-cyan-300 font-extrabold';
+                    }
+                    if (elSlBufferBar) {
+                        elSlBufferBar.style.width = '100%';
+                        elSlBufferBar.className = 'bg-cyan-400 h-1 rounded-full transition-all duration-500';
+                    }
+                    if (elSlRiskConsumedText) {
+                        elSlRiskConsumedText.innerText = 'Risk Used: 0.0% (SL Cancelled)';
+                        elSlRiskConsumedText.className = 'text-cyan-300 font-semibold';
+                    }
+                    if (elSlBufferPctText) {
+                        elSlBufferPctText.innerText = 'Safety: 100.0% (Cost Locked)';
+                        elSlBufferPctText.className = 'text-cyan-300 font-bold';
+                    }
+                } else {
+                    // INITIAL STOP LOSS ACTIVE (-₹2,800 CAP)
                     if (elSlCard) {
                         elSlCard.className = 'p-3 bg-slate-900/80 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5 transition';
+                    }
+                    if (elSlTitle) {
+                        elSlTitle.innerText = 'STOP LOSS (-₹2,800 CAP)';
+                        elSlTitle.className = 'text-rose-400 font-semibold';
+                    }
+                    if (elSlIcon) {
+                        elSlIcon.className = 'fa-solid fa-hand text-rose-400';
+                    }
+                    if (elMaxRisk) {
+                        elMaxRisk.innerText = `-₹${Number(hardCapVal).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAP`;
+                        elMaxRisk.className = 'text-base font-extrabold text-rose-400 mono';
+                    }
+                    if (elSlSpread) {
+                        elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)}`;
+                        elSlSpread.className = 'text-rose-300';
                     }
                     if (elSlStatus) {
                         elSlStatus.innerText = 'ACTIVE';
                         elSlStatus.className = 'text-[9px] font-bold text-slate-400';
                     }
-                    if (elTrailNeededText) elTrailNeededText.innerText = `Need +₹${trailRemainingInr.toFixed(0)} more`;
-                    if (elTrailProgBadge) elTrailProgBadge.innerText = `${trailProgressPct.toFixed(0)}%`;
-                    if (elTrailBar) elTrailBar.style.width = `${trailProgressPct}%`;
-                }
 
-                // Card 4: Stop Loss & Max Risk (Always preserves -₹2,800 CAP!)
-                const elMaxRisk = document.getElementById('pos-max-risk-inr');
-                if (elMaxRisk) {
-                    const capValue = pos.max_risk_inr || (pos.lot_count ? pos.lot_count * 2800.0 : 2800.0);
-                    elMaxRisk.innerText = `-₹${Number(capValue).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAP`;
-                    elMaxRisk.className = 'text-base font-extrabold text-rose-400 mono';
-                }
+                    const slBufferInr = (pos.sl_buffer_inr !== undefined) ? Number(pos.sl_buffer_inr) : Math.max(0, hardCapVal + brokerPnl);
+                    const riskConsumedPct = (pos.sl_risk_consumed_pct !== undefined) ? Number(pos.sl_risk_consumed_pct) : (brokerPnl < 0 ? Math.min(100, (Math.abs(brokerPnl) / (hardCapVal || 1)) * 100) : 0);
+                    const slBufferPct = (pos.sl_buffer_pct !== undefined) ? Number(pos.sl_buffer_pct) : Math.max(0, 100 - riskConsumedPct);
 
-                const elSlSpread = document.getElementById('pos-sl-spread-val');
-                if (elSlSpread) elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)}`;
-
-                const elSlBuffer = document.getElementById('pos-sl-buffer-val');
-                const elSlLockBadge = document.getElementById('pos-sl-lock-badge');
-                if (elSlBuffer) {
-                    if (pos.breakeven_active) {
-                        elSlBuffer.innerText = '💎 ₹0.00 Risk (SL @ Cost)';
-                        elSlBuffer.className = 'text-cyan-300 font-bold';
-                    } else {
-                        const bufferInr = Math.max(0, maxRiskInr + brokerPnl);
-                        elSlBuffer.innerText = `₹${bufferInr.toFixed(0)} Buffer Left`;
+                    if (elSlBuffer) {
+                        elSlBuffer.innerText = `₹${slBufferInr.toFixed(0)} Buffer Left`;
                         elSlBuffer.className = 'text-slate-300 font-semibold';
                     }
-                }
-                if (elSlLockBadge) {
-                    if (pos.breakeven_active) {
-                        elSlLockBadge.innerText = '💎 0-RISK LOCKED';
-                        elSlLockBadge.className = 'text-[8px] text-cyan-300 font-extrabold';
-                    } else {
-                        elSlLockBadge.innerText = 'HARD CAP ACTIVE';
+                    if (elSlLockBadge) {
+                        elSlLockBadge.innerText = 'CAP ACTIVE';
                         elSlLockBadge.className = 'text-[8px] text-rose-400 font-bold';
+                    }
+                    if (elSlBufferBar) {
+                        elSlBufferBar.style.width = `${slBufferPct}%`;
+                        elSlBufferBar.className = slBufferPct > 50 ? 'bg-emerald-400 h-1 rounded-full transition-all duration-500' : (slBufferPct > 20 ? 'bg-amber-400 h-1 rounded-full transition-all duration-500' : 'bg-rose-500 h-1 rounded-full transition-all duration-500');
+                    }
+                    if (elSlRiskConsumedText) {
+                        elSlRiskConsumedText.innerText = `Risk Used: ${riskConsumedPct.toFixed(1)}%`;
+                        elSlRiskConsumedText.className = riskConsumedPct > 50 ? 'text-rose-400 font-semibold' : 'text-slate-400';
+                    }
+                    if (elSlBufferPctText) {
+                        elSlBufferPctText.innerText = `Buffer: ${slBufferPct.toFixed(1)}% Safe`;
+                        elSlBufferPctText.className = slBufferPct > 50 ? 'text-emerald-300 font-bold' : (slBufferPct > 20 ? 'text-amber-300 font-bold' : 'text-rose-400 font-bold');
                     }
                 }
 
@@ -2787,6 +2948,12 @@
                         const dPnl = Number(data.performance.today_net_pnl || 0);
                         cDayPnl.innerText = `${dPnl >= 0 ? '+' : ''}Rs ${dPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                         cDayPnl.className = dPnl >= 0 ? 'text-emerald-400 font-bold ml-1' : 'text-rose-400 font-bold ml-1';
+                    }
+                    const emptyDayPnl = document.getElementById('empty-card-day-pnl');
+                    if (emptyDayPnl && data.performance) {
+                        const dPnl = Number(data.performance.today_net_pnl || 0);
+                        emptyDayPnl.innerText = `${dPnl >= 0 ? '+' : ''}Rs ${dPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                        emptyDayPnl.className = dPnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
                     }
                     if (cCbStatus && data.performance) {
                         cCbStatus.innerText = `${data.performance.today_losses}/1 Loss`;

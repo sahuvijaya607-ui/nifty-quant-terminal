@@ -980,15 +980,51 @@ class MasterQuantEngine:
                                 # Live Dynamic Progress Metrics for HUD Cards
                                 cur_spread = cur_pos.get("current_spread", net_credit)
                                 pts_gain = round(net_credit - cur_spread, 2)
+                                hard_cap = round(2800.0 * cur_pos.get("lot_count", 1), 2)
+                                cur_pos["hard_sl_cap"] = hard_cap
+
+                                # 1. 100% Max Potential
+                                max_inr = round(net_credit * sell_qty, 2)
+                                cur_pos["max_credit_inr"] = max_inr
+                                cur_pos["max_credit_pts"] = net_credit
+                                cur_pos["max_credit_captured_inr"] = broker_pnl
+                                cap_pct = round(min(100.0, max(0.0, (broker_pnl / max(0.01, max_inr)) * 100.0)), 1) if max_inr > 0 else 0.0
+                                cur_pos["max_credit_captured_pct"] = cap_pct
+                                cur_pos["max_credit_remaining_inr"] = max(0.0, round(max_inr - broker_pnl, 2))
+                                cur_pos["max_credit_remaining_pct"] = round(max(0.0, 100.0 - cap_pct), 1)
+
+                                # 2. 40% Target Exit
                                 cur_pos["decay_pts_gained"] = max(0.0, pts_gain)
+                                decay_pts_needed = round(net_credit * 0.40, 2)
+                                cur_pos["decay_pts_needed"] = decay_pts_needed
                                 cur_pos["target_pts_needed"] = max(0.0, round(cur_spread - cur_pos["target_spread"], 2))
                                 cur_pos["target_profit_remaining_inr"] = max(0.0, round(cur_pos["target_profit_inr"] - broker_pnl, 2))
-                                cur_pos["target_progress_pct"] = round(min(100.0, max(0.0, (pts_gain / max(0.01, net_credit * 0.40)) * 100.0)), 1)
-                                cur_pos["trail_pts_needed"] = max(0.0, round(cur_spread - cur_pos["trail_trigger_spread"], 2)) if not cur_pos.get("breakeven_active") else 0.0
+                                tgt_pct = round(min(100.0, max(0.0, (pts_gain / max(0.01, decay_pts_needed)) * 100.0)), 1)
+                                cur_pos["target_progress_pct"] = tgt_pct
+                                cur_pos["target_remaining_pct"] = round(max(0.0, 100.0 - tgt_pct), 1)
+
+                                # 3. 25% Auto-Trail
+                                trail_pts_needed = round(net_credit * 0.25, 2)
+                                cur_pos["trail_pts_needed"] = trail_pts_needed
+                                cur_pos["trail_pts_remaining"] = max(0.0, round(cur_spread - cur_pos["trail_trigger_spread"], 2)) if not cur_pos.get("breakeven_active") else 0.0
                                 cur_pos["trail_profit_remaining_inr"] = max(0.0, round(cur_pos["trail_trigger_inr"] - broker_pnl, 2)) if not cur_pos.get("breakeven_active") else 0.0
-                                cur_pos["trail_progress_pct"] = 100.0 if cur_pos.get("breakeven_active") else round(min(100.0, max(0.0, (pts_gain / max(0.01, net_credit * 0.25)) * 100.0)), 1)
-                                cur_pos["sl_buffer_pts"] = max(0.0, round(cur_pos["sl_spread"] - cur_spread, 2))
+                                trail_pct = 100.0 if cur_pos.get("breakeven_active") else round(min(100.0, max(0.0, (pts_gain / max(0.01, trail_pts_needed)) * 100.0)), 1)
+                                cur_pos["trail_progress_pct"] = trail_pct
+                                cur_pos["trail_remaining_pct"] = 0.0 if cur_pos.get("breakeven_active") else round(max(0.0, 100.0 - trail_pct), 1)
+
+                                # 4. Stop Loss & Max Risk (-₹2,800 CAP)
+                                sl_cut_spread = round(net_credit * 1.60, 2)
+                                cur_pos["sl_buffer_pts"] = max(0.0, round(sl_cut_spread - cur_spread, 2))
                                 cur_pos["sl_buffer_inr"] = max(0.0, round(cur_pos["sl_buffer_pts"] * sell_qty, 2))
+                                if cur_pos.get("breakeven_active"):
+                                    cur_pos["sl_buffer_pct"] = 100.0
+                                    cur_pos["sl_risk_consumed_pct"] = 0.0
+                                    cur_pos["sl_status_text"] = "0 RISK (Cost Locked)"
+                                else:
+                                    risk_pct = round(min(100.0, (abs(broker_pnl) / max(0.01, hard_cap)) * 100.0), 1) if broker_pnl < 0 else 0.0
+                                    cur_pos["sl_risk_consumed_pct"] = risk_pct
+                                    cur_pos["sl_buffer_pct"] = round(max(0.0, 100.0 - risk_pct), 1)
+                                    cur_pos["sl_status_text"] = "ACTIVE (-Rs 2800 CAP)"
 
                                 self.save_state()
                             except Exception as adopt_err:
@@ -2248,11 +2284,23 @@ class MasterQuantEngine:
         pos["trail_trigger_spread"] = round(entry_credit * 0.75, 2)
         pos["trail_trigger_inr"] = round((entry_credit * 0.25) * pos_qty, 2)
 
-        # Dynamic decay and progress values
+        # 1. 100% Max Potential
+        max_inr = round(entry_credit * pos_qty, 2)
+        cur_pos_cap_pct = round(min(100.0, max(0.0, (broker_unrealised / max(0.01, max_inr)) * 100.0)), 1) if max_inr > 0 else 0.0
+        pos["max_credit_captured_inr"] = broker_unrealised
+        pos["max_credit_captured_pct"] = cur_pos_cap_pct
+        pos["max_credit_remaining_inr"] = max(0.0, round(max_inr - broker_unrealised, 2))
+        pos["max_credit_remaining_pct"] = round(max(0.0, 100.0 - cur_pos_cap_pct), 1)
+
+        # 2. 40% Target Exit Dynamic Percentages
         pos["decay_pts_gained"] = max(0.0, pts_gain)
+        decay_pts_needed = round(entry_credit * 0.40, 2)
+        pos["decay_pts_needed"] = decay_pts_needed
         pos["target_pts_needed"] = max(0.0, round(current_spread - pos["target_spread"], 2))
         pos["target_profit_remaining_inr"] = max(0.0, round(pos["target_profit_inr"] - broker_unrealised, 2))
-        pos["target_progress_pct"] = round(min(100.0, max(0.0, (pts_gain / max(0.01, entry_credit * 0.40)) * 100.0)), 1)
+        tgt_pct = round(min(100.0, max(0.0, (pts_gain / max(0.01, decay_pts_needed)) * 100.0)), 1)
+        pos["target_progress_pct"] = tgt_pct
+        pos["target_remaining_pct"] = round(max(0.0, 100.0 - tgt_pct), 1)
 
         # Trailing Breakeven Trigger (+25% Profit -> 0 Risk Lock)
         if not pos.get("breakeven_active") and (pts_gain >= entry_credit * 0.25):
@@ -2263,14 +2311,34 @@ class MasterQuantEngine:
             self.pending_audio_event = "BREAKEVEN_LOCKED"
             self.status_message = "💎 TRAILING SL LOCKED: ZERO RISK (0 Rs Max Loss)!"
 
-        pos["trail_pts_needed"] = max(0.0, round(current_spread - pos["trail_trigger_spread"], 2)) if not pos.get("breakeven_active") else 0.0
+        # 3. 25% Auto-Trail Dynamic Percentages
+        trail_pts_needed = round(entry_credit * 0.25, 2)
+        pos["trail_pts_needed"] = trail_pts_needed
+        pos["trail_pts_remaining"] = max(0.0, round(current_spread - pos["trail_trigger_spread"], 2)) if not pos.get("breakeven_active") else 0.0
         pos["trail_profit_remaining_inr"] = max(0.0, round(pos["trail_trigger_inr"] - broker_unrealised, 2)) if not pos.get("breakeven_active") else 0.0
-        pos["trail_progress_pct"] = 100.0 if pos.get("breakeven_active") else round(min(100.0, max(0.0, (pts_gain / max(0.01, entry_credit * 0.25)) * 100.0)), 1)
+        trail_pct = 100.0 if pos.get("breakeven_active") else round(min(100.0, max(0.0, (pts_gain / max(0.01, trail_pts_needed)) * 100.0)), 1)
+        pos["trail_progress_pct"] = trail_pct
+        pos["trail_remaining_pct"] = 0.0 if pos.get("breakeven_active") else round(max(0.0, 100.0 - trail_pct), 1)
 
+        # 4. Stop Loss & Max Risk (-₹2,800 CAP)
+        hard_cap = round(2800.0 * pos.get("lot_count", 1), 2)
+        pos["hard_sl_cap"] = hard_cap
         pos["sl_spread"] = entry_credit if pos.get("breakeven_active") else round(entry_credit * 1.60, 2)
-        pos["max_risk_inr"] = 0.0 if pos.get("breakeven_active") else round(min((entry_credit * 0.60) * pos_qty, 2800.0 * pos.get("lot_count", 1)), 2)
-        pos["sl_buffer_pts"] = max(0.0, round(pos["sl_spread"] - current_spread, 2))
+        pos["max_risk_inr"] = 0.0 if pos.get("breakeven_active") else round(min((entry_credit * 0.60) * pos_qty, hard_cap), 2)
+        
+        sl_cut_spread = round(entry_credit * 1.60, 2)
+        pos["sl_buffer_pts"] = max(0.0, round(sl_cut_spread - current_spread, 2))
         pos["sl_buffer_inr"] = max(0.0, round(pos["sl_buffer_pts"] * pos_qty, 2))
+
+        if pos.get("breakeven_active"):
+            pos["sl_buffer_pct"] = 100.0
+            pos["sl_risk_consumed_pct"] = 0.0
+            pos["sl_status_text"] = "0 RISK (Cost Locked)"
+        else:
+            risk_pct = round(min(100.0, (abs(broker_unrealised) / max(0.01, hard_cap)) * 100.0), 1) if broker_unrealised < 0 else 0.0
+            pos["sl_risk_consumed_pct"] = risk_pct
+            pos["sl_buffer_pct"] = round(max(0.0, 100.0 - risk_pct), 1)
+            pos["sl_status_text"] = "ACTIVE (-Rs 2800 CAP)"
 
         # STRICT USER COMMAND: If position was created manually by user from Kotak Neo app,
         # ALGO NEVER AUTO-EXITS IT! Full control remains 100% in user's hands.
@@ -2709,6 +2777,12 @@ def get_status():
             "today_gross_pnl": total_gross_pnl,
             "today_charges": total_charges,
             "today_net_pnl": total_net_pnl,
+            "today_realized_gross": day_realized_gross,
+            "today_realized_net": day_realized_net,
+            "today_realized_charges": day_realized_charges,
+            "live_mtm_gross": live_mtm_gross,
+            "live_mtm_net": live_mtm_net,
+            "live_charges": live_charges,
             "circuit_breaker_active": engine.state["circuit_breaker_active"],
         },
         "strategy_info": {
