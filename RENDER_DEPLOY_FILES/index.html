@@ -181,6 +181,18 @@
                     <span class="text-xs font-black tracking-wider text-rose-400">REAL TRADING</span>
                 </div>
 
+                <!-- ⏸ / ▶ ALGO PAUSE / RESUME SAFETY BUTTON (Always Visible In Top Navbar) -->
+                <button id="algo-pause-resume-btn-nav" onclick="toggleAlgoPause()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 active:scale-95 shadow">
+                    <i id="algo-pause-icon-nav" class="fa-solid fa-pause text-xs"></i>
+                    <span id="algo-pause-text-nav">Pause Algo</span>
+                </button>
+
+                <!-- 📑 Scroll to Orderbook Quick Jump Link -->
+                <a href="#orderbook-section" class="px-3 py-1.5 bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border border-blue-500/40 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 shadow">
+                    <i class="fa-solid fa-list-check text-xs"></i>
+                    <span>Orders (<span id="hdr-orders-count">8</span>)</span>
+                </a>
+
                 <!-- 1-Click Trigger -->
                 <button onclick="triggerTrade()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-blue-600/20 transition flex items-center space-x-1.5">
                     <i class="fa-solid fa-bolt"></i>
@@ -985,7 +997,7 @@
         </div>
 
         <!-- 📑 7. KOTAK NEO REAL ORDER BOOK & OPEN ORDERS -->
-        <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-6 space-y-4">
+        <div id="orderbook-section" class="bg-[#101726] border border-slate-800/80 rounded-2xl p-6 space-y-4">
             
             <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div class="flex items-center space-x-3">
@@ -1831,6 +1843,8 @@
                 const data = await res.json();
                 if (data && data.orders) {
                     allOrdersData = data.orders;
+                    const hdrOrders = document.getElementById('hdr-orders-count');
+                    if (hdrOrders) hdrOrders.innerText = data.total_count || data.orders.length;
                     renderOrdersTable(data);
                 }
             } catch (err) {
@@ -1961,26 +1975,27 @@
 
             // Update Pause/Resume button state & Cooldown countdown
             window.lastAlgoPaused = data.manual_paused;
-            const pauseBtn = document.getElementById('algo-pause-resume-btn');
-            const pauseIcon = document.getElementById('algo-pause-icon');
-            const pauseText = document.getElementById('algo-pause-text');
-            if (pauseBtn && pauseIcon && pauseText) {
+            ['algo-pause-resume-btn', 'algo-pause-resume-btn-nav'].forEach(btnId => {
+                const pauseBtn = document.getElementById(btnId);
+                if (!pauseBtn) return;
+                const pauseIcon = document.getElementById(btnId === 'algo-pause-resume-btn-nav' ? 'algo-pause-icon-nav' : 'algo-pause-icon');
+                const pauseText = document.getElementById(btnId === 'algo-pause-resume-btn-nav' ? 'algo-pause-text-nav' : 'algo-pause-text');
                 if (data.manual_paused) {
-                    pauseBtn.className = "px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black tracking-wider uppercase rounded-xl transition flex items-center space-x-1.5 active:scale-95 animate-pulse shadow-lg shadow-amber-500/40";
-                    pauseIcon.className = "fa-solid fa-play text-xs";
-                    pauseText.innerText = "RESUME ALGO (PAUSED)";
+                    pauseBtn.className = "px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black tracking-wider uppercase rounded-xl transition flex items-center space-x-1.5 active:scale-95 animate-pulse shadow-lg shadow-amber-500/40";
+                    if (pauseIcon) pauseIcon.className = "fa-solid fa-play text-xs";
+                    if (pauseText) pauseText.innerText = "RESUME ALGO (PAUSED)";
                 } else if (data.cooldown_remaining_sec > 0) {
                     const m = Math.floor(data.cooldown_remaining_sec / 60);
                     const s = data.cooldown_remaining_sec % 60;
-                    pauseBtn.className = "px-3.5 py-2 bg-blue-900/40 text-blue-300 border border-blue-500/40 text-xs font-bold rounded-xl transition flex items-center space-x-1.5";
-                    pauseIcon.className = "fa-solid fa-hourglass-half text-xs";
-                    pauseText.innerText = `COOLDOWN (${m}m ${s}s)`;
+                    pauseBtn.className = "px-3.5 py-1.5 bg-blue-900/40 text-blue-300 border border-blue-500/40 text-xs font-bold rounded-xl transition flex items-center space-x-1.5";
+                    if (pauseIcon) pauseIcon.className = "fa-solid fa-hourglass-half text-xs";
+                    if (pauseText) pauseText.innerText = `COOLDOWN (${m}m ${s}s)`;
                 } else {
-                    pauseBtn.className = "px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 active:scale-95";
-                    pauseIcon.className = "fa-solid fa-pause text-xs";
-                    pauseText.innerText = "PAUSE ALGO";
+                    pauseBtn.className = "px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 active:scale-95";
+                    if (pauseIcon) pauseIcon.className = "fa-solid fa-pause text-xs";
+                    if (pauseText) pauseText.innerText = "PAUSE ALGO";
                 }
-            }
+            });
 
             const feederText = document.getElementById('feeder-text');
             const feederDot = document.getElementById('feeder-dot');
