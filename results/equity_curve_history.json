@@ -1,1 +1,184 @@
-[]
+[
+  {
+    "timestamp": "2026-11-20 09:55:01",
+    "date": "2026-11-20",
+    "equity": 118566.25,
+    "net_pnl": 14237.65,
+    "reason": "TARGET_HIT (+40% DECAY)"
+  },
+  {
+    "timestamp": "2026-11-21 00:57:09",
+    "date": "2026-11-21",
+    "equity": 106709.78,
+    "net_pnl": 1190.59,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:06:39",
+    "date": "2026-11-21",
+    "equity": 105193.99,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:07:07",
+    "date": "2026-11-21",
+    "equity": 105193.99,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:30:25",
+    "date": "2026-11-21",
+    "equity": 102110.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:31:16",
+    "date": "2026-11-21",
+    "equity": 102110.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:31:59",
+    "date": "2026-11-21",
+    "equity": 102110.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-20 10:00:01",
+    "date": "2026-11-20",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "FULL_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:33:35",
+    "date": "2026-11-21",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:43:16",
+    "date": "2026-11-21",
+    "equity": 104970.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-20 10:00:01",
+    "date": "2026-11-20",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "FULL_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:44:30",
+    "date": "2026-11-21",
+    "equity": 102110.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:44:36",
+    "date": "2026-11-21",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-20 10:00:01",
+    "date": "2026-11-20",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "FULL_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:45:28",
+    "date": "2026-11-21",
+    "equity": 102110.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-20 10:00:01",
+    "date": "2026-11-20",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "FULL_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 01:47:34",
+    "date": "2026-11-21",
+    "equity": 106486.09,
+    "net_pnl": 1190.59,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 02:00:35",
+    "date": "2026-11-21",
+    "equity": 104970.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-20 10:00:01",
+    "date": "2026-11-20",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "FULL_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 02:02:06",
+    "date": "2026-11-21",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 02:15:45",
+    "date": "2026-11-21",
+    "equity": 102110.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-20 10:00:01",
+    "date": "2026-11-20",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "FULL_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 02:17:07",
+    "date": "2026-11-21",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 02:45:49",
+    "date": "2026-11-21",
+    "equity": 102110.3,
+    "net_pnl": 865.39,
+    "reason": "TARGET_EXIT"
+  },
+  {
+    "timestamp": "2026-11-20 10:00:01",
+    "date": "2026-11-20",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "FULL_EXIT"
+  },
+  {
+    "timestamp": "2026-11-21 02:47:08",
+    "date": "2026-11-21",
+    "equity": 103626.09,
+    "net_pnl": 1190.59,
+    "reason": "TARGET_EXIT"
+  }
+]

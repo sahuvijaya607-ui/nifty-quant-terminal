@@ -931,7 +931,7 @@ class MasterQuantEngine:
                 self.pulse["prev_close"] = float(chain["spot"].get("prevClose", self.pulse["spot"]))
 
             if "common_data" in chain:
-                raw_exp = chain["common_data"].get("expiryDt", "2026-11-24")
+                raw_exp = chain["common_data"].get("expiryDt", "2026-11-23")
                 self.pulse["mkt_lot"] = int(chain["common_data"].get("mktLot", 65))
                 self.lot_size = self.pulse["mkt_lot"]
 
