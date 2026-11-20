@@ -201,6 +201,18 @@
             </div>
         </div>
 
+        <!-- ⚠️ RECONCILIATION DISCREPANCY WARNING BANNER -->
+        <div id="reconciliation-alert-banner" class="hidden max-w-7xl mx-auto mt-2 p-3 bg-rose-500/20 border border-rose-500/60 rounded-xl text-rose-300 text-xs font-bold flex items-center justify-between gap-3 animate-pulse shadow-lg shadow-rose-950/50">
+            <div class="flex items-center gap-2.5">
+                <i class="fa-solid fa-triangle-exclamation text-rose-400 text-base"></i>
+                <div>
+                    <span class="font-extrabold uppercase tracking-wide text-rose-200">Reconciliation Alert:</span>
+                    <span id="reconciliation-banner-text" class="text-rose-300 ml-1">Broker reported zero open positions without confirmed closing exit fills. Position held OPEN for safety. New trade entries BLOCKED.</span>
+                </div>
+            </div>
+            <span class="px-2.5 py-1 bg-rose-600/40 border border-rose-500/50 text-white text-[10px] font-black rounded-lg uppercase tracking-wider shrink-0">NEW ENTRIES BLOCKED</span>
+        </div>
+
         <!-- 🚀 TOP STICKY RISK COCKPIT (DUAL STATE: SCANNING vs ACTIVE TRADE) -->
         <div id="sticky-risk-cockpit" class="max-w-7xl mx-auto mt-2.5 pt-2.5 border-t border-slate-800/80">
             <!-- STATE A: IDLE / SCANNING COCKPIT (When No Active Position) -->
@@ -2254,6 +2266,16 @@
                 effectivePos = null;
             }
 
+            // Reconciliation Discrepancy Banner Update (Requirement 5 & 6)
+            const reconBanner = document.getElementById('reconciliation-alert-banner');
+            const reconText = document.getElementById('reconciliation-banner-text');
+            if (data.reconciliation_alert || (effectivePos && effectivePos.reconciliation_status === "RECONCILIATION_REQUIRED")) {
+                if (reconBanner) reconBanner.classList.remove('hidden');
+                if (reconText && data.reconciliation_reason) reconText.innerText = data.reconciliation_reason;
+            } else {
+                if (reconBanner) reconBanner.classList.add('hidden');
+            }
+
             if (data.performance) {
                 const p = data.performance;
                 const liveGross = Number(p.live_mtm_gross || 0);
@@ -2694,10 +2716,15 @@
                 if (cockpitActive) cockpitActive.classList.remove('hidden');
 
                 const pos = effectivePos;
-                const stratTitle = isResyncing ? 
-                    `${pos.direction} (ACTIVE) <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/50 animate-pulse glow-amber ml-2"><i class="fa-solid fa-rotate mr-1"></i>RE-SYNCING (${window.clientMissingPosGrace}/4)</span>` :
-                    `${pos.direction} (ACTIVE)`;
-                document.getElementById('pos-strategy-title').innerHTML = stratTitle;
+                let stratBadge = '';
+                if (pos.reconciliation_status === "RECONCILIATION_REQUIRED") {
+                    stratBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/25 text-rose-300 border border-rose-500/50 animate-pulse glow-red ml-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>RECONCILIATION REQUIRED</span>`;
+                } else if (pos.reconciliation_status === "PARTIAL_REMAINING") {
+                    stratBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/25 text-amber-300 border border-amber-500/50 ml-2"><i class="fa-solid fa-pie-chart mr-1"></i>PARTIAL FILL (${pos.lot_size} QTY)</span>`;
+                } else if (isResyncing) {
+                    stratBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/50 animate-pulse glow-amber ml-2"><i class="fa-solid fa-rotate mr-1"></i>RE-SYNCING (${window.clientMissingPosGrace}/4)</span>`;
+                }
+                document.getElementById('pos-strategy-title').innerHTML = `${pos.direction} (ACTIVE) ${stratBadge}`;
                 document.getElementById('pos-mode-badge').innerText = pos.execution_mode || 'PAPER';
                 document.getElementById('pos-mode-badge').className = pos.execution_mode === 'LIVE' ?
                     'px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/40' :

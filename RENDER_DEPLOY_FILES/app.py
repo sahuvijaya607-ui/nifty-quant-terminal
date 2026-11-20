@@ -166,6 +166,8 @@ class MasterQuantEngine:
         self.last_trade_exit_time = 0
         self.security_mpin = "031995"
         self.load_engine_mode()
+        self.terminal_order_ids = set()
+        self.closed_trade_ids = set()
 
         # Capital Tracking (Real Kotak Neo Account Balance)
         self.initial_capital = 101244.91
@@ -865,54 +867,171 @@ class MasterQuantEngine:
                             self.zero_pos_consecutive_count = 0
 
                         # Case A: If Terminal had an active position, but Kotak reports NO open position:
-                        # DO NOT delete on single empty poll or transient API delay!
-                        # Require consecutive confirmation AND Order Book cross-check!
+                        # DO NOT delete on single empty poll, transient API delay, or empty order book!
+                        # STRICT SECURITY RULE: NEVER close position purely based on empty positions or empty order book!
                         if not has_real_pos and self.state.get("active_position"):
                             self.zero_pos_consecutive_count += 1
                             old_pos = self.state.get("active_position")
                             logger.info(
-                                f"[RECON_GRACE] Zero open broker position detected (poll {self.zero_pos_consecutive_count}/5). "
-                                f"Retaining active position {old_pos.get('direction')} in grace period..."
+                                f"[RECON_GRACE] Zero open broker position detected (poll {self.zero_pos_consecutive_count}). "
+                                f"Retaining active position {old_pos.get('direction')} in protective state..."
                             )
-                            # Only proceed after at least 5 consecutive empty polls (~10 seconds)
-                            if self.zero_pos_consecutive_count >= 5:
-                                # Multi-source verification: Cross-check Kotak Neo Order Book / Trade Book
-                                confirmed_closed = False
-                                try:
-                                    rep = self.client.order_report()
-                                    if is_kotak_ok(rep) and rep.get("data"):
-                                        s_sym = str(old_pos.get("sell_symbol", "")).upper()
-                                        b_sym = str(old_pos.get("buy_symbol", "")).upper()
-                                        has_sell_close = False
-                                        has_buy_close = False
-                                        for o in rep.get("data", []):
-                                            trd_sym = str(o.get("trdSym", "")).upper()
-                                            st = str(o.get("ordSt", "")).lower()
-                                            tt = str(o.get("trnsTp", "")).upper()
-                                            if st in ["complete", "traded"]:
-                                                if s_sym and s_sym in trd_sym and tt == "B":
-                                                    has_sell_close = True
-                                                if b_sym and b_sym in trd_sym and tt == "S":
-                                                    has_buy_close = True
-                                        if has_sell_close or has_buy_close:
-                                            confirmed_closed = True
-                                            logger.info("[RECON_CONFIRMED] Order book confirms square-off execution for position legs.")
-                                except Exception as rep_err:
-                                    logger.warning(f"Order book reconciliation check notice: {rep_err}")
 
-                                # If order book confirmed OR persisted empty across 8 consecutive polls (~16s), finalize close
-                                if confirmed_closed or self.zero_pos_consecutive_count >= 8:
+                            s_sym = str(old_pos.get("sell_symbol", "")).upper()
+                            b_sym = str(old_pos.get("buy_symbol", "")).upper()
+                            total_pos_qty = int(old_pos.get("lot_size", self.lot_size) or self.lot_size)
+
+                            # Multi-source verification: Cross-check Kotak Neo Order Book / Trade Book
+                            sell_close_qty = 0
+                            sell_close_val = 0.0
+                            buy_close_qty = 0
+                            buy_close_val = 0.0
+
+                            try:
+                                rep = self.client.order_report()
+                                if is_kotak_ok(rep) and rep.get("data"):
+                                    for o in rep.get("data", []):
+                                        trd_sym = str(o.get("trdSym", "")).upper()
+                                        st = str(o.get("ordSt", "")).lower()
+                                        tt = str(o.get("trnsTp", "")).upper()
+                                        fld_qty = int(float(o.get("fldQty", 0) or 0))
+                                        fl_prc = float(o.get("flPr", 0.0) or o.get("avgPrc", 0.0) or 0.0)
+
+                                        if st in ["complete", "traded"] and fld_qty > 0:
+                                            # Short leg exit is BUY (B)
+                                            if s_sym and s_sym in trd_sym and tt == "B":
+                                                sell_close_qty += fld_qty
+                                                sell_close_val += fld_qty * fl_prc
+                                            # Long hedge exit is SELL (S)
+                                            if b_sym and b_sym in trd_sym and tt == "S":
+                                                buy_close_qty += fld_qty
+                                                buy_close_val += fld_qty * fl_prc
+                            except Exception as rep_err:
+                                logger.warning(f"Order book reconciliation check notice: {rep_err}")
+
+                            # Optional: Check trade_report if available and needed
+                            if hasattr(self.client, "trade_report") and (sell_close_qty == 0 or buy_close_qty == 0):
+                                try:
+                                    trd_rep = self.client.trade_report()
+                                    if is_kotak_ok(trd_rep) and trd_rep.get("data"):
+                                        for tr in trd_rep.get("data", []):
+                                            trd_sym = str(tr.get("trdSym", "")).upper()
+                                            tt = str(tr.get("trnsTp", "")).upper()
+                                            fld_qty = int(float(tr.get("fldQty", tr.get("qty", 0)) or 0))
+                                            fl_prc = float(tr.get("flPr", tr.get("prc", 0.0)) or 0.0)
+                                            if fld_qty > 0:
+                                                if s_sym and s_sym in trd_sym and tt == "B" and sell_close_qty == 0:
+                                                    sell_close_qty += fld_qty
+                                                    sell_close_val += fld_qty * fl_prc
+                                                if b_sym and b_sym in trd_sym and tt == "S" and buy_close_qty == 0:
+                                                    buy_close_qty += fld_qty
+                                                    buy_close_val += fld_qty * fl_prc
+                                except Exception:
+                                    pass
+
+                            # Reconcile quantities: effective closed spread quantity
+                            closed_qty = min(sell_close_qty, buy_close_qty)
+
+                            if closed_qty > 0:
+                                # Positive execution proof! Calculate exact weighted average fill prices
+                                sell_exit_prc = round(sell_close_val / sell_close_qty, 2) if sell_close_qty > 0 else float(old_pos.get("sell_price", 0.0))
+                                buy_exit_prc = round(buy_close_val / buy_close_qty, 2) if buy_close_qty > 0 else float(old_pos.get("buy_price", 0.0))
+                                actual_exit_spread = round(sell_exit_prc - buy_exit_prc, 2)
+
+                                if closed_qty >= total_pos_qty:
+                                    # FULL SQUARE-OFF CONFIRMED
+                                    logger.info(
+                                        f"[RECON_CONFIRMED_FULL] Order book confirms complete square-off: "
+                                        f"{closed_qty} qty @ spread {actual_exit_spread} (Short: {sell_exit_prc}, Long: {buy_exit_prc})"
+                                    )
                                     try:
-                                        self.record_external_close_to_ledger(old_pos, reason="BROKER_MANUAL_SQUAREOFF")
+                                        self.record_external_close_to_ledger(
+                                            old_pos,
+                                            reason="BROKER_MANUAL_SQUAREOFF",
+                                            exit_spread_override=actual_exit_spread,
+                                            closed_qty_override=total_pos_qty
+                                        )
                                     except Exception as log_err:
                                         logger.error(f"Failed to record external close to ledger: {log_err}")
                                     self.state["active_position"] = None
                                     self.zero_pos_consecutive_count = 0
+                                    self.broker_sync_status = "SYNCED"
+                                    self.reconciliation_alert = False
+                                    self.reconciliation_blocked = False
+                                    self.reconciliation_reason = ""
                                     self.save_state()
-                                    logger.info("[RECON_COMPLETE] Position closed after verified confirmation.")
+                                else:
+                                    # PARTIAL SQUARE-OFF: Close only filled portion, retain remainder
+                                    logger.info(
+                                        f"[RECON_PARTIAL_EXIT] Partial fill confirmed: {closed_qty}/{total_pos_qty} qty closed @ spread {actual_exit_spread}. "
+                                        f"Retaining remaining {total_pos_qty - closed_qty} qty as OPEN."
+                                    )
+                                    try:
+                                        self.record_external_close_to_ledger(
+                                            old_pos,
+                                            reason="PARTIAL_SQUAREOFF",
+                                            exit_spread_override=actual_exit_spread,
+                                            closed_qty_override=closed_qty
+                                        )
+                                    except Exception as log_err:
+                                        logger.error(f"Failed to record partial close to ledger: {log_err}")
+                                    rem_qty = total_pos_qty - closed_qty
+                                    old_pos["lot_size"] = rem_qty
+                                    old_pos["lot_count"] = max(1, rem_qty // self.lot_size)
+                                    old_pos["max_credit_inr"] = round(float(old_pos["net_credit"]) * rem_qty, 2)
+                                    old_pos["target_profit_inr"] = round((float(old_pos["net_credit"]) * 0.40) * rem_qty, 2)
+                                    old_pos["max_risk_inr"] = round(min((float(old_pos["net_credit"]) * 0.60) * rem_qty, 2800.0 * old_pos["lot_count"]), 2)
+                                    old_pos["trail_trigger_inr"] = round((float(old_pos["net_credit"]) * 0.25) * rem_qty, 2)
+                                    old_pos["reconciliation_status"] = "PARTIAL_REMAINING"
+                                    self.state["active_position"] = old_pos
+                                    self.zero_pos_consecutive_count = 0
+                                    self.save_state()
+
+                            elif sell_close_qty > 0 or buy_close_qty > 0:
+                                # ASYMMETRIC LEG FILL DETECTED (One leg closed, one leg open!)
+                                logger.warning(
+                                    f"[RECON_LEG_ASYMMETRY] Critical fill mismatch! Short closed: {sell_close_qty}, "
+                                    f"Long closed: {buy_close_qty}. DO NOT CLOSE POSITION!"
+                                )
+                                old_pos["reconciliation_status"] = "RECONCILIATION_REQUIRED"
+                                old_pos["reconciliation_reason"] = f"Leg fill asymmetry: Short closed {sell_close_qty}, Long closed {buy_close_qty}"
+                                self.state["active_position"] = old_pos
+                                self.broker_sync_status = "RECONCILIATION_REQUIRED"
+                                self.reconciliation_alert = True
+                                self.reconciliation_reason = old_pos["reconciliation_reason"]
+                                self.reconciliation_blocked = True
+                                self.save_state()
+
+                            else:
+                                # ZERO closing fills found!
+                                # NEVER AUTO-CLOSE! Require positive confirmation or mark RECONCILIATION_REQUIRED.
+                                if self.zero_pos_consecutive_count >= 5:
+                                    logger.warning(
+                                        f"[RECON_DISCREPANCY_ALERT] Broker returned 0 positions for {self.zero_pos_consecutive_count} polls, "
+                                        f"but Order Book has 0 closing fills! Keeping position OPEN. Blocking new entries."
+                                    )
+                                    old_pos["reconciliation_status"] = "RECONCILIATION_REQUIRED"
+                                    old_pos["reconciliation_reason"] = "Broker reported 0 open positions, but no verified exit fills found in Order Book"
+                                    self.state["active_position"] = old_pos
+                                    self.broker_sync_status = "RECONCILIATION_REQUIRED"
+                                    self.reconciliation_alert = True
+                                    self.reconciliation_reason = old_pos["reconciliation_reason"]
+                                    self.reconciliation_blocked = True
+                                    self.save_state()
                         else:
                             # Position found or no active position: reset consecutive counter
                             self.zero_pos_consecutive_count = 0
+                            if has_real_pos and self.state.get("active_position"):
+                                pos_obj = self.state.get("active_position")
+                                if pos_obj.get("reconciliation_status") == "RECONCILIATION_REQUIRED":
+                                    pos_obj["reconciliation_status"] = "SYNCED"
+                                    pos_obj.pop("reconciliation_reason", None)
+                                    self.broker_sync_status = "SYNCED"
+                                    self.reconciliation_alert = False
+                                    self.reconciliation_blocked = False
+                                    self.reconciliation_reason = ""
+                                    self.save_state()
+                                    logger.info("[RECON_RESOLVED] Broker position re-verified! Discrepancy cleared.")
 
                         # Case B: If Kotak Neo reports an active NIFTY spread position:
                         # Auto-adopt or continuously synchronize with live broker execution & MTM prices!
@@ -1547,6 +1666,8 @@ class MasterQuantEngine:
             return bool(self.state.get("active_position"))
         if self.state.get("active_position"):
             return True
+        if getattr(self, "reconciliation_blocked", False):
+            return True
         now = time.time()
         # Cooldown: only query Kotak positions every 15 seconds to avoid thread starvation
         if now - getattr(self, "last_positions_check_time", 0) < 15.0:
@@ -1626,7 +1747,19 @@ class MasterQuantEngine:
                 logger.warning(msg)
                 return False, msg
 
-            # Gate 0B: Mandatory 30-Minute Cooldown Between Trades (Prevents 2-Second Trap)
+            # Gate 0B: Broker Reconciliation Block Gate (Requirement 5 & 6)
+            if getattr(self, "reconciliation_blocked", False):
+                msg = f"[GATE BLOCKED - RECONCILIATION] Broker position reconciliation required ({getattr(self, 'reconciliation_reason', '')})! New trades blocked."
+                logger.warning(msg)
+                return False, msg
+
+            cur_pos_recon = self.state.get("active_position")
+            if cur_pos_recon and cur_pos_recon.get("reconciliation_status") == "RECONCILIATION_REQUIRED":
+                msg = "[GATE BLOCKED - RECONCILIATION] Active position marked RECONCILIATION_REQUIRED! New trades blocked."
+                logger.warning(msg)
+                return False, msg
+
+            # Gate 0C: Mandatory 30-Minute Cooldown Between Trades (Prevents 2-Second Trap)
             now_ts = time.time()
             last_exit = float(getattr(self, "last_trade_exit_time", 0) or 0)
             today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
@@ -2038,14 +2171,23 @@ class MasterQuantEngine:
         )
         return True, "Trade executed safely."
 
-    def record_external_close_to_ledger(self, pos, reason="BROKER_MANUAL_SQUAREOFF"):
+    def record_external_close_to_ledger(self, pos, reason="BROKER_MANUAL_SQUAREOFF", exit_spread_override=None, closed_qty_override=None):
         """Records an externally closed position (e.g. closed via mobile app) into the CSV audit ledger."""
         if not pos:
             return
+        # Idempotency check: Prevent duplicate closing of the same trade_id
+        trade_id = pos.get("trade_id")
+        if not hasattr(self, "closed_trade_ids"):
+            self.closed_trade_ids = set()
+        if trade_id and trade_id in self.closed_trade_ids and reason != "PARTIAL_SQUAREOFF":
+            logger.warning(f"[IDEMPOTENT_GUARD] Trade {trade_id} already recorded to ledger. Skipping duplicate entry!")
+            return
+        if trade_id and reason != "PARTIAL_SQUAREOFF":
+            self.closed_trade_ids.add(trade_id)
         entry_credit = float(pos.get("net_credit", 0.0) or 0.0)
-        exit_spread = float(pos.get("current_spread", entry_credit) or entry_credit)
-        pos_lots = int(pos.get("lot_count", 1) or 1)
-        total_qty = int(pos.get("lot_size", self.lot_size) or self.lot_size)
+        exit_spread = float(exit_spread_override if exit_spread_override is not None else (pos.get("current_spread", entry_credit) or entry_credit))
+        total_qty = int(closed_qty_override if closed_qty_override is not None else (pos.get("lot_size", self.lot_size) or self.lot_size))
+        pos_lots = max(1, total_qty // self.lot_size)
         points_gain = entry_credit - exit_spread
         gross_pnl = round(points_gain * total_qty, 2)
         charges = self.calculate_kotak_charges(entry_credit, exit_spread, total_qty)
@@ -2102,13 +2244,15 @@ class MasterQuantEngine:
             self.state["circuit_breaker_active"] = True
 
         # CRITICAL SAFETY LATCH & COOLDOWN:
-        # When position is closed manually on phone (ADMINCPPAPI_MOB), engage safety latch!
-        self.last_trade_exit_time = time.time()
-        self.manual_paused = True
-        self.paused_reason = f"External square-off detected on Kotak Neo app ({reason}). Auto-trading paused to protect capital."
-        self.save_engine_mode()
+        # If it was a full square-off, engage safety latch!
+        # If it was only a PARTIAL square-off, do NOT pause algo because remainder is active!
+        if reason != "PARTIAL_SQUAREOFF":
+            self.last_trade_exit_time = time.time()
+            self.manual_paused = True
+            self.paused_reason = f"External square-off detected on Kotak Neo app ({reason}). Auto-trading paused to protect capital."
+            self.save_engine_mode()
+            self.status_message = "SAFETY LOCK: Trade closed on mobile app. Algo paused to prevent Trade 2 unexpected entry."
         self.save_state()
-        self.status_message = "SAFETY LOCK: Trade closed on mobile app. Algo paused to prevent Trade 2 unexpected entry."
 
     def square_off_position(self, reason="MANUAL_WEB_EXIT"):
         pos = self.state.get("active_position")
@@ -2228,7 +2372,7 @@ class MasterQuantEngine:
 
         trade_rec = {
             "date": get_ist_now().strftime("%Y-%m-%d"),
-            "entry_time": pos["entry_time"],
+            "entry_time": pos.get("entry_time", exit_time_str),
             "exit_time": exit_time_str,
             "mode": pos.get("execution_mode", "PAPER"),
             "direction": pos["direction"],
@@ -2909,8 +3053,11 @@ def get_status():
         "paused_reason": getattr(engine, "paused_reason", ""),
         "last_trade_exit_time": getattr(engine, "last_trade_exit_time", 0),
         "cooldown_remaining_sec": max(0, int(1800 - (time.time() - getattr(engine, "last_trade_exit_time", 0)))) if (getattr(engine, "last_trade_exit_time", 0) > 0 and (engine.state.get("today_wins", 0) + engine.state.get("today_losses", 0)) >= 1) else 0,
-        "broker_sync_status": "RE_SYNCING" if getattr(engine, "zero_pos_consecutive_count", 0) > 0 else "SYNCED",
+        "broker_sync_status": "RECONCILIATION_REQUIRED" if getattr(engine, "reconciliation_alert", False) else ("RE_SYNCING" if getattr(engine, "zero_pos_consecutive_count", 0) > 0 else "SYNCED"),
         "zero_pos_consecutive_count": getattr(engine, "zero_pos_consecutive_count", 0),
+        "reconciliation_alert": getattr(engine, "reconciliation_alert", False),
+        "reconciliation_reason": getattr(engine, "reconciliation_reason", ""),
+        "reconciliation_blocked": getattr(engine, "reconciliation_blocked", False),
     })
 
 
