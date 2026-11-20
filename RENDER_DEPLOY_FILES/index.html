@@ -275,8 +275,12 @@
                     </div>
                 </div>
 
-                <!-- Right: Fast 1-Tap Emergency Square-Off Button -->
+                <!-- Right: Fast 1-Tap Emergency Square-Off & Safety Pause Button -->
                 <div class="flex items-center space-x-2">
+                    <button id="algo-pause-resume-btn" onclick="toggleAlgoPause()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 active:scale-95">
+                        <i id="algo-pause-icon" class="fa-solid fa-pause text-xs"></i>
+                        <span id="algo-pause-text">Pause Algo</span>
+                    </button>
                     <button id="cockpit-emergency-squareoff-btn" onclick="squareOff()" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black tracking-wider uppercase rounded-xl transition shadow-lg shadow-rose-600/30 flex items-center space-x-1.5 active:scale-95">
                         <i class="fa-solid fa-power-off text-xs"></i>
                         <span>Square-Off</span>
@@ -1896,6 +1900,11 @@
                     '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/40">BUY</span>' :
                     '<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40">SELL</span>';
 
+                const srcBadge = o.source_badge === 'ALGO AUTO' ?
+                    '<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/40 ml-1">ALGO</span>' :
+                    (o.source_badge === 'MANUAL PHONE' ?
+                        '<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 ml-1">PHONE</span>' : '');
+
                 let statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">UNKNOWN</span>';
                 if (o.status === 'COMPLETE') {
                     statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"><i class="fa-solid fa-check mr-1"></i>TRADED</span>';
@@ -1917,7 +1926,7 @@
                         <td class="py-2.5 px-3 text-slate-300 whitespace-nowrap">${o.time}</td>
                         <td class="py-2.5 px-3 text-slate-400 text-[11px]">${o.order_id}</td>
                         <td class="py-2.5 px-3">${actionBadge}</td>
-                        <td class="py-2.5 px-3 text-white font-semibold">${o.symbol}</td>
+                        <td class="py-2.5 px-3 text-white font-semibold">${o.symbol} ${srcBadge}</td>
                         <td class="py-2.5 px-3 text-right text-slate-300 font-bold">${o.qty}</td>
                         <td class="py-2.5 px-3 text-right text-slate-400">${limitDisplay}</td>
                         <td class="py-2.5 px-3 text-right text-emerald-400 font-bold">${priceDisplay}</td>
@@ -1926,6 +1935,18 @@
                     </tr>
                 `;
             }).join('');
+        }
+
+        async function toggleAlgoPause() {
+            const isPaused = window.lastAlgoPaused || false;
+            const endpoint = isPaused ? '/api/resume_algo' : '/api/pause_algo';
+            try {
+                const res = await fetch(endpoint, { method: 'POST' });
+                const data = await res.json();
+                fetchStatus();
+            } catch (err) {
+                console.error("Pause/Resume error:", err);
+            }
         }
 
         function renderUI(data) {
@@ -1937,6 +1958,29 @@
             document.getElementById('clock-display').innerText = data.time || '';
             currentMode = data.execution_mode;
             updateSafetyUI(currentMode);
+
+            // Update Pause/Resume button state & Cooldown countdown
+            window.lastAlgoPaused = data.manual_paused;
+            const pauseBtn = document.getElementById('algo-pause-resume-btn');
+            const pauseIcon = document.getElementById('algo-pause-icon');
+            const pauseText = document.getElementById('algo-pause-text');
+            if (pauseBtn && pauseIcon && pauseText) {
+                if (data.manual_paused) {
+                    pauseBtn.className = "px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black tracking-wider uppercase rounded-xl transition flex items-center space-x-1.5 active:scale-95 animate-pulse shadow-lg shadow-amber-500/40";
+                    pauseIcon.className = "fa-solid fa-play text-xs";
+                    pauseText.innerText = "RESUME ALGO (PAUSED)";
+                } else if (data.cooldown_remaining_sec > 0) {
+                    const m = Math.floor(data.cooldown_remaining_sec / 60);
+                    const s = data.cooldown_remaining_sec % 60;
+                    pauseBtn.className = "px-3.5 py-2 bg-blue-900/40 text-blue-300 border border-blue-500/40 text-xs font-bold rounded-xl transition flex items-center space-x-1.5";
+                    pauseIcon.className = "fa-solid fa-hourglass-half text-xs";
+                    pauseText.innerText = `COOLDOWN (${m}m ${s}s)`;
+                } else {
+                    pauseBtn.className = "px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 active:scale-95";
+                    pauseIcon.className = "fa-solid fa-pause text-xs";
+                    pauseText.innerText = "PAUSE ALGO";
+                }
+            }
 
             const feederText = document.getElementById('feeder-text');
             const feederDot = document.getElementById('feeder-dot');

@@ -18,8 +18,12 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
-import pyarrow as pa
-import pyarrow.parquet as pq
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+except Exception:
+    pa = None
+    pq = None
 
 # Paths
 DATA_DIR = Path("data")

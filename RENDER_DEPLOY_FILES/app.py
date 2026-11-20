@@ -65,6 +65,7 @@ BASE_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = BASE_DIR / "results"
 STATE_FILE = RESULTS_DIR / "paper_engine_state.json"
 STATE_BACKUP_FILE = RESULTS_DIR / "paper_engine_state_backup.json"
+ENGINE_MODE_FILE = RESULTS_DIR / "engine_mode.json"
 EQUITY_CURVE_FILE = RESULTS_DIR / "equity_curve_history.json"
 TRADES_FILE = RESULTS_DIR / "live_paper_trades.csv"
 MASTER_SPOT_PARQUET = BASE_DIR / "data" / "nifty_1min_5yr.parquet"
@@ -158,9 +159,13 @@ class MasterQuantEngine:
         self.active_lots = 1
         self.capital_per_lot = 75000.0
 
-        # Safety Execution Mode: 'LIVE' (Real Kotak Neo Trading)
+        # Safety Execution Mode: 'LIVE' (Real Kotak Neo Trading) with Persistent Engine Mode
         self.execution_mode = "LIVE"
+        self.manual_paused = False
+        self.paused_reason = ""
+        self.last_trade_exit_time = 0
         self.security_mpin = "031995"
+        self.load_engine_mode()
 
         # Capital Tracking (Real Kotak Neo Account Balance)
         self.initial_capital = 101244.91
@@ -348,6 +353,39 @@ class MasterQuantEngine:
                     json.dump(self.state, f, indent=2)
             except Exception:
                 pass
+
+    def load_engine_mode(self):
+        """Loads persistent execution mode, manual pause latch, and cooldown timestamps."""
+        try:
+            if ENGINE_MODE_FILE.exists():
+                with open(ENGINE_MODE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.execution_mode = data.get("execution_mode", "LIVE")
+                    self.manual_paused = bool(data.get("manual_paused", False))
+                    self.paused_reason = str(data.get("paused_reason", ""))
+                    self.last_trade_exit_time = float(data.get("last_trade_exit_time", 0) or 0)
+                    logger.info(f"[ENGINE_MODE] Loaded: mode={self.execution_mode}, paused={self.manual_paused}, reason={self.paused_reason}")
+            else:
+                self.save_engine_mode()
+        except Exception as e:
+            logger.warning(f"[ENGINE_MODE] Failed to load engine mode file: {e}")
+
+    def save_engine_mode(self):
+        """Persists execution mode, manual pause latch, and cooldown timestamps to disk."""
+        try:
+            data = {
+                "execution_mode": getattr(self, "execution_mode", "LIVE"),
+                "manual_paused": bool(getattr(self, "manual_paused", False)),
+                "paused_reason": str(getattr(self, "paused_reason", "")),
+                "last_trade_exit_time": float(getattr(self, "last_trade_exit_time", 0) or 0),
+                "updated_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            tmp = ENGINE_MODE_FILE.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            tmp.replace(ENGINE_MODE_FILE)
+        except Exception as e:
+            logger.error(f"[ENGINE_MODE] Failed to save engine mode: {e}")
 
     def record_equity_point(self, net_pnl, reason="TRADE_CLOSED"):
         """Upgrade 3: Tracks continuous equity curve and realized PnL trajectory."""
@@ -1439,6 +1477,26 @@ class MasterQuantEngine:
         # USER COMMAND: IRONCLAD 6-RULE VERIFICATION GATE
         # -------------------------------------------------------------------------
         if not force:
+            # Gate 0A: Manual Pause Safety Latch
+            if getattr(self, "manual_paused", False):
+                msg = f"[GATE BLOCKED] Algo is PAUSED ({getattr(self, 'paused_reason', 'Manual pause active')}). Press Resume on Cockpit to allow trades."
+                logger.warning(msg)
+                return False, msg
+
+            # Gate 0B: Mandatory 30-Minute Cooldown Between Trades (Prevents 2-Second Trap)
+            now_ts = time.time()
+            last_exit = float(getattr(self, "last_trade_exit_time", 0) or 0)
+            today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
+            if today_trades_done >= 1 and last_exit > 0:
+                elapsed = now_ts - last_exit
+                COOLDOWN_PERIOD = 1800.0  # 30 minutes
+                if elapsed < COOLDOWN_PERIOD:
+                    rem_min = int((COOLDOWN_PERIOD - elapsed) // 60)
+                    rem_sec = int((COOLDOWN_PERIOD - elapsed) % 60)
+                    msg = f"[GATE BLOCKED - COOLDOWN] Trade 1 completed. Mandatory 30-minute cooldown active ({rem_min}m {rem_sec}s remaining) before Trade 2!"
+                    logger.warning(msg)
+                    return False, msg
+
             spot = float(self.pulse.get("spot", 0) or 0)
             d_ema = float(self.pulse.get("daily_ema20", 0) or 0)
             e9 = float(self.pulse.get("ema9", 0) or 0)
@@ -1882,6 +1940,33 @@ class MasterQuantEngine:
             df_new.to_csv(TRADES_FILE, index=False)
         logger.info(f"[LEDGER] Externally closed position recorded to {TRADES_FILE}: Net PnL Rs {net_pnl}")
 
+        # Update Daily Metrics in state
+        self.state["today_realized_gross_pnl"] = round(float(self.state.get("today_realized_gross_pnl", 0.0)) + gross_pnl, 2)
+        self.state["today_total_charges"] = round(float(self.state.get("today_total_charges", 0.0)) + charges["total_charges"], 2)
+        self.state["today_realized_net_pnl"] = round(float(self.state.get("today_realized_net_pnl", 0.0)) + net_pnl, 2)
+
+        if net_pnl >= 0:
+            self.state["today_wins"] = int(self.state.get("today_wins", 0)) + 1
+            self.pending_audio_event = "TARGET"
+            outcome_tag = "🎯 TARGET / MANUAL PROFIT"
+        else:
+            self.state["today_losses"] = int(self.state.get("today_losses", 0)) + 1
+            self.pending_audio_event = "STOP_LOSS"
+            outcome_tag = "🛑 STOP LOSS / MANUAL EXIT"
+
+        today_trades_done = self.state.get("today_wins", 0) + self.state.get("today_losses", 0)
+        if today_trades_done >= 2:
+            self.state["circuit_breaker_active"] = True
+
+        # CRITICAL SAFETY LATCH & COOLDOWN:
+        # When position is closed manually on phone (ADMINCPPAPI_MOB), engage safety latch!
+        self.last_trade_exit_time = time.time()
+        self.manual_paused = True
+        self.paused_reason = f"External square-off detected on Kotak Neo app ({reason}). Auto-trading paused to protect capital."
+        self.save_engine_mode()
+        self.save_state()
+        self.status_message = "SAFETY LOCK: Trade closed on mobile app. Algo paused to prevent Trade 2 unexpected entry."
+
     def square_off_position(self, reason="MANUAL_WEB_EXIT"):
         pos = self.state.get("active_position")
         if not pos:
@@ -2035,6 +2120,11 @@ class MasterQuantEngine:
 
         self.state["active_position"] = None
         self.proximity_polling = False
+        self.last_trade_exit_time = time.time()
+        if reason == "MANUAL_WEB_EXIT":
+            self.manual_paused = True
+            self.paused_reason = "Manual square-off executed from Web Cockpit. Algo paused to protect capital."
+        self.save_engine_mode()
         self.save_state()
         self.status_message = f"Closed ({reason}): Net PnL Rs {net_pnl:+,.2f} ({pos_lots} Lots, Charges: Rs {charges['total_charges']})"
         return True, f"Closed with Net PnL Rs {net_pnl:+,.2f}"
@@ -2607,6 +2697,10 @@ def get_status():
             "hard_sl_rule": "1.60x Spread Cap (-Rs 3,900 max loss on 1 lot)",
             "time_exit": "03:15 PM EOD"
         },
+        "manual_paused": getattr(engine, "manual_paused", False),
+        "paused_reason": getattr(engine, "paused_reason", ""),
+        "last_trade_exit_time": getattr(engine, "last_trade_exit_time", 0),
+        "cooldown_remaining_sec": max(0, int(1800 - (time.time() - getattr(engine, "last_trade_exit_time", 0)))) if (getattr(engine, "last_trade_exit_time", 0) > 0 and (engine.state.get("today_wins", 0) + engine.state.get("today_losses", 0)) >= 1) else 0,
     })
 
 
@@ -2620,13 +2714,33 @@ def api_set_execution_mode():
         if mpin == engine.security_mpin or mpin == engine.mpin:
             engine.execution_mode = "LIVE"
             engine.status_message = "SAFETY UNLOCKED: LIVE EXECUTION ACTIVE ON KOTAK NEO"
+            engine.save_engine_mode()
             return jsonify({"success": True, "mode": "LIVE", "message": "Live Execution Unlocked!"})
         else:
             return jsonify({"success": False, "message": "Invalid Security MPIN! Remains in Paper Mode."}), 403
     else:
         engine.execution_mode = "PAPER"
         engine.status_message = "SAFETY ACTIVE: Returned to 100% Virtual Paper Mode."
+        engine.save_engine_mode()
         return jsonify({"success": True, "mode": "PAPER", "message": "Switched to Safe Paper Mode."})
+
+
+@app.route("/api/pause_algo", methods=["POST"])
+def api_pause_algo():
+    engine.manual_paused = True
+    engine.paused_reason = "Manually paused by user from Web Cockpit"
+    engine.status_message = "SAFETY PAUSE: Algo trading paused by user. No new trades will be placed."
+    engine.save_engine_mode()
+    return jsonify({"success": True, "manual_paused": True, "message": "Algo successfully paused."})
+
+
+@app.route("/api/resume_algo", methods=["POST"])
+def api_resume_algo():
+    engine.manual_paused = False
+    engine.paused_reason = ""
+    engine.status_message = "ALGO ACTIVE: Safety pause cleared. Ready for signals."
+    engine.save_engine_mode()
+    return jsonify({"success": True, "manual_paused": False, "message": "Algo successfully resumed."})
 
 
 @app.route("/api/replay/control", methods=["POST"])
@@ -2803,13 +2917,14 @@ def api_manual_order():
 @app.route("/api/orders")
 def get_orders():
     """Fetches real order book directly from Kotak Neo API, or fallback to saved today's orders."""
-    raw_orders = []
-    source = "EMPTY"
     now = time.time()
     
-    # 1. Return in-memory cache if queried within last 15 seconds to prevent Gunicorn thread lock
-    if hasattr(engine, "last_orders_cache") and engine.last_orders_cache and (now - getattr(engine, "last_orders_cache_time", 0) < 15.0):
-        return jsonify({"orders": engine.last_orders_cache, "source": "CACHE"})
+    # 1. Return normalized cache if queried within last 3 seconds
+    if hasattr(engine, "last_formatted_orders_cache") and engine.last_formatted_orders_cache and (now - getattr(engine, "last_orders_cache_time", 0) < 3.0):
+        return jsonify(engine.last_formatted_orders_cache)
+
+    raw_orders = []
+    source = "EMPTY"
 
     # 2. Try Live Kotak Neo API first if authenticated
     if engine.authenticated and engine.client:
@@ -2818,17 +2933,16 @@ def get_orders():
             if is_kotak_ok(orders_res) and orders_res.get("data"):
                 raw_orders = orders_res.get("data", [])
                 engine.last_orders_cache = raw_orders
-                engine.last_orders_cache_time = now
                 source = "KOTAK_NEO_API"
         except Exception as e:
             logger.warning(f"Error fetching live Kotak order report: {e}")
 
-    # 2. Check in-memory cache
+    # 3. Check in-memory raw orders cache
     if not raw_orders and hasattr(engine, "last_orders_cache") and engine.last_orders_cache:
         raw_orders = engine.last_orders_cache
-        source = "CACHE"
+        source = "RAW_CACHE"
 
-    # 3. Fallback to today's archived CSV if cache empty
+    # 4. Fallback to today's archived CSV if still empty
     if not raw_orders:
         today_str = get_ist_now().strftime("%Y-%m-%d")
         archived_orders_file = RESULTS_DIR / f"closed_orders_{today_str}.csv"
@@ -2849,17 +2963,22 @@ def get_orders():
     for o in raw_orders:
         ord_src = str(o.get("ordSrc", "")).upper()
         ord_no = str(o.get("nOrdNo", ""))
-        
-        # STRICT USER COMMAND: ONLY show orders placed by THIS Render Terminal!
-        # Includes: ADMINCPPAPI_NEOTRADEAPI (Render algo API orders)
-        # Excludes: ADMINCPPAPI_MOB (User's personal manual trades on Kotak mobile app)
-        # Excludes: ADMINCPPAPI_SIPIT (Equity SIP / ETF delivery orders like ITBEES)
-        is_render_terminal_order = (
-            "NEOTRADEAPI" in ord_src or 
-            ord_no in getattr(engine, "terminal_order_ids", set())
-        )
-        if not is_render_terminal_order:
+        trd_sym = str(o.get("trdSym", ""))
+        ex_seg = str(o.get("exSeg", "")).lower()
+
+        # Filter strictly for NIFTY F&O orders (exclude equity delivery/SIPs like ITBEES)
+        if ex_seg and ex_seg != "nse_fo":
             continue
+        if not ("NIFTY" in trd_sym or "NIFTY" in str(o.get("sym", "")).upper()):
+            continue
+
+        # Tag Source: Algo vs Manual Phone
+        if "NEOTRADEAPI" in ord_src or ord_no in getattr(engine, "terminal_order_ids", set()):
+            source_badge = "ALGO AUTO"
+        elif "MOB" in ord_src:
+            source_badge = "MANUAL PHONE"
+        else:
+            source_badge = ord_src or "BROKER"
 
         status_raw = str(o.get("ordSt", "")).lower()
         is_open = status_raw in ["open", "pending", "trigger_pending", "modify_pending", "trigger pending"]
@@ -2883,23 +3002,25 @@ def get_orders():
 
         avg_prc = float(o.get("avgPrc", 0.0) or 0.0)
         lmt_prc = float(o.get("prc", 0.0) or 0.0)
+        fill_prc = avg_prc if avg_prc > 0 else lmt_prc
 
         formatted_orders.append({
             "order_id": str(o.get("nOrdNo", "")),
             "time": str(o.get("ordDtTm", o.get("ordEntTm", o.get("hsUpTm", "--")))),
-            "symbol": str(o.get("trdSym", "")),
+            "symbol": trd_sym,
             "action": action,
             "qty": int(float(o.get("qty", o.get("flBuyQty", o.get("flSellQty", 0))) or 0)),
             "limit_price": lmt_prc,
-            "avg_price": avg_prc,
+            "avg_price": fill_prc,
             "status": status_display,
             "status_raw": status_raw,
             "is_open": is_open,
+            "source_badge": source_badge,
             "reject_reason": str(o.get("rejRsn", o.get("rejShortDesc", "--"))),
             "product": str(o.get("prod", "NRML")),
         })
 
-    return jsonify({
+    payload = {
         "status": "success",
         "source": source,
         "total_count": len(formatted_orders),
@@ -2907,7 +3028,10 @@ def get_orders():
         "complete_count": complete_count,
         "rejected_count": rejected_count,
         "orders": formatted_orders
-    })
+    }
+    engine.last_formatted_orders_cache = payload
+    engine.last_orders_cache_time = now
+    return jsonify(payload)
 
 
 @app.route("/api/trades")
