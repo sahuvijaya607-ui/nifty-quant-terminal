@@ -2466,6 +2466,20 @@ def get_status():
     day_realized_charges = float(engine.state.get("today_total_charges", 0.0))
     day_realized_gross = float(engine.state.get("today_realized_gross_pnl", 0.0))
 
+    last_closed_trade = None
+    try:
+        if TRADES_FILE.exists():
+            df_trades = pd.read_csv(TRADES_FILE)
+            if not df_trades.empty:
+                today_trades_df = df_trades[df_trades["date"] == today_ist]
+                target_row = today_trades_df.iloc[-1] if not today_trades_df.empty else df_trades.iloc[-1]
+                last_closed_trade = target_row.to_dict()
+                for k, v in list(last_closed_trade.items()):
+                    if pd.isna(v):
+                        last_closed_trade[k] = None
+    except Exception as e:
+        logger.warning(f"Error reading last_closed_trade: {e}")
+
     total_net_pnl = round(day_realized_net + live_mtm_net, 2)
     total_charges = round(day_realized_charges + live_charges, 2)
     total_gross_pnl = round(day_realized_gross + live_mtm_gross, 2)
@@ -2770,6 +2784,7 @@ def get_status():
         },
         "option_chain_table": chain_table,
         "active_position": engine.state.get("active_position"),
+        "last_closed_trade": last_closed_trade,
         "performance": {
             "today_wins": engine.state["today_wins"],
             "today_losses": engine.state["today_losses"],
