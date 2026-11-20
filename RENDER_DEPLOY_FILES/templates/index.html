@@ -671,49 +671,61 @@
         <!-- 🔔 6. AUDIO CHIMES & ACTIVE POSITION MONITOR -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            <!-- Left: Exact Real Charges Calculator Box -->
-            <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between">
+            <!-- Left: Capital Shield & ₹2,800 Max Loss Protection Box -->
+            <div class="bg-[#101726] border border-rose-500/30 rounded-2xl p-6 flex flex-col justify-between relative overflow-hidden bg-gradient-to-b from-rose-500/5 to-slate-900/40">
                 <div>
-                    <div class="flex items-center space-x-2 text-rose-400 mb-3">
-                        <i class="fa-solid fa-receipt text-base"></i>
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-white">EXACT KOTAK NEO CHARGES</h3>
+                    <div class="flex items-center justify-between text-rose-400 mb-3">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-shield-halved text-base text-rose-400"></i>
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-white">CAPITAL SHIELD & RISK MGR</h3>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40 glow-red">HARD CAP</span>
                     </div>
 
-                    <p class="text-xs text-slate-400 leading-relaxed mb-4">
-                        Har trade par real Kotak Neo brokerage aur government taxes deduct hote hain taaki aapko **100% Real Net Profit** dikhe:
-                    </p>
+                    <!-- Large -₹2,800 Max Loss Indicator -->
+                    <div class="p-3.5 bg-slate-900/90 rounded-xl border border-rose-500/40 space-y-1 mb-3">
+                        <div class="flex justify-between items-center text-[11px] text-slate-400">
+                            <span>Per-Trade Hard Loss Cap:</span>
+                            <span class="text-rose-400 font-bold mono">STRICT LIMIT</span>
+                        </div>
+                        <div class="text-2xl font-black text-rose-400 mono tracking-tight glow-red" id="panel-hard-sl-cap">
+                            -₹2,800.00 CAP
+                        </div>
+                        <div class="text-[10px] text-slate-400 mono flex justify-between pt-1 border-t border-slate-800">
+                            <span>Trigger: <strong>1.60x Cut Spread</strong></span>
+                            <span class="text-emerald-400 font-semibold"><i class="fa-solid fa-lock mr-0.5"></i>Protected</span>
+                        </div>
+                    </div>
 
-                    <div class="space-y-2 text-xs mono p-3 bg-slate-900/80 rounded-xl border border-slate-800">
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Brokerage (4 orders):</span>
-                            <span class="text-white font-semibold">₹80.00 (₹20/order)</span>
+                    <!-- Safety Net Controls Checklist -->
+                    <div class="space-y-1.5 text-xs text-slate-300">
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                            <span class="flex items-center gap-1.5 text-slate-400">
+                                <i class="fa-solid fa-circle-stop text-rose-400 text-[10px]"></i>
+                                <span>Daily Circuit Breaker:</span>
+                            </span>
+                            <strong class="text-rose-300 font-mono">Max 2 Trades / Day</strong>
                         </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">STT (0.1% sell turnover):</span>
-                            <span class="text-slate-300">~₹7.40</span>
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                            <span class="flex items-center gap-1.5 text-slate-400">
+                                <i class="fa-solid fa-clock text-amber-400 text-[10px]"></i>
+                                <span>Zero Overnight Risk:</span>
+                            </span>
+                            <strong class="text-amber-300 font-mono">Auto-Exit @ 15:15 PM</strong>
                         </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Exchange Turnover (0.05%):</span>
-                            <span class="text-slate-300">~₹4.80</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">GST (18% on fees):</span>
-                            <span class="text-slate-300">~₹15.26</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Stamp Duty + SEBI:</span>
-                            <span class="text-slate-300">~₹1.50</span>
-                        </div>
-                        <div class="pt-2 border-t border-slate-700 flex justify-between font-bold text-rose-400">
-                            <span>Total Estimated Taxes:</span>
-                            <span>~₹108.96 / Trade</span>
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                            <span class="flex items-center gap-1.5 text-slate-400">
+                                <i class="fa-solid fa-receipt text-cyan-400 text-[10px]"></i>
+                                <span>Real Kotak Charges:</span>
+                            </span>
+                            <strong class="text-slate-200 font-mono">~₹108.96 / Trade</strong>
                         </div>
                     </div>
                 </div>
 
-                <div class="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-500 flex justify-between">
-                    <span>Charges Applied Automatically</span>
-                    <span class="text-emerald-400 font-semibold"><i class="fa-solid fa-check"></i> True Net PnL</span>
+                <div class="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex justify-between items-center">
+                    <span>SEBI Margin Safe</span>
+                    <span class="text-rose-400 font-bold"><i class="fa-solid fa-shield mr-1"></i>₹2,800 Max Risk Locked</span>
                 </div>
             </div>
 
@@ -2442,6 +2454,8 @@
                 window.currentActiveLots = data.active_lots;
                 const hdrLots = document.getElementById('hdr-lots-text');
                 if (hdrLots) hdrLots.innerText = `Lots: ${data.active_lots} (${data.active_lots * 65} Qty) [SET]`;
+                const panelCap = document.getElementById('panel-hard-sl-cap');
+                if (panelCap) panelCap.innerText = `-₹${(data.active_lots * 2800).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAP`;
             }
 
             // Active Position Monitor
@@ -2663,11 +2677,12 @@
                     if (elTrailBar) elTrailBar.style.width = `${trailProgressPct}%`;
                 }
 
-                // Card 4: Stop Loss & Max Risk
+                // Card 4: Stop Loss & Max Risk (Always preserves -₹2,800 CAP!)
                 const elMaxRisk = document.getElementById('pos-max-risk-inr');
                 if (elMaxRisk) {
-                    elMaxRisk.innerText = pos.breakeven_active ? '₹0.00 (Zero Risk)' : `-₹${maxRiskInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                    elMaxRisk.className = pos.breakeven_active ? 'text-base font-extrabold text-cyan-300 mono' : 'text-base font-extrabold text-rose-400 mono';
+                    const capValue = pos.max_risk_inr || (pos.lot_count ? pos.lot_count * 2800.0 : 2800.0);
+                    elMaxRisk.innerText = `-₹${Number(capValue).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAP`;
+                    elMaxRisk.className = 'text-base font-extrabold text-rose-400 mono';
                 }
 
                 const elSlSpread = document.getElementById('pos-sl-spread-val');
@@ -2677,7 +2692,7 @@
                 const elSlLockBadge = document.getElementById('pos-sl-lock-badge');
                 if (elSlBuffer) {
                     if (pos.breakeven_active) {
-                        elSlBuffer.innerText = '₹0.00 Max Loss (Cost Locked)';
+                        elSlBuffer.innerText = '💎 ₹0.00 Risk (SL @ Cost)';
                         elSlBuffer.className = 'text-cyan-300 font-bold';
                     } else {
                         const bufferInr = Math.max(0, maxRiskInr + brokerPnl);
