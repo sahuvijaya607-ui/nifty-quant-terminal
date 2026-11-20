@@ -865,6 +865,7 @@
                             <div class="mt-1">
                                 <div class="text-base font-extrabold text-cyan-300 mono" id="pos-max-credit-inr">₹0.00</div>
                                 <div class="text-[10px] text-slate-400 mono mt-0.5">Spread: <span id="pos-max-credit-pts">0.00 pts</span></div>
+                                <div class="text-[9px] text-cyan-400 font-semibold mt-1" id="pos-max-credit-pocketed">Pocketed: ₹0.00 (0.0%)</div>
                             </div>
                         </div>
 
@@ -877,6 +878,13 @@
                             <div class="mt-1">
                                 <div class="text-base font-extrabold text-emerald-400 mono" id="pos-target-profit-inr">+₹0.00</div>
                                 <div class="text-[10px] text-slate-400 mono mt-0.5">Exit Spread: <strong class="text-emerald-300" id="pos-target-spread-val">₹0.00</strong></div>
+                                <div class="text-[9px] text-emerald-300 font-semibold mt-1 flex items-center justify-between">
+                                    <span id="pos-target-pts-rem">-- pts to go</span>
+                                    <span id="pos-target-progress-badge" class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[8px]">0%</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-target-progress-bar" class="bg-emerald-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -892,6 +900,13 @@
                                     <span class="text-slate-400">Trigger: <strong class="text-amber-300" id="pos-trail-spread-val">₹0.00</strong></span>
                                     <span id="pos-trail-badge" class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">WAITING</span>
                                 </div>
+                                <div class="text-[9px] text-amber-300 font-semibold mt-1 flex items-center justify-between">
+                                    <span id="pos-trail-needed-text">Need ₹0.00 more</span>
+                                    <span id="pos-trail-progress-badge" class="px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold text-[8px]">0%</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-trail-progress-bar" class="bg-amber-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -906,6 +921,10 @@
                                 <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
                                     <span class="text-slate-400">Cut Spread: <strong class="text-rose-300" id="pos-sl-spread-val">₹0.00</strong></span>
                                     <span id="pos-sl-status" class="text-[9px] font-bold text-slate-400">ACTIVE</span>
+                                </div>
+                                <div class="text-[9px] text-slate-400 font-semibold mt-1 flex items-center justify-between">
+                                    <span>Buffer: <strong class="text-slate-300" id="pos-sl-buffer-val">₹0.00 Safe</strong></span>
+                                    <span id="pos-sl-lock-badge" class="text-[8px] text-emerald-400 font-bold">CAP ACTIVE</span>
                                 </div>
                             </div>
                         </div>
@@ -2551,18 +2570,44 @@
                 const trailSpread = pos.trail_trigger_spread || (pos.net_credit * 0.75);
                 const maxRiskInr = pos.breakeven_active ? 0.0 : (pos.max_risk_inr || (pos.net_credit * 0.60 * (pos.lot_size || 65)));
 
+                // Card 1: Max Potential Profit
                 const elMaxCredit = document.getElementById('pos-max-credit-inr');
                 if (elMaxCredit) elMaxCredit.innerText = `₹${maxCreditInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
                 const elMaxCreditPts = document.getElementById('pos-max-credit-pts');
                 if (elMaxCreditPts) elMaxCreditPts.innerText = `${Number(pos.net_credit).toFixed(2)} pts`;
 
+                const elMaxPocketed = document.getElementById('pos-max-credit-pocketed');
+                if (elMaxPocketed) {
+                    const pocketedPct = maxCreditInr > 0 ? Math.max(0, (brokerPnl / maxCreditInr) * 100).toFixed(1) : '0.0';
+                    elMaxPocketed.innerText = `Pocketed: ${brokerPnl >= 0 ? '+' : ''}₹${brokerPnl.toFixed(2)} (${pocketedPct}%)`;
+                }
+
+                // Card 2: 40% Target Goal (Dynamic Progress & Distance)
                 const elTgtProfit = document.getElementById('pos-target-profit-inr');
                 if (elTgtProfit) elTgtProfit.innerText = `+₹${tgtProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
                 const elTgtSpread = document.getElementById('pos-target-spread-val');
                 if (elTgtSpread) elTgtSpread.innerText = `₹${Number(pos.target_spread).toFixed(2)}`;
 
+                const elTgtPtsRem = document.getElementById('pos-target-pts-rem');
+                const elTgtBadge = document.getElementById('pos-target-progress-badge');
+                const elTgtBar = document.getElementById('pos-target-progress-bar');
+                const tgtRemainingInr = Math.max(0, tgtProfitInr - brokerPnl);
+                const tgtProgressPct = Math.min(100, Math.max(0, (brokerPnl / (tgtProfitInr || 1)) * 100));
+
+                if (elTgtPtsRem) {
+                    const ptsLeft = Math.max(0, Number(pos.current_spread || pos.net_credit) - Number(pos.target_spread));
+                    elTgtPtsRem.innerText = `${ptsLeft.toFixed(2)} pts (₹${tgtRemainingInr.toFixed(0)}) to go`;
+                }
+                if (elTgtBadge) {
+                    elTgtBadge.innerText = `${tgtProgressPct.toFixed(0)}%`;
+                }
+                if (elTgtBar) {
+                    elTgtBar.style.width = `${tgtProgressPct}%`;
+                }
+
+                // Card 3: 25% Auto-Trail (0-Risk Breakeven Trigger)
                 const elTrailProfit = document.getElementById('pos-trail-profit-inr');
                 if (elTrailProfit) elTrailProfit.innerText = `+₹${trailProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
@@ -2573,6 +2618,9 @@
                 const elTrailCard = document.getElementById('pos-trail-card');
                 const elSlCard = document.getElementById('pos-sl-card');
                 const elSlStatus = document.getElementById('pos-sl-status');
+                const elTrailNeededText = document.getElementById('pos-trail-needed-text');
+                const elTrailProgBadge = document.getElementById('pos-trail-progress-badge');
+                const elTrailBar = document.getElementById('pos-trail-progress-bar');
 
                 if (pos.breakeven_active) {
                     if (elTrailBadge) {
@@ -2589,7 +2637,13 @@
                         elSlStatus.innerText = '💎 0 RISK';
                         elSlStatus.className = 'text-[9px] font-bold text-cyan-300';
                     }
+                    if (elTrailNeededText) elTrailNeededText.innerText = '💎 Cost Protected (SL = Cost)';
+                    if (elTrailProgBadge) elTrailProgBadge.innerText = '100%';
+                    if (elTrailBar) elTrailBar.style.width = '100%';
                 } else {
+                    const trailRemainingInr = Math.max(0, trailProfitInr - brokerPnl);
+                    const trailProgressPct = Math.min(100, Math.max(0, (brokerPnl / (trailProfitInr || 1)) * 100));
+
                     if (elTrailBadge) {
                         elTrailBadge.innerText = 'WAITING';
                         elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
@@ -2604,8 +2658,12 @@
                         elSlStatus.innerText = 'ACTIVE';
                         elSlStatus.className = 'text-[9px] font-bold text-slate-400';
                     }
+                    if (elTrailNeededText) elTrailNeededText.innerText = `Need +₹${trailRemainingInr.toFixed(0)} more`;
+                    if (elTrailProgBadge) elTrailProgBadge.innerText = `${trailProgressPct.toFixed(0)}%`;
+                    if (elTrailBar) elTrailBar.style.width = `${trailProgressPct}%`;
                 }
 
+                // Card 4: Stop Loss & Max Risk
                 const elMaxRisk = document.getElementById('pos-max-risk-inr');
                 if (elMaxRisk) {
                     elMaxRisk.innerText = pos.breakeven_active ? '₹0.00 (Zero Risk)' : `-₹${maxRiskInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -2614,6 +2672,28 @@
 
                 const elSlSpread = document.getElementById('pos-sl-spread-val');
                 if (elSlSpread) elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)}`;
+
+                const elSlBuffer = document.getElementById('pos-sl-buffer-val');
+                const elSlLockBadge = document.getElementById('pos-sl-lock-badge');
+                if (elSlBuffer) {
+                    if (pos.breakeven_active) {
+                        elSlBuffer.innerText = '₹0.00 Max Loss (Cost Locked)';
+                        elSlBuffer.className = 'text-cyan-300 font-bold';
+                    } else {
+                        const bufferInr = Math.max(0, maxRiskInr + brokerPnl);
+                        elSlBuffer.innerText = `₹${bufferInr.toFixed(0)} Buffer Left`;
+                        elSlBuffer.className = 'text-slate-300 font-semibold';
+                    }
+                }
+                if (elSlLockBadge) {
+                    if (pos.breakeven_active) {
+                        elSlLockBadge.innerText = '💎 0-RISK LOCKED';
+                        elSlLockBadge.className = 'text-[8px] text-cyan-300 font-extrabold';
+                    } else {
+                        elSlLockBadge.innerText = 'HARD CAP ACTIVE';
+                        elSlLockBadge.className = 'text-[8px] text-rose-400 font-bold';
+                    }
+                }
 
                 // Bind Sticky Cockpit Active Values
                 const cTitle = document.getElementById('cockpit-pos-title');
@@ -2642,7 +2722,8 @@
 
                 const cSub = document.getElementById('cockpit-pos-net-sub');
                 if (cSub) {
-                    cSub.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)}`;
+                    const tgtRemaining = Math.max(0, tgtProfitInr - brokerPnl);
+                    cSub.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)} | 🎯 Tgt: +₹${tgtProfitInr.toFixed(0)} (₹${tgtRemaining.toFixed(0)} away)`;
                 }
 
                 if (cTimer) cTimer.innerText = pos.holding_time_str || '00:00:00';

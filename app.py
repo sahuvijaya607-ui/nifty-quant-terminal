@@ -946,7 +946,11 @@ class MasterQuantEngine:
                                 cur_pos["lot_size"] = sell_qty
                                 cur_pos["max_credit_inr"] = round(net_credit * sell_qty, 2)
                                 cur_pos["target_spread"] = round(net_credit * 0.60, 2)
-                                cur_pos["sl_spread"] = round(net_credit * 1.60, 2)
+                                cur_pos["target_profit_inr"] = round((net_credit * 0.40) * sell_qty, 2)
+                                cur_pos["sl_spread"] = net_credit if cur_pos.get("breakeven_active") else round(net_credit * 1.60, 2)
+                                cur_pos["max_risk_inr"] = 0.0 if cur_pos.get("breakeven_active") else round(min((net_credit * 0.60) * sell_qty, 2800.0 * cur_pos.get("lot_count", 1)), 2)
+                                cur_pos["trail_trigger_spread"] = round(net_credit * 0.75, 2)
+                                cur_pos["trail_trigger_inr"] = round((net_credit * 0.25) * sell_qty, 2)
                                 if s_ltp > 0:
                                     cur_pos["current_sell_ltp"] = round(s_ltp, 2)
                                 if b_ltp > 0:
@@ -972,6 +976,20 @@ class MasterQuantEngine:
                                 charges = self.calculate_kotak_charges(net_credit, cur_pos.get("current_spread", net_credit), sell_qty)
                                 cur_pos["estimated_charges"] = charges["total_charges"]
                                 cur_pos["mtm_net_pnl"] = round(broker_pnl - charges["total_charges"], 2)
+
+                                # Live Dynamic Progress Metrics for HUD Cards
+                                cur_spread = cur_pos.get("current_spread", net_credit)
+                                pts_gain = round(net_credit - cur_spread, 2)
+                                cur_pos["decay_pts_gained"] = max(0.0, pts_gain)
+                                cur_pos["target_pts_needed"] = max(0.0, round(cur_spread - cur_pos["target_spread"], 2))
+                                cur_pos["target_profit_remaining_inr"] = max(0.0, round(cur_pos["target_profit_inr"] - broker_pnl, 2))
+                                cur_pos["target_progress_pct"] = round(min(100.0, max(0.0, (pts_gain / max(0.01, net_credit * 0.40)) * 100.0)), 1)
+                                cur_pos["trail_pts_needed"] = max(0.0, round(cur_spread - cur_pos["trail_trigger_spread"], 2)) if not cur_pos.get("breakeven_active") else 0.0
+                                cur_pos["trail_profit_remaining_inr"] = max(0.0, round(cur_pos["trail_trigger_inr"] - broker_pnl, 2)) if not cur_pos.get("breakeven_active") else 0.0
+                                cur_pos["trail_progress_pct"] = 100.0 if cur_pos.get("breakeven_active") else round(min(100.0, max(0.0, (pts_gain / max(0.01, net_credit * 0.25)) * 100.0)), 1)
+                                cur_pos["sl_buffer_pts"] = max(0.0, round(cur_pos["sl_spread"] - cur_spread, 2))
+                                cur_pos["sl_buffer_inr"] = max(0.0, round(cur_pos["sl_buffer_pts"] * sell_qty, 2))
+
                                 self.save_state()
                             except Exception as adopt_err:
                                 logger.error(f"[ADOPT_ERROR] Failed to synchronize live broker position: {adopt_err}")
@@ -2229,7 +2247,12 @@ class MasterQuantEngine:
         pos["target_profit_inr"] = round((entry_credit * 0.40) * pos_qty, 2)
         pos["trail_trigger_spread"] = round(entry_credit * 0.75, 2)
         pos["trail_trigger_inr"] = round((entry_credit * 0.25) * pos_qty, 2)
-        pos["trail_pts_needed"] = max(0.0, round((entry_credit * 0.25) - pts_gain, 2))
+
+        # Dynamic decay and progress values
+        pos["decay_pts_gained"] = max(0.0, pts_gain)
+        pos["target_pts_needed"] = max(0.0, round(current_spread - pos["target_spread"], 2))
+        pos["target_profit_remaining_inr"] = max(0.0, round(pos["target_profit_inr"] - broker_unrealised, 2))
+        pos["target_progress_pct"] = round(min(100.0, max(0.0, (pts_gain / max(0.01, entry_credit * 0.40)) * 100.0)), 1)
 
         # Trailing Breakeven Trigger (+25% Profit -> 0 Risk Lock)
         if not pos.get("breakeven_active") and (pts_gain >= entry_credit * 0.25):
@@ -2240,7 +2263,14 @@ class MasterQuantEngine:
             self.pending_audio_event = "BREAKEVEN_LOCKED"
             self.status_message = "💎 TRAILING SL LOCKED: ZERO RISK (0 Rs Max Loss)!"
 
+        pos["trail_pts_needed"] = max(0.0, round(current_spread - pos["trail_trigger_spread"], 2)) if not pos.get("breakeven_active") else 0.0
+        pos["trail_profit_remaining_inr"] = max(0.0, round(pos["trail_trigger_inr"] - broker_unrealised, 2)) if not pos.get("breakeven_active") else 0.0
+        pos["trail_progress_pct"] = 100.0 if pos.get("breakeven_active") else round(min(100.0, max(0.0, (pts_gain / max(0.01, entry_credit * 0.25)) * 100.0)), 1)
+
+        pos["sl_spread"] = entry_credit if pos.get("breakeven_active") else round(entry_credit * 1.60, 2)
         pos["max_risk_inr"] = 0.0 if pos.get("breakeven_active") else round(min((entry_credit * 0.60) * pos_qty, 2800.0 * pos.get("lot_count", 1)), 2)
+        pos["sl_buffer_pts"] = max(0.0, round(pos["sl_spread"] - current_spread, 2))
+        pos["sl_buffer_inr"] = max(0.0, round(pos["sl_buffer_pts"] * pos_qty, 2))
 
         # STRICT USER COMMAND: If position was created manually by user from Kotak Neo app,
         # ALGO NEVER AUTO-EXITS IT! Full control remains 100% in user's hands.
