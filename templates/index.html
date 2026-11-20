@@ -250,10 +250,13 @@
                 <div class="flex items-center space-x-4">
                     <!-- Net MTM Display -->
                     <div class="text-right">
-                        <div class="text-[10px] text-slate-400 uppercase tracking-wider mono">Net MTM (True PnL)</div>
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider mono flex items-center justify-end gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Kotak Unrealised P/L
+                        </div>
                         <div id="cockpit-pos-mtm" class="text-base sm:text-lg font-black mono text-emerald-400 leading-tight">
                             +Rs 0.00
                         </div>
+                        <div id="cockpit-pos-net-sub" class="text-[9px] mono text-slate-400">Net: +Rs 0.00</div>
                     </div>
 
                     <!-- Visual SL vs Target Decay Bar -->
@@ -757,16 +760,20 @@
                         <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
                             <div>
                                 <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Sold Leg (2nd)</div>
-                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-sell-strike">25350 PE</div>
+                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-sell-strike">25500 PE</div>
                             </div>
                             <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
                                 <div class="flex justify-between text-slate-400">
-                                    <span>Entry (Jab Liya):</span>
-                                    <strong class="text-slate-200">Rs <span id="pos-sell-price">113.93</span></strong>
+                                    <span>Avg Cost:</span>
+                                    <strong class="text-slate-200">Rs <span id="pos-sell-price">139.55</span></strong>
                                 </div>
                                 <div class="flex justify-between text-amber-400 font-bold">
                                     <span>Live LTP:</span>
-                                    <span>Rs <span id="pos-sell-ltp">213.30</span></span>
+                                    <span>Rs <span id="pos-sell-ltp">133.70</span></span>
+                                </div>
+                                <div class="flex justify-between text-emerald-400 font-bold">
+                                    <span>Leg P&L:</span>
+                                    <span id="pos-sell-pnl">+Rs 380.25</span>
                                 </div>
                             </div>
                         </div>
@@ -775,16 +782,20 @@
                         <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
                             <div>
                                 <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Bought Wing (1st)</div>
-                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-buy-strike">25000 PE</div>
+                                <div class="text-sm font-bold text-white mono mt-0.5" id="pos-buy-strike">25150 PE</div>
                             </div>
                             <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
                                 <div class="flex justify-between text-slate-400">
-                                    <span>Entry (Jab Liya):</span>
-                                    <strong class="text-slate-200">Rs <span id="pos-buy-price">29.95</span></strong>
+                                    <span>Avg Cost:</span>
+                                    <strong class="text-slate-200">Rs <span id="pos-buy-price">31.15</span></strong>
                                 </div>
                                 <div class="flex justify-between text-cyan-400 font-bold">
                                     <span>Live LTP:</span>
-                                    <span>Rs <span id="pos-buy-ltp">89.65</span></span>
+                                    <span>Rs <span id="pos-buy-ltp">29.65</span></span>
+                                </div>
+                                <div class="flex justify-between text-rose-400 font-bold">
+                                    <span>Leg P&L:</span>
+                                    <span id="pos-buy-pnl">-Rs 97.50</span>
                                 </div>
                             </div>
                         </div>
@@ -795,29 +806,34 @@
                                 <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Credit Spread</div>
                                 <div class="text-xs text-slate-300 mono mt-0.5 flex justify-between">
                                     <span class="text-slate-500">Entry Credit:</span>
-                                    <strong class="text-cyan-400">Rs <span id="pos-net-credit">83.98</span></strong>
+                                    <strong class="text-cyan-400">Rs <span id="pos-net-credit">108.40</span></strong>
                                 </div>
                             </div>
                             <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-0.5 text-xs mono">
                                 <div class="flex justify-between text-slate-400">
                                     <span>Current Spread:</span>
-                                    <strong class="text-amber-300">Rs <span id="pos-curr-spread">79.39</span></strong>
+                                    <strong class="text-amber-300">Rs <span id="pos-curr-spread">104.05</span></strong>
                                 </div>
                                 <div class="flex justify-between text-emerald-400 font-bold">
                                     <span>Captured:</span>
-                                    <span id="pos-pts-gain">+4.59 pts</span>
+                                    <span id="pos-pts-gain">+4.35 pts</span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Net MTM PnL -->
+                        <!-- Kotak Neo Broker PnL (Unrealised) -->
                         <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
                             <div>
-                                <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Net MTM PnL</div>
-                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 0.00</div>
+                                <div class="flex items-center justify-between">
+                                    <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Kotak Unrealised P/L</div>
+                                    <span class="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> KOTAK SYNC
+                                    </span>
+                                </div>
+                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 283.00</div>
                             </div>
-                            <div class="text-[10px] text-slate-400 mono mt-2 pt-2 border-t border-slate-800/80">
-                                True Net (After Taxes & Brokerage)
+                            <div class="text-[10px] text-slate-400 mono mt-2 pt-2 border-t border-slate-800/80" id="pos-mtm-breakdown">
+                                Net: +Rs 173.12 (Taxes & Charges: -Rs 109.88)
                             </div>
                         </div>
                     </div>
@@ -2376,11 +2392,23 @@
                 document.getElementById('pos-sell-price').innerText = pos.sell_price;
                 const sellLtpEl = document.getElementById('pos-sell-ltp');
                 if (sellLtpEl) sellLtpEl.innerText = pos.current_sell_ltp || pos.sell_price;
+                const sellPnlEl = document.getElementById('pos-sell-pnl');
+                if (sellPnlEl && pos.sell_leg_pnl !== undefined) {
+                    const sPnl = Number(pos.sell_leg_pnl);
+                    sellPnlEl.innerText = `${sPnl >= 0 ? '+' : ''}Rs ${sPnl.toFixed(2)}`;
+                    sellPnlEl.className = sPnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
+                }
 
                 document.getElementById('pos-buy-strike').innerText = `${pos.buy_strike} ${pos.buy_type}`;
                 document.getElementById('pos-buy-price').innerText = pos.buy_price;
                 const buyLtpEl = document.getElementById('pos-buy-ltp');
                 if (buyLtpEl) buyLtpEl.innerText = pos.current_buy_ltp || pos.buy_price;
+                const buyPnlEl = document.getElementById('pos-buy-pnl');
+                if (buyPnlEl && pos.buy_leg_pnl !== undefined) {
+                    const bPnl = Number(pos.buy_leg_pnl);
+                    buyPnlEl.innerText = `${bPnl >= 0 ? '+' : ''}Rs ${bPnl.toFixed(2)}`;
+                    buyPnlEl.className = bPnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
+                }
 
                 document.getElementById('pos-net-credit').innerText = pos.net_credit;
                 document.getElementById('pos-curr-spread').innerText = pos.current_spread || pos.net_credit;
@@ -2388,6 +2416,7 @@
                 if (ptsGainEl) {
                     const diff = Number(pos.net_credit) - Number(pos.current_spread || pos.net_credit);
                     ptsGainEl.innerText = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)} pts`;
+                    ptsGainEl.className = diff >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
                 }
 
                 // Entry Timing, Spots, Initiator and Reason
@@ -2422,10 +2451,19 @@
 
                 document.getElementById('pos-timer').innerText = pos.holding_time_str || '00:00:00';
 
+                const brokerPnl = Number(pos.mtm_gross_pnl !== undefined ? pos.mtm_gross_pnl : (pos.broker_unrealised_pnl || 0));
                 const netPnl = Number(pos.mtm_net_pnl || 0);
+                const charges = Number(pos.estimated_charges || 0);
+
                 const pnlEl = document.getElementById('pos-mtm-net');
-                pnlEl.innerText = `${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                pnlEl.className = netPnl >= 0 ? 'text-lg font-extrabold text-emerald-400 mono mt-0.5' : 'text-lg font-extrabold text-rose-400 mono mt-0.5';
+                if (pnlEl) {
+                    pnlEl.innerText = `${brokerPnl >= 0 ? '+' : ''}Rs ${brokerPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    pnlEl.className = brokerPnl >= 0 ? 'text-xl font-black text-emerald-400 mono mt-0.5 glow-green' : 'text-xl font-black text-rose-400 mono mt-0.5 glow-red';
+                }
+                const breakdownEl = document.getElementById('pos-mtm-breakdown');
+                if (breakdownEl) {
+                    breakdownEl.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)} (Taxes & Charges: -Rs ${charges.toFixed(2)})`;
+                }
 
                 const bePill = document.getElementById('pos-breakeven-pill');
                 if (pos.breakeven_active) {
@@ -2537,10 +2575,15 @@
                 if (cLegs) cLegs.innerText = `Sold ${pos.sell_strike}${pos.sell_type} @ Rs ${pos.sell_price} | Bought ${pos.buy_strike}${pos.buy_type} @ Rs ${pos.buy_price}`;
                 
                 if (cMtm) {
-                    cMtm.innerText = `${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                    cMtm.className = netPnl >= 0 ? 
+                    cMtm.innerText = `${brokerPnl >= 0 ? '+' : ''}Rs ${brokerPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    cMtm.className = brokerPnl >= 0 ? 
                         'text-base sm:text-lg font-black mono text-emerald-400 leading-tight glow-green' : 
                         'text-base sm:text-lg font-black mono text-rose-400 leading-tight glow-red';
+                }
+
+                const cSub = document.getElementById('cockpit-pos-net-sub');
+                if (cSub) {
+                    cSub.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)}`;
                 }
 
                 if (cTimer) cTimer.innerText = pos.holding_time_str || '00:00:00';

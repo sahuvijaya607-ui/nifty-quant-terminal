@@ -832,10 +832,13 @@ class MasterQuantEngine:
                             self.state["active_position"] = None
                             self.save_state()
 
-                        # Case B: If Kotak Neo reports an active NIFTY spread position, but Terminal has active_position == None:
-                        # Auto-adopt the live spread position into the Cockpit HUD for continuous monitoring, Trailing SL & Target!
-                        if has_real_pos and short_leg and long_leg and not self.state.get("active_position"):
+                        # Case B: If Kotak Neo reports an active NIFTY spread position:
+                        # Auto-adopt or continuously synchronize with live broker execution & MTM prices!
+                        if has_real_pos and short_leg and long_leg:
                             try:
+                                self.latest_broker_short_leg = short_leg
+                                self.latest_broker_long_leg = long_leg
+
                                 sell_strk = int(float(short_leg.get("stkPrc", 0)))
                                 buy_strk = int(float(long_leg.get("stkPrc", 0)))
                                 sell_type = str(short_leg.get("optTp", "PE")).upper()
@@ -852,46 +855,88 @@ class MasterQuantEngine:
                                 direction = "BULL_PUT_SPREAD" if sell_type == "PE" else "BEAR_CALL_SPREAD"
                                 entry_tm = short_leg.get("hsUpTm", get_ist_now().strftime("%Y-%m-%d %H:%M:%S"))
 
-                                adopted_pos = {
-                                    "trade_id": f"TRD-LIVE-{get_ist_now().strftime('%Y%m%d')}-01",
-                                    "entry_time": entry_tm,
-                                    "entry_timestamp_sec": time.time(),
-                                    "direction": direction,
-                                    "execution_mode": "LIVE",
-                                    "trade_initiator": "AUTO_ALGO",
-                                    "entry_spot": float(self.pulse.get("spot", 25530.0) or 25530.0),
-                                    "sell_strike": sell_strk,
-                                    "sell_type": sell_type,
-                                    "sell_symbol": short_leg.get("trdSym"),
-                                    "sell_price": sell_prc,
-                                    "buy_strike": buy_strk,
-                                    "buy_type": buy_type,
-                                    "buy_symbol": long_leg.get("trdSym"),
-                                    "buy_price": buy_prc,
-                                    "net_credit": net_credit,
-                                    "lot_size": sell_qty,
-                                    "lot_count": max(1, sell_qty // self.lot_size),
-                                    "max_credit_inr": round(net_credit * sell_qty, 2),
-                                    "target_spread": round(net_credit * 0.60, 2),
-                                    "target_profit_inr": round((net_credit * 0.40) * sell_qty, 2),
-                                    "sl_spread": round(net_credit * 1.60, 2),
-                                    "max_risk_inr": round(min((net_credit * 0.60) * sell_qty, 2800.0), 2),
-                                    "trail_trigger_spread": round(net_credit * 0.75, 2),
-                                    "trail_trigger_inr": round((net_credit * 0.25) * sell_qty, 2),
-                                    "breakeven_active": False,
-                                    "be_locked": False,
-                                    "current_spread": net_credit,
-                                    "mtm_gross_pnl": 0.0,
-                                    "mtm_net_pnl": 0.0,
-                                    "estimated_charges": 80.0,
-                                    "holding_time_str": "0:00:00",
-                                    "why_trade_taken": "5m Momentum Alignment & Dual-PCR Confluence (Live Kotak Execution)"
-                                }
-                                self.state["active_position"] = adopted_pos
+                                # Extract live LTPs from Kotak Neo position data
+                                s_ltp = float(short_leg.get("ltp") or short_leg.get("lp") or short_leg.get("lastPrice") or 0.0)
+                                b_ltp = float(long_leg.get("ltp") or long_leg.get("lp") or long_leg.get("lastPrice") or 0.0)
+                                s_ur = float(short_leg.get("urMtM", 0.0) or 0.0)
+                                b_ur = float(long_leg.get("urMtM", 0.0) or 0.0)
+
+                                cur_pos = self.state.get("active_position")
+                                if not cur_pos:
+                                    cur_pos = {
+                                        "trade_id": f"TRD-LIVE-{get_ist_now().strftime('%Y%m%d')}-01",
+                                        "entry_time": entry_tm,
+                                        "entry_timestamp_sec": time.time(),
+                                        "direction": direction,
+                                        "execution_mode": "LIVE",
+                                        "trade_initiator": "AUTO_ALGO",
+                                        "entry_spot": float(self.pulse.get("spot", 25530.0) or 25530.0),
+                                        "sell_strike": sell_strk,
+                                        "sell_type": sell_type,
+                                        "sell_symbol": short_leg.get("trdSym"),
+                                        "sell_price": sell_prc,
+                                        "buy_strike": buy_strk,
+                                        "buy_type": buy_type,
+                                        "buy_symbol": long_leg.get("trdSym"),
+                                        "buy_price": buy_prc,
+                                        "net_credit": net_credit,
+                                        "lot_size": sell_qty,
+                                        "lot_count": max(1, sell_qty // self.lot_size),
+                                        "max_credit_inr": round(net_credit * sell_qty, 2),
+                                        "target_spread": round(net_credit * 0.60, 2),
+                                        "target_profit_inr": round((net_credit * 0.40) * sell_qty, 2),
+                                        "sl_spread": round(net_credit * 1.60, 2),
+                                        "max_risk_inr": round(min((net_credit * 0.60) * sell_qty, 2800.0), 2),
+                                        "trail_trigger_spread": round(net_credit * 0.75, 2),
+                                        "trail_trigger_inr": round((net_credit * 0.25) * sell_qty, 2),
+                                        "breakeven_active": False,
+                                        "be_locked": False,
+                                        "current_spread": net_credit,
+                                        "mtm_gross_pnl": 0.0,
+                                        "mtm_net_pnl": 0.0,
+                                        "estimated_charges": 80.0,
+                                        "holding_time_str": "0:00:00",
+                                        "why_trade_taken": "5m Momentum Alignment & Dual-PCR Confluence (Live Kotak Execution)"
+                                    }
+                                    self.state["active_position"] = cur_pos
+                                    logger.info(f"[ADOPTED_POSITION] Connected live broker spread: {direction} Sell {sell_strk} / Buy {buy_strk}")
+
+                                # Synchronize active position with live Kotak Neo execution prices & broker MTM:
+                                cur_pos["sell_price"] = sell_prc
+                                cur_pos["buy_price"] = buy_prc
+                                cur_pos["net_credit"] = net_credit
+                                cur_pos["lot_size"] = sell_qty
+                                cur_pos["max_credit_inr"] = round(net_credit * sell_qty, 2)
+                                cur_pos["target_spread"] = round(net_credit * 0.60, 2)
+                                cur_pos["sl_spread"] = round(net_credit * 1.60, 2)
+                                if s_ltp > 0:
+                                    cur_pos["current_sell_ltp"] = round(s_ltp, 2)
+                                if b_ltp > 0:
+                                    cur_pos["current_buy_ltp"] = round(b_ltp, 2)
+
+                                # Leg P&L & Broker Unrealised PnL (exact match with Kotak Neo app)
+                                if s_ur != 0.0:
+                                    cur_pos["sell_leg_pnl"] = round(s_ur, 2)
+                                elif cur_pos.get("current_sell_ltp", 0.0) > 0:
+                                    cur_pos["sell_leg_pnl"] = round((sell_prc - cur_pos["current_sell_ltp"]) * sell_qty, 2)
+
+                                if b_ur != 0.0:
+                                    cur_pos["buy_leg_pnl"] = round(b_ur, 2)
+                                elif cur_pos.get("current_buy_ltp", 0.0) > 0:
+                                    cur_pos["buy_leg_pnl"] = round((cur_pos["current_buy_ltp"] - buy_prc) * buy_qty, 2)
+
+                                broker_pnl = round(cur_pos.get("sell_leg_pnl", 0.0) + cur_pos.get("buy_leg_pnl", 0.0), 2)
+                                cur_pos["broker_unrealised_pnl"] = broker_pnl
+                                cur_pos["mtm_gross_pnl"] = broker_pnl
+                                if cur_pos.get("current_sell_ltp", 0.0) > 0 and cur_pos.get("current_buy_ltp", 0.0) > 0:
+                                    cur_pos["current_spread"] = round(cur_pos["current_sell_ltp"] - cur_pos["current_buy_ltp"], 2)
+
+                                charges = self.calculate_kotak_charges(net_credit, cur_pos.get("current_spread", net_credit), sell_qty)
+                                cur_pos["estimated_charges"] = charges["total_charges"]
+                                cur_pos["mtm_net_pnl"] = round(broker_pnl - charges["total_charges"], 2)
                                 self.save_state()
-                                logger.info(f"[ADOPTED_POSITION] Successfully connected live broker spread: {direction} Sell {sell_strk} / Buy {buy_strk}")
                             except Exception as adopt_err:
-                                logger.error(f"[ADOPT_ERROR] Failed to adopt live broker position: {adopt_err}")
+                                logger.error(f"[ADOPT_ERROR] Failed to synchronize live broker position: {adopt_err}")
                     else:
                         logger.warning(f"Skipping broker position reconciliation - Kotak API returned non-OK: {real_pos}")
                 except Exception as recon_err:
@@ -2020,7 +2065,19 @@ class MasterQuantEngine:
         pos["holding_time_str"] = str(timedelta(seconds=holding_sec))
         pos["spot_move"] = round(spot - entry_spot, 2)
 
-        # Dynamic real market option spread from option chain table
+        # Dynamic real market option spread: Check live Kotak Neo broker positions first, then fallback to option chain table
+        short_leg = getattr(self, "latest_broker_short_leg", None)
+        long_leg = getattr(self, "latest_broker_long_leg", None)
+        broker_sell_ltp = float(short_leg.get("ltp") or short_leg.get("lp") or short_leg.get("lastPrice") or 0.0) if short_leg else 0.0
+        broker_buy_ltp = float(long_leg.get("ltp") or long_leg.get("lp") or long_leg.get("lastPrice") or 0.0) if long_leg else 0.0
+        broker_sell_ur = float(short_leg.get("urMtM", 0.0) or 0.0) if short_leg else 0.0
+        broker_buy_ur = float(long_leg.get("urMtM", 0.0) or 0.0) if long_leg else 0.0
+
+        if broker_sell_ltp > 0:
+            pos["current_sell_ltp"] = round(broker_sell_ltp, 2)
+        if broker_buy_ltp > 0:
+            pos["current_buy_ltp"] = round(broker_buy_ltp, 2)
+
         chain_table = self.get_clean_option_chain_table()
         strike_map = {r["strike"]: r for r in chain_table}
         sell_row = strike_map.get(pos["sell_strike"], {})
@@ -2030,11 +2087,13 @@ class MasterQuantEngine:
         real_sell_ltp = float(sell_row.get(opt_col, 0.0))
         real_buy_ltp = float(buy_row.get(opt_col, 0.0))
 
-        pos["current_sell_ltp"] = real_sell_ltp if real_sell_ltp > 0 else pos["sell_price"]
-        pos["current_buy_ltp"] = real_buy_ltp if real_buy_ltp > 0 else pos["buy_price"]
+        if not pos.get("current_sell_ltp") or pos.get("current_sell_ltp") <= 0:
+            pos["current_sell_ltp"] = real_sell_ltp if real_sell_ltp > 0 else pos["sell_price"]
+        if not pos.get("current_buy_ltp") or pos.get("current_buy_ltp") <= 0:
+            pos["current_buy_ltp"] = real_buy_ltp if real_buy_ltp > 0 else pos["buy_price"]
 
-        if real_sell_ltp > 0 and real_buy_ltp > 0:
-            current_spread = round(real_sell_ltp - real_buy_ltp, 2)
+        if pos.get("current_sell_ltp", 0.0) > 0 and pos.get("current_buy_ltp", 0.0) > 0:
+            current_spread = round(pos["current_sell_ltp"] - pos["current_buy_ltp"], 2)
         else:
             elapsed_mins = max(1, holding_sec // 60)
             theta_decay = min(entry_credit * 0.40, (elapsed_mins / 60.0) * 2.5)
@@ -2042,14 +2101,26 @@ class MasterQuantEngine:
 
         pos["current_spread"] = round(current_spread, 2)
 
-        pts_gain = entry_credit - current_spread
-        gross_pnl = round(pts_gain * pos_qty, 2)
-        pos["mtm_gross_pnl"] = gross_pnl
+        # Leg level PnL & Broker Unrealised PnL
+        if broker_sell_ur != 0.0:
+            pos["sell_leg_pnl"] = round(broker_sell_ur, 2)
+        else:
+            pos["sell_leg_pnl"] = round((pos["sell_price"] - pos["current_sell_ltp"]) * pos_qty, 2)
+
+        if broker_buy_ur != 0.0:
+            pos["buy_leg_pnl"] = round(broker_buy_ur, 2)
+        else:
+            pos["buy_leg_pnl"] = round((pos["current_buy_ltp"] - pos["buy_price"]) * pos_qty, 2)
+
+        broker_unrealised = round(pos["sell_leg_pnl"] + pos["buy_leg_pnl"], 2)
+        pos["broker_unrealised_pnl"] = broker_unrealised
+        pos["mtm_gross_pnl"] = broker_unrealised
+        pts_gain = round(entry_credit - current_spread, 2)
 
         # Net MTM after estimated charges
         charges = self.calculate_kotak_charges(entry_credit, current_spread, pos_qty)
         pos["estimated_charges"] = charges["total_charges"]
-        pos["mtm_net_pnl"] = round(gross_pnl - charges["total_charges"], 2)
+        pos["mtm_net_pnl"] = round(broker_unrealised - charges["total_charges"], 2)
 
         # Upgrade 6: Adaptive Fast-Tick Proximity Detection
         target_spread = pos.get("target_spread", entry_credit * 0.60)
@@ -2473,6 +2544,8 @@ def get_status():
             "is_real_kotak_funds": True,
             "charges": total_charges,
             "total_net_pnl": total_net_pnl,
+            "total_gross_pnl": total_gross_pnl,
+            "broker_unrealised_pnl": live_mtm_gross,
             "live_mtm_net": live_mtm_net,
             "roi_today_pct": roi_today_pct,
         },
