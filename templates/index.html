@@ -1089,10 +1089,10 @@
                                 <strong class="text-sm font-bold text-white" id="empty-trade-title">Today's Algo Trade 1 Booked: +Rs 172.95 Net Realized</strong>
                                 <span id="empty-trade-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">WIN</span>
                             </div>
-                            <div class="text-xs text-slate-300 mono" id="empty-trade-time">09:53:35 &bull; Sold 25500 PE / Bought 25150 PE</div>
+                            <div class="text-xs text-slate-300 mono" id="empty-trade-time">09:53:35 • Sold 25500 PE / Bought 25150 PE</div>
                         </div>
                         <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                            <span id="empty-trade-next-status"><i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i><strong>Status:</strong> Trade 1 Completed &bull; Cooldown / Radar Scanning for Trade 2</span>
+                            <span id="empty-trade-next-status"><i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i><strong>Status:</strong> Trade 1 Completed • Cooldown / Radar Scanning for Trade 2</span>
                             <span class="text-emerald-400 font-bold mono" id="empty-trade-net-booked">Net Pocketed: +Rs 172.95</span>
                         </div>
                     </div>
@@ -1107,7 +1107,7 @@
                             </div>
                             <div class="mt-1">
                                 <div class="text-base font-extrabold text-cyan-300 mono" id="empty-card-1-val">₹7,046.00</div>
-                                <div class="text-[10px] text-slate-400 mono mt-0.5" id="empty-card-1-sub">Spread: 108.40 pts &bull; 100% Net Credit</div>
+                                <div class="text-[10px] text-slate-400 mono mt-0.5" id="empty-card-1-sub">Spread: 108.40 pts • 100% Net Credit</div>
                             </div>
                         </div>
 
@@ -3207,7 +3207,7 @@
                     }
                     if (emptyTradeTime) {
                         const timeStr = lt.entry_time ? (lt.entry_time.split(' ')[1] || lt.entry_time) : '09:53:35';
-                        emptyTradeTime.innerText = `${timeStr} &bull; ${lt.strikes || 'Sold 25500 PE / Bought 25150 PE'}`;
+                        emptyTradeTime.innerText = `${timeStr} • ${lt.strikes || 'Sold 25500 PE / Bought 25150 PE'}`;
                     }
                     if (emptyTradeNext) {
                         if (data.cooldown_remaining_sec > 0) {
@@ -3215,25 +3215,26 @@
                             const s = data.cooldown_remaining_sec % 60;
                             emptyTradeNext.innerHTML = `<i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i><strong>Cooldown:</strong> Mandatory break active (${m}m ${s}s left). Armed for Trade 2.`;
                         } else {
-                            emptyTradeNext.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i><strong>Status:</strong> Radar Scanning Live Market &bull; Armed for Trade 2 when 6-Rule Gate aligns.`;
+                            emptyTradeNext.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i><strong>Status:</strong> Radar Scanning Live Market • Armed for Trade 2 when 6-Rule Gate aligns.`;
                         }
                     }
+                    const capPct = maxCredInr > 0 ? ((netP / maxCredInr) * 100).toFixed(1) : '0.0';
                     if (emptyTradeNet) {
-                        emptyTradeNet.innerText = `Net Pocketed: ${netP >= 0 ? '+' : ''}Rs ${netP.toFixed(2)}`;
+                        emptyTradeNet.innerText = `Net Pocketed: ${netP >= 0 ? '+' : ''}Rs ${netP.toFixed(2)} (${capPct}% of Max Potential)`;
                         emptyTradeNet.className = netP >= 0 ? 'text-emerald-400 font-bold mono' : 'text-rose-400 font-bold mono';
                     }
 
                     if (elEmptyC1Val) elEmptyC1Val.innerText = `₹${maxCredInr.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                    if (elEmptyC1Sub) elEmptyC1Sub.innerText = `Spread: ${netCredit.toFixed(2)} pts &bull; Pocketed: ${netP >= 0 ? '+' : ''}₹${netP.toFixed(2)}`;
+                    if (elEmptyC1Sub) elEmptyC1Sub.innerText = `Spread: ${netCredit.toFixed(2)} pts • Pocketed: ${netP >= 0 ? '+' : ''}₹${netP.toFixed(2)} (${capPct}%)`;
 
                     if (elEmptyC2Val) elEmptyC2Val.innerText = `+₹${tgtInr.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                    if (elEmptyC2Sub) elEmptyC2Sub.innerText = `Exit Spread: ₹${tgtSpread.toFixed(2)} (40% Decay Goal)`;
+                    if (elEmptyC2Sub) elEmptyC2Sub.innerText = `Exit Spread: ₹${tgtSpread.toFixed(2)} • 40% Target Goal`;
 
                     if (elEmptyC3Val) elEmptyC3Val.innerText = `+₹${trailInr.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                    if (elEmptyC3Sub) elEmptyC3Sub.innerText = `Trigger: ₹${trailSpread.toFixed(2)} (25% Auto-Trail)`;
+                    if (elEmptyC3Sub) elEmptyC3Sub.innerText = `Trigger: ₹${trailSpread.toFixed(2)} • 25% Auto-Trail (0-Risk)`;
 
                     if (elEmptyC4Val) elEmptyC4Val.innerText = `-₹${(lots * 2800).toLocaleString('en-IN', {minimumFractionDigits: 2})} CAP`;
-                    if (elEmptyC4Sub) elEmptyC4Sub.innerText = `Cut Spread: ₹${cutSpread.toFixed(2)} (Capital Protected)`;
+                    if (elEmptyC4Sub) elEmptyC4Sub.innerText = `Cut Spread: ₹${cutSpread.toFixed(2)} • Capital Protected`;
                 }
             }
 
