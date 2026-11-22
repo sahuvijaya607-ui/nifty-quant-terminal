@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-21",
+  "generated_at": "2026-11-21 03:37:57",
+  "status": "COMPLETED",
+  "starting_capital": 101244.91,
+  "ending_capital": 102110.3,
+  "realized_gross_pnl": 975.0,
+  "total_charges": 109.61,
+  "realized_net_pnl": 865.39,
+  "roi_pct": 0.85,
+  "today_wins": 1,
+  "today_losses": 0,
+  "total_trades": 1,
+  "circuit_breaker_triggered": false,
+  "active_position": null,
+  "spot_close": 25044.65,
+  "weekly_pcr": null,
+  "trades": [
+    {
+      "date": "2026-11-21",
+      "entry_time": "2026-11-21 03:37:57",
+      "exit_time": "2026-11-21 03:37:57",
+      "mode": "LIVE",
+      "direction": "BULL_PUT_SPREAD",
+      "strikes": "Sell 25500PE / Buy 25150PE",
+      "lots": 1,
+      "quantity": 65,
+      "net_credit": 110.0,
+      "exit_spread": 95.0,
+      "points": 15.0,
+      "entry_spot": 0.0,
+      "exit_spot": 25044.65,
+      "spot_move": 0.0,
+      "trade_initiator": "AUTO_ALGO",
+      "why_trade_taken": "Daily 20 EMA + 5m Cascade + PCR",
+      "gross_pnl": 975.0,
+      "brokerage_taxes": 109.61,
+      "net_pnl": 865.39,
+      "result": "WIN",
+      "exit_reason": "TARGET_EXIT"
+    }
+  ]
+}

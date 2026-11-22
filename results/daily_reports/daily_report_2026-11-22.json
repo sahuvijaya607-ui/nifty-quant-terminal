@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-22",
+  "generated_at": "2026-11-22 21:59:42",
+  "status": "COMPLETED",
+  "starting_capital": 104349.32,
+  "ending_capital": 104349.32,
+  "realized_gross_pnl": 0.0,
+  "total_charges": 0.0,
+  "realized_net_pnl": 0.0,
+  "roi_pct": 0.0,
+  "today_wins": 0,
+  "today_losses": 0,
+  "total_trades": 0,
+  "circuit_breaker_triggered": false,
+  "active_position": null,
+  "spot_close": 25800.6,
+  "weekly_pcr": 1.497,
+  "trades": []
+}

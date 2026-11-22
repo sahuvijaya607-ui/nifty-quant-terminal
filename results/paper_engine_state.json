@@ -1,14 +1,13 @@
 {
-  "date": "2026-11-20",
+  "date": "2026-11-22",
   "circuit_breaker_active": false,
   "today_losses": 0,
-  "today_wins": 1,
-  "today_realized_gross_pnl": 282.75,
-  "today_total_charges": 109.8,
-  "today_realized_net_pnl": 172.95,
+  "today_wins": 0,
+  "today_realized_gross_pnl": 0.0,
+  "today_total_charges": 0.0,
+  "today_realized_net_pnl": 0.0,
   "active_position": null,
   "user_configured_lots": 1,
-  "execution_mode": "LIVE",
-  "total_realized_pnl": 172.95,
-  "closed_trades": []
+  "terminal_order_ids": [],
+  "closed_trade_ids": []
 }
