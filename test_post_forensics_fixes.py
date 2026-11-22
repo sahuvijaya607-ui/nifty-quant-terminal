@@ -36,6 +36,7 @@ def test_cooldown_blocks_immediate_trade2():
     print("[TEST 3] Testing 30-minute cooldown blocks immediate Trade 2...")
     engine = app.engine
     engine.manual_paused = False
+    engine.reconciliation_blocked = False
     engine.state["today_wins"] = 1
     engine.state["today_losses"] = 0
     engine.last_trade_exit_time = time.time() - 120  # 2 minutes ago

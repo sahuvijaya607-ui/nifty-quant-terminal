@@ -201,6 +201,18 @@
             </div>
         </div>
 
+        <!-- ⚠️ RECONCILIATION DISCREPANCY WARNING BANNER -->
+        <div id="reconciliation-alert-banner" class="hidden max-w-7xl mx-auto mt-2 p-3 bg-rose-500/20 border border-rose-500/60 rounded-xl text-rose-300 text-xs font-bold flex items-center justify-between gap-3 animate-pulse shadow-lg shadow-rose-950/50">
+            <div class="flex items-center gap-2.5">
+                <i class="fa-solid fa-triangle-exclamation text-rose-400 text-base"></i>
+                <div>
+                    <span class="font-extrabold uppercase tracking-wide text-rose-200">Reconciliation Alert:</span>
+                    <span id="reconciliation-banner-text" class="text-rose-300 ml-1">Broker reported zero open positions without confirmed closing exit fills. Position held OPEN for safety. New trade entries BLOCKED.</span>
+                </div>
+            </div>
+            <span class="px-2.5 py-1 bg-rose-600/40 border border-rose-500/50 text-white text-[10px] font-black rounded-lg uppercase tracking-wider shrink-0">NEW ENTRIES BLOCKED</span>
+        </div>
+
         <!-- 🚀 TOP STICKY RISK COCKPIT (DUAL STATE: SCANNING vs ACTIVE TRADE) -->
         <div id="sticky-risk-cockpit" class="max-w-7xl mx-auto mt-2.5 pt-2.5 border-t border-slate-800/80">
             <!-- STATE A: IDLE / SCANNING COCKPIT (When No Active Position) -->
@@ -668,52 +680,154 @@
             </div>
         </div>
 
-        <!-- 🔔 6. AUDIO CHIMES & ACTIVE POSITION MONITOR -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            <!-- Left: Exact Real Charges Calculator Box -->
-            <div class="bg-[#101726] border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between">
-                <div>
-                    <div class="flex items-center space-x-2 text-rose-400 mb-3">
-                        <i class="fa-solid fa-receipt text-base"></i>
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-white">EXACT KOTAK NEO CHARGES</h3>
+        <!-- 📊 DEDICATED RENDER ALGO LIVE MTM & TODAY'S NET P&L PANEL (ALWAYS VISIBLE 24/7) -->
+        <div id="dedicated-mtm-panel" class="bg-[#101726] border border-blue-500/40 rounded-2xl p-5 bg-gradient-to-r from-blue-950/20 via-slate-900/60 to-emerald-950/20 shadow-xl space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 text-lg">
+                        <i class="fa-solid fa-calculator"></i>
                     </div>
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="text-sm sm:text-base font-extrabold text-white uppercase tracking-wider">RENDER ALGO LIVE MTM & TODAY'S NET P&L</h3>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/40 animate-pulse">
+                                <i class="fa-solid fa-circle-dot mr-1"></i>ALGO TRADES ONLY
+                            </span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                <i class="fa-solid fa-shield-halved mr-1"></i>100% REAL KOTAK DEMAT
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5">Strict Laxman Rekha &bull; Mobile phone manual trades completely isolated &bull; Pure Render Algo Ledger</p>
+                    </div>
+                </div>
+                <div id="dedicated-mtm-trade-status" class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-slate-300 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span id="dedicated-mtm-status-text">Today: 1 Trade (+₹172.95 Net) &bull; 100% Win Rate</span>
+                </div>
+            </div>
 
-                    <p class="text-xs text-slate-400 leading-relaxed mb-4">
-                        Har trade par real Kotak Neo brokerage aur government taxes deduct hote hain taaki aapko **100% Real Net Profit** dikhe:
-                    </p>
-
-                    <div class="space-y-2 text-xs mono p-3 bg-slate-900/80 rounded-xl border border-slate-800">
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Brokerage (4 orders):</span>
-                            <span class="text-white font-semibold">₹80.00 (₹20/order)</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">STT (0.1% sell turnover):</span>
-                            <span class="text-slate-300">~₹7.40</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Exchange Turnover (0.05%):</span>
-                            <span class="text-slate-300">~₹4.80</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">GST (18% on fees):</span>
-                            <span class="text-slate-300">~₹15.26</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Stamp Duty + SEBI:</span>
-                            <span class="text-slate-300">~₹1.50</span>
-                        </div>
-                        <div class="pt-2 border-t border-slate-700 flex justify-between font-bold text-rose-400">
-                            <span>Total Estimated Taxes:</span>
-                            <span>~₹108.96 / Trade</span>
+            <!-- 4 Key Financial Metrics in Large Prominent Boxes -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <!-- 1. Live Active Trade Gross MTM -->
+                <div class="p-4 bg-slate-900/90 rounded-xl border border-slate-800 flex flex-col justify-between">
+                    <div class="flex justify-between items-center text-[11px] text-slate-400 uppercase font-semibold">
+                        <span>Live Active Trade MTM</span>
+                        <i class="fa-solid fa-bolt text-amber-400"></i>
+                    </div>
+                    <div class="mt-1.5">
+                        <div class="text-2xl font-black text-slate-200 mono" id="dedicated-live-mtm">Rs 0.00</div>
+                        <div class="text-[10px] text-slate-400 mono mt-1 flex justify-between" id="dedicated-live-sub">
+                            <span>Status: <strong class="text-slate-300" id="dedicated-live-status">No Open Trade</strong></span>
+                            <span class="text-slate-500" id="dedicated-live-net-sub">Net: Rs 0.00</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-500 flex justify-between">
-                    <span>Charges Applied Automatically</span>
-                    <span class="text-emerald-400 font-semibold"><i class="fa-solid fa-check"></i> True Net PnL</span>
+                <!-- 2. Today's Realized Net P&L (Booked) -->
+                <div class="p-4 bg-slate-900/90 rounded-xl border border-emerald-500/30 bg-emerald-500/5 flex flex-col justify-between">
+                    <div class="flex justify-between items-center text-[11px] text-emerald-400 uppercase font-semibold">
+                        <span>Today Realized Net P&L</span>
+                        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+                    </div>
+                    <div class="mt-1.5">
+                        <div class="text-2xl font-black text-emerald-400 mono glow-green" id="dedicated-realized-pnl">+Rs 172.95</div>
+                        <div class="text-[10px] text-slate-400 mono mt-1 flex justify-between">
+                            <span>Gross: <strong class="text-emerald-300" id="dedicated-realized-gross">+Rs 282.75</strong></span>
+                            <span class="text-emerald-400 font-bold" id="dedicated-realized-wins">1 WIN / 0 LOSS</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Total Day Net P&L (Combined Live + Realized) -->
+                <div class="p-4 bg-slate-900/90 rounded-xl border border-cyan-500/30 bg-cyan-500/5 flex flex-col justify-between">
+                    <div class="flex justify-between items-center text-[11px] text-cyan-400 uppercase font-semibold">
+                        <span>Total Day Net P&L</span>
+                        <i class="fa-solid fa-wallet text-cyan-400"></i>
+                    </div>
+                    <div class="mt-1.5">
+                        <div class="text-2xl font-black text-cyan-300 mono glow-cyan" id="dedicated-total-day-net">+Rs 172.95</div>
+                        <div class="text-[10px] text-slate-400 mono mt-1 flex justify-between">
+                            <span>ROI on Capital:</span>
+                            <strong class="text-cyan-300 font-bold" id="dedicated-total-roi">+0.17%</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Kotak Taxes & Brokerage Deducted -->
+                <div class="p-4 bg-slate-900/90 rounded-xl border border-rose-500/30 bg-rose-500/5 flex flex-col justify-between">
+                    <div class="flex justify-between items-center text-[11px] text-rose-400 uppercase font-semibold">
+                        <span>Kotak Taxes & Charges</span>
+                        <i class="fa-solid fa-receipt text-rose-400"></i>
+                    </div>
+                    <div class="mt-1.5">
+                        <div class="text-2xl font-black text-rose-400 mono" id="dedicated-total-charges">-Rs 109.80</div>
+                        <div class="text-[10px] text-slate-400 mono mt-1 flex justify-between">
+                            <span>Real Brokerage/STT:</span>
+                            <span class="text-rose-300 font-semibold" id="dedicated-charges-sub">Auto-Deducted</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🔔 6. AUDIO CHIMES & ACTIVE POSITION MONITOR -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Left: Capital Shield & ₹2,800 Max Loss Protection Box -->
+            <div class="bg-[#101726] border border-rose-500/30 rounded-2xl p-6 flex flex-col justify-between relative overflow-hidden bg-gradient-to-b from-rose-500/5 to-slate-900/40">
+                <div>
+                    <div class="flex items-center justify-between text-rose-400 mb-3">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-shield-halved text-base text-rose-400"></i>
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-white">CAPITAL SHIELD & RISK MGR</h3>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40 glow-red">HARD CAP</span>
+                    </div>
+
+                    <!-- Large -₹2,800 Max Loss Indicator -->
+                    <div class="p-3.5 bg-slate-900/90 rounded-xl border border-rose-500/40 space-y-1 mb-3">
+                        <div class="flex justify-between items-center text-[11px] text-slate-400">
+                            <span>Per-Trade Hard Loss Cap:</span>
+                            <span class="text-rose-400 font-bold mono">STRICT LIMIT</span>
+                        </div>
+                        <div class="text-2xl font-black text-rose-400 mono tracking-tight glow-red" id="panel-hard-sl-cap">
+                            -₹2,800.00 CAP
+                        </div>
+                        <div class="text-[10px] text-slate-400 mono flex justify-between pt-1 border-t border-slate-800">
+                            <span>Trigger: <strong>1.60x Cut Spread</strong></span>
+                            <span class="text-emerald-400 font-semibold"><i class="fa-solid fa-lock mr-0.5"></i>Protected</span>
+                        </div>
+                    </div>
+
+                    <!-- Safety Net Controls Checklist -->
+                    <div class="space-y-1.5 text-xs text-slate-300">
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                            <span class="flex items-center gap-1.5 text-slate-400">
+                                <i class="fa-solid fa-circle-stop text-rose-400 text-[10px]"></i>
+                                <span>Daily Circuit Breaker:</span>
+                            </span>
+                            <strong class="text-rose-300 font-mono">Max 2 Trades / Day</strong>
+                        </div>
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                            <span class="flex items-center gap-1.5 text-slate-400">
+                                <i class="fa-solid fa-clock text-amber-400 text-[10px]"></i>
+                                <span>Zero Overnight Risk:</span>
+                            </span>
+                            <strong class="text-amber-300 font-mono">Auto-Exit @ 15:15 PM</strong>
+                        </div>
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                            <span class="flex items-center gap-1.5 text-slate-400">
+                                <i class="fa-solid fa-receipt text-cyan-400 text-[10px]"></i>
+                                <span>Real Kotak Charges:</span>
+                            </span>
+                            <strong class="text-slate-200 font-mono">~₹108.96 / Trade</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex justify-between items-center">
+                    <span>SEBI Margin Safe</span>
+                    <span class="text-rose-400 font-bold"><i class="fa-solid fa-shield mr-1"></i>₹2,800 Max Risk Locked</span>
                 </div>
             </div>
 
@@ -837,34 +951,55 @@
                             </div>
                         </div>
 
-                        <!-- Kotak Neo Broker PnL (Unrealised) -->
-                        <div class="p-3 bg-slate-900/70 rounded-xl border border-slate-800 flex flex-col justify-between">
+                        <!-- Dedicated Box 4: Render Live MTM & Today's Cumulative Algo Net PnL -->
+                        <div class="p-3 bg-slate-900/80 rounded-xl border border-blue-500/30 flex flex-col justify-between bg-blue-500/5">
                             <div>
                                 <div class="flex items-center justify-between">
-                                    <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Kotak Unrealised P/L</div>
-                                    <span class="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> KOTAK SYNC
+                                    <div class="text-[11px] text-blue-300 uppercase tracking-wider font-bold flex items-center gap-1.5">
+                                        <i class="fa-solid fa-calculator text-blue-400"></i>
+                                        <span>RENDER LIVE MTM</span>
+                                    </div>
+                                    <span class="inline-flex items-center gap-1 text-[9px] font-black bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/40">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span> ALGO TRADES
                                     </span>
                                 </div>
-                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 283.00</div>
+                                <div class="text-xl font-black text-emerald-400 mono mt-0.5 glow-green" id="pos-mtm-net">+Rs 0.00</div>
                             </div>
-                            <div class="text-[10px] text-slate-400 mono mt-2 pt-2 border-t border-slate-800/80" id="pos-mtm-breakdown">
-                                Net: +Rs 173.12 (Taxes & Charges: -Rs 109.88)
+                            <div class="space-y-1 mt-2 pt-2 border-t border-slate-800 text-[10px] mono">
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Live Trade Net:</span>
+                                    <strong class="text-emerald-300" id="pos-live-trade-net">+Rs 0.00</strong>
+                                </div>
+                                <div class="flex justify-between text-slate-400">
+                                    <span>Today Realized:</span>
+                                    <strong class="text-slate-200" id="pos-today-algo-realized">+Rs 0.00</strong>
+                                </div>
+                                <div class="flex justify-between font-bold text-cyan-300 pt-1 border-t border-slate-800/80">
+                                    <span>Total Day Net:</span>
+                                    <span id="pos-today-algo-total-net">+Rs 0.00</span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- 4-Card Target, Max Profit & Trailing HUD -->
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-                        <!-- Card 1: Max Potential Profit (Total Net Credit) -->
-                        <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex flex-col justify-between">
-                            <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                                <span>MAX POTENTIAL</span>
+                        <!-- Card 1: 100% Max Potential (Total Net Credit) -->
+                        <div class="p-3 bg-slate-900/80 border border-cyan-500/30 rounded-xl flex flex-col justify-between bg-cyan-500/5">
+                            <div class="flex items-center justify-between text-[11px] text-cyan-400 font-semibold">
+                                <span>100% SPREAD POTENTIAL</span>
                                 <i class="fa-solid fa-coins text-cyan-400"></i>
                             </div>
                             <div class="mt-1">
                                 <div class="text-base font-extrabold text-cyan-300 mono" id="pos-max-credit-inr">₹0.00</div>
                                 <div class="text-[10px] text-slate-400 mono mt-0.5">Spread: <span id="pos-max-credit-pts">0.00 pts</span></div>
+                                <div class="text-[9px] text-cyan-300 font-semibold mt-1 flex items-center justify-between">
+                                    <span id="pos-max-credit-pocketed">Pocketed: +₹0.00 (0.0%)</span>
+                                    <span id="pos-max-credit-rem-pct" class="text-slate-400 text-[8px]">100% left</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-max-credit-bar" class="bg-cyan-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -877,6 +1012,17 @@
                             <div class="mt-1">
                                 <div class="text-base font-extrabold text-emerald-400 mono" id="pos-target-profit-inr">+₹0.00</div>
                                 <div class="text-[10px] text-slate-400 mono mt-0.5">Exit Spread: <strong class="text-emerald-300" id="pos-target-spread-val">₹0.00</strong></div>
+                                <div class="text-[9px] text-emerald-300 font-semibold mt-1 flex items-center justify-between">
+                                    <span id="pos-target-pts-rem">-- pts to go</span>
+                                    <span id="pos-target-progress-badge" class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[8px]">0%</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-target-progress-bar" class="bg-emerald-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <div class="text-[8px] text-slate-400 mono mt-1 flex justify-between">
+                                    <span id="pos-target-captured-sub">Decay: 0.0 pts</span>
+                                    <span id="pos-target-remaining-pct" class="text-emerald-300 font-semibold">100% to go</span>
+                                </div>
                             </div>
                         </div>
 
@@ -892,89 +1038,117 @@
                                     <span class="text-slate-400">Trigger: <strong class="text-amber-300" id="pos-trail-spread-val">₹0.00</strong></span>
                                     <span id="pos-trail-badge" class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">WAITING</span>
                                 </div>
+                                <div class="text-[9px] text-amber-300 font-semibold mt-1 flex items-center justify-between">
+                                    <span id="pos-trail-needed-text">Need ₹0.00 more</span>
+                                    <span id="pos-trail-progress-badge" class="px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold text-[8px]">0%</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-trail-progress-bar" class="bg-amber-400 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <div class="text-[8px] text-slate-400 mono mt-1 flex justify-between">
+                                    <span id="pos-trail-captured-sub">Decay: 0.0 pts</span>
+                                    <span id="pos-trail-remaining-pct" class="text-amber-300 font-semibold">100% to BE</span>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Card 4: Stop Loss & Max Risk -->
                         <div id="pos-sl-card" class="p-3 bg-slate-900/80 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5 transition">
                             <div class="flex items-center justify-between text-[11px] text-rose-400 font-semibold">
-                                <span id="pos-sl-title">STOP LOSS</span>
+                                <span id="pos-sl-title">STOP LOSS (-₹2,800 CAP)</span>
                                 <i class="fa-solid fa-hand text-rose-400" id="pos-sl-icon"></i>
                             </div>
                             <div class="mt-1">
-                                <div class="text-base font-extrabold text-rose-400 mono" id="pos-max-risk-inr">-₹0.00</div>
+                                <div class="text-base font-extrabold text-rose-400 mono" id="pos-max-risk-inr">-₹2,800.00 CAP</div>
                                 <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
                                     <span class="text-slate-400">Cut Spread: <strong class="text-rose-300" id="pos-sl-spread-val">₹0.00</strong></span>
                                     <span id="pos-sl-status" class="text-[9px] font-bold text-slate-400">ACTIVE</span>
+                                </div>
+                                <div class="text-[9px] text-slate-400 font-semibold mt-1 flex items-center justify-between">
+                                    <span>Buffer: <strong class="text-slate-300" id="pos-sl-buffer-val">₹0.00 Safe</strong></span>
+                                    <span id="pos-sl-lock-badge" class="text-[8px] text-emerald-400 font-bold">100% SAFE</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                                    <div id="pos-sl-buffer-bar" class="bg-emerald-400 h-1 rounded-full transition-all duration-500" style="width: 100%"></div>
+                                </div>
+                                <div class="text-[8px] text-slate-400 mono mt-1 flex justify-between">
+                                    <span id="pos-sl-risk-consumed-text">Risk Used: 0.0%</span>
+                                    <span id="pos-sl-buffer-pct-text" class="text-emerald-300 font-bold">Buffer: 100.0%</span>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div id="position-empty-card" class="py-6 space-y-4">
-                    <div class="text-center space-y-2">
-                        <div class="w-10 h-10 mx-auto rounded-full bg-slate-800/80 flex items-center justify-center text-slate-500 text-lg">
-                            <i class="fa-solid fa-radar text-cyan-400 animate-pulse"></i>
+                <div id="position-empty-card" class="py-4 space-y-4">
+                    <!-- Status Header -->
+                    <div id="empty-card-trade-summary" class="p-4 bg-slate-900/90 border border-emerald-500/30 rounded-xl space-y-2">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                <strong class="text-sm font-bold text-white" id="empty-trade-title">Today's Algo Trade 1 Booked: +Rs 172.95 Net Realized</strong>
+                                <span id="empty-trade-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">WIN</span>
+                            </div>
+                            <div class="text-xs text-slate-300 mono" id="empty-trade-time">09:53:35 &bull; Sold 25500 PE / Bought 25150 PE</div>
                         </div>
-                        <h3 class="text-sm font-semibold text-slate-200">No Open Position (Radar Scanning)</h3>
-                        <p class="text-xs text-slate-400 max-w-md mx-auto">
-                            Continuous 6-Rule Gate Verification active. When all 6 rules align, the Credit Spread will execute with instant BUY-FIRST margin safety.
-                        </p>
+                        <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                            <span id="empty-trade-next-status"><i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i><strong>Status:</strong> Trade 1 Completed &bull; Cooldown / Radar Scanning for Trade 2</span>
+                            <span class="text-emerald-400 font-bold mono" id="empty-trade-net-booked">Net Pocketed: +Rs 172.95</span>
+                        </div>
                     </div>
 
                     <!-- 4-Card Target & Risk Architecture Rules Preview -->
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
                         <!-- Card 1: Max Potential -->
-                        <div class="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col justify-between">
-                            <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
-                                <span>MAX POTENTIAL</span>
+                        <div class="p-3 bg-slate-900/80 border border-cyan-500/30 rounded-xl flex flex-col justify-between bg-cyan-500/5">
+                            <div class="flex items-center justify-between text-[11px] text-cyan-400 font-semibold">
+                                <span>100% SPREAD POTENTIAL</span>
                                 <i class="fa-solid fa-coins text-cyan-400"></i>
                             </div>
                             <div class="mt-1">
-                                <div class="text-base font-extrabold text-cyan-300 mono">100% Net Credit</div>
-                                <div class="text-[10px] text-slate-400 mono mt-0.5">Spread: ~85-95 pts (~₹5.5k - ₹6.2k)</div>
+                                <div class="text-base font-extrabold text-cyan-300 mono" id="empty-card-1-val">₹7,046.00</div>
+                                <div class="text-[10px] text-slate-400 mono mt-0.5" id="empty-card-1-sub">Spread: 108.40 pts &bull; 100% Net Credit</div>
                             </div>
                         </div>
 
                         <!-- Card 2: 40% Target Goal -->
-                        <div class="p-3 bg-slate-900/60 border border-emerald-500/30 rounded-xl flex flex-col justify-between bg-emerald-500/5">
+                        <div class="p-3 bg-slate-900/80 border border-emerald-500/30 rounded-xl flex flex-col justify-between bg-emerald-500/5">
                             <div class="flex items-center justify-between text-[11px] text-emerald-400 font-semibold">
                                 <span>40% TARGET EXIT</span>
                                 <i class="fa-solid fa-bullseye text-emerald-400"></i>
                             </div>
                             <div class="mt-1">
-                                <div class="text-base font-extrabold text-emerald-400 mono">+40% Decay</div>
-                                <div class="text-[10px] text-slate-400 mono mt-0.5">Exit Spread: 60% of Entry Price</div>
+                                <div class="text-base font-extrabold text-emerald-400 mono" id="empty-card-2-val">+₹2,818.40</div>
+                                <div class="text-[10px] text-slate-400 mono mt-0.5" id="empty-card-2-sub">Exit Spread: ₹65.04 (40% Decay)</div>
                             </div>
                         </div>
 
                         <!-- Card 3: 25% Auto-Trail -->
-                        <div class="p-3 bg-slate-900/60 border border-amber-500/30 rounded-xl flex flex-col justify-between bg-amber-500/5">
+                        <div class="p-3 bg-slate-900/80 border border-amber-500/30 rounded-xl flex flex-col justify-between bg-amber-500/5">
                             <div class="flex items-center justify-between text-[11px] text-amber-400 font-semibold">
-                                <span>25% AUTO-TRAIL (0-RISK)</span>
+                                <span>25% AUTO-TRAIL</span>
                                 <i class="fa-solid fa-shield-halved text-amber-400"></i>
                             </div>
                             <div class="mt-1">
-                                <div class="text-base font-extrabold text-amber-300 mono">+25% Profit</div>
+                                <div class="text-base font-extrabold text-amber-300 mono" id="empty-card-3-val">+₹1,761.50</div>
                                 <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
-                                    <span class="text-slate-400">Trigger: 75% Spread</span>
-                                    <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">SL &rarr; BE</span>
+                                    <span class="text-slate-400" id="empty-card-3-sub">Trigger: ₹81.30 (SL &rarr; BE)</span>
+                                    <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">0 RISK</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Card 4: Stop Loss -->
-                        <div class="p-3 bg-slate-900/60 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5">
+                        <div class="p-3 bg-slate-900/80 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5">
                             <div class="flex items-center justify-between text-[11px] text-rose-400 font-semibold">
-                                <span>STOP LOSS</span>
+                                <span>STOP LOSS (-₹2,800 CAP)</span>
                                 <i class="fa-solid fa-hand text-rose-400"></i>
                             </div>
                             <div class="mt-1">
-                                <div class="text-base font-extrabold text-rose-400 mono">-₹2,800 CAP</div>
+                                <div class="text-base font-extrabold text-rose-400 mono" id="empty-card-4-val">-₹2,800.00 CAP</div>
                                 <div class="text-[10px] mono mt-0.5 flex items-center justify-between">
-                                    <span class="text-slate-400">Cut Spread: 1.6x</span>
-                                    <span class="text-[9px] font-bold text-slate-400">ACTIVE</span>
+                                    <span class="text-slate-400" id="empty-card-4-sub">Cut Spread: ₹173.44 (1.60x)</span>
+                                    <span class="text-[9px] font-bold text-emerald-400">PROTECTED</span>
                                 </div>
                             </div>
                         </div>
@@ -2062,6 +2236,105 @@
                 }
             }
 
+            // 📊 1. DEDICATED RENDER ALGO LIVE MTM & TODAY'S NET P&L PANEL (ALWAYS VISIBLE 24/7)
+            const dLiveMtm = document.getElementById('dedicated-live-mtm');
+            const dLiveStatus = document.getElementById('dedicated-live-status');
+            const dLiveNetSub = document.getElementById('dedicated-live-net-sub');
+            const dRealizedPnl = document.getElementById('dedicated-realized-pnl');
+            const dRealizedGross = document.getElementById('dedicated-realized-gross');
+            const dRealizedWins = document.getElementById('dedicated-realized-wins');
+            const dTotalDayNet = document.getElementById('dedicated-total-day-net');
+            const dTotalRoi = document.getElementById('dedicated-total-roi');
+            const dTotalCharges = document.getElementById('dedicated-total-charges');
+            const dStatusText = document.getElementById('dedicated-mtm-status-text');
+
+            // Graceful active position retention across transient API timeouts (Requirement 4)
+            let effectivePos = data.active_position;
+            let isResyncing = false;
+
+            if (data.active_position) {
+                window.clientLastActivePos = data.active_position;
+                window.clientMissingPosGrace = 0;
+                effectivePos = data.active_position;
+            } else if (window.clientLastActivePos && (window.clientMissingPosGrace || 0) < 4) {
+                window.clientMissingPosGrace = (window.clientMissingPosGrace || 0) + 1;
+                effectivePos = window.clientLastActivePos;
+                isResyncing = true;
+            } else {
+                window.clientLastActivePos = null;
+                window.clientMissingPosGrace = 0;
+                effectivePos = null;
+            }
+
+            // Reconciliation Discrepancy Banner Update (Requirement 5 & 6)
+            const reconBanner = document.getElementById('reconciliation-alert-banner');
+            const reconText = document.getElementById('reconciliation-banner-text');
+            if (data.reconciliation_alert || (effectivePos && effectivePos.reconciliation_status === "RECONCILIATION_REQUIRED")) {
+                if (reconBanner) reconBanner.classList.remove('hidden');
+                if (reconText && data.reconciliation_reason) reconText.innerText = data.reconciliation_reason;
+            } else {
+                if (reconBanner) reconBanner.classList.add('hidden');
+            }
+
+            if (data.performance) {
+                const p = data.performance;
+                const liveGross = Number(p.live_mtm_gross || 0);
+                const liveNet = Number(p.live_mtm_net || 0);
+                const realGross = Number(p.today_realized_gross || 0);
+                const realNet = Number(p.today_realized_net || 0);
+                const totNet = Number(p.today_net_pnl || 0);
+                const totCharges = Number(p.today_charges || 0);
+                const roi = Number(data.capital ? (data.capital.roi_today_pct || 0) : 0);
+
+                if (dLiveMtm) {
+                    if (effectivePos) {
+                        dLiveMtm.innerText = `${liveGross >= 0 ? '+' : ''}Rs ${liveGross.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                        dLiveMtm.className = liveGross >= 0 ? 'text-2xl font-black text-emerald-400 mono glow-green' : 'text-2xl font-black text-rose-400 mono glow-red';
+                    } else {
+                        dLiveMtm.innerText = 'Rs 0.00';
+                        dLiveMtm.className = 'text-2xl font-black text-slate-300 mono';
+                    }
+                }
+                if (dLiveStatus) {
+                    if (effectivePos) {
+                        dLiveStatus.innerText = isResyncing ? `${effectivePos.direction} (RE-SYNCING ${window.clientMissingPosGrace}/4)` : `${effectivePos.direction} (ACTIVE)`;
+                        dLiveStatus.className = isResyncing ? 'text-amber-400 font-bold animate-pulse' : 'text-emerald-400 font-bold';
+                    } else {
+                        dLiveStatus.innerText = 'No Open Trade';
+                        dLiveStatus.className = 'text-slate-400';
+                    }
+                }
+                if (dLiveNetSub) {
+                    dLiveNetSub.innerText = effectivePos ? `Net: ${liveNet >= 0 ? '+' : ''}Rs ${liveNet.toFixed(2)}` : 'Net: Rs 0.00';
+                }
+                if (dRealizedPnl) {
+                    dRealizedPnl.innerText = `${realNet >= 0 ? '+' : ''}Rs ${realNet.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    dRealizedPnl.className = realNet >= 0 ? 'text-2xl font-black text-emerald-400 mono glow-green' : 'text-2xl font-black text-rose-400 mono glow-red';
+                }
+                if (dRealizedGross) {
+                    dRealizedGross.innerText = `${realGross >= 0 ? '+' : ''}Rs ${realGross.toFixed(2)}`;
+                }
+                if (dRealizedWins) {
+                    dRealizedWins.innerText = `${p.today_wins} WIN / ${p.today_losses} LOSS`;
+                }
+                if (dTotalDayNet) {
+                    dTotalDayNet.innerText = `${totNet >= 0 ? '+' : ''}Rs ${totNet.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    dTotalDayNet.className = totNet >= 0 ? 'text-2xl font-black text-cyan-300 mono glow-cyan' : 'text-2xl font-black text-rose-400 mono glow-red';
+                }
+                if (dTotalRoi) {
+                    dTotalRoi.innerText = `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
+                    dTotalRoi.className = roi >= 0 ? 'text-cyan-300 font-bold' : 'text-rose-400 font-bold';
+                }
+                if (dTotalCharges) {
+                    dTotalCharges.innerText = `-Rs ${totCharges.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                }
+                if (dStatusText) {
+                    const tradeWord = p.today_trades === 1 ? 'Trade' : 'Trades';
+                    const cooldownText = data.cooldown_remaining_sec > 0 ? ` &bull; Cooldown (${Math.floor(data.cooldown_remaining_sec / 60)}m)` : '';
+                    dStatusText.innerHTML = `Today: ${p.today_trades} ${tradeWord} (${totNet >= 0 ? '+' : ''}₹${totNet.toFixed(2)} Net)${cooldownText}`;
+                }
+            }
+
             // Spot & Indicators
             document.getElementById('spot-price').innerText = Number(data.spot.ltp).toLocaleString('en-IN', {minimumFractionDigits: 2});
             const chgEl = document.getElementById('spot-change');
@@ -2423,6 +2696,8 @@
                 window.currentActiveLots = data.active_lots;
                 const hdrLots = document.getElementById('hdr-lots-text');
                 if (hdrLots) hdrLots.innerText = `Lots: ${data.active_lots} (${data.active_lots * 65} Qty) [SET]`;
+                const panelCap = document.getElementById('panel-hard-sl-cap');
+                if (panelCap) panelCap.innerText = `-₹${(data.active_lots * 2800).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAP`;
             }
 
             // Active Position Monitor
@@ -2433,15 +2708,23 @@
             const cockpitIdle = document.getElementById('cockpit-idle-state');
             const cockpitActive = document.getElementById('cockpit-active-state');
 
-            if (data.active_position) {
+            if (effectivePos) {
                 openCard.classList.remove('hidden');
                 emptyCard.classList.add('hidden');
 
                 if (cockpitIdle) cockpitIdle.classList.add('hidden');
                 if (cockpitActive) cockpitActive.classList.remove('hidden');
 
-                const pos = data.active_position;
-                document.getElementById('pos-strategy-title').innerText = `${pos.direction} (ACTIVE)`;
+                const pos = effectivePos;
+                let stratBadge = '';
+                if (pos.reconciliation_status === "RECONCILIATION_REQUIRED") {
+                    stratBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/25 text-rose-300 border border-rose-500/50 animate-pulse glow-red ml-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>RECONCILIATION REQUIRED</span>`;
+                } else if (pos.reconciliation_status === "PARTIAL_REMAINING") {
+                    stratBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/25 text-amber-300 border border-amber-500/50 ml-2"><i class="fa-solid fa-pie-chart mr-1"></i>PARTIAL FILL (${pos.lot_size} QTY)</span>`;
+                } else if (isResyncing) {
+                    stratBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/50 animate-pulse glow-amber ml-2"><i class="fa-solid fa-rotate mr-1"></i>RE-SYNCING (${window.clientMissingPosGrace}/4)</span>`;
+                }
+                document.getElementById('pos-strategy-title').innerHTML = `${pos.direction} (ACTIVE) ${stratBadge}`;
                 document.getElementById('pos-mode-badge').innerText = pos.execution_mode || 'PAPER';
                 document.getElementById('pos-mode-badge').className = pos.execution_mode === 'LIVE' ?
                     'px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/40' :
@@ -2514,11 +2797,32 @@
                 const netPnl = Number(pos.mtm_net_pnl || 0);
                 const charges = Number(pos.estimated_charges || 0);
 
+                // Dedicated Box 4: Render Live MTM & Cumulative Day Algo PnL
                 const pnlEl = document.getElementById('pos-mtm-net');
                 if (pnlEl) {
                     pnlEl.innerText = `${brokerPnl >= 0 ? '+' : ''}Rs ${brokerPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
                     pnlEl.className = brokerPnl >= 0 ? 'text-xl font-black text-emerald-400 mono mt-0.5 glow-green' : 'text-xl font-black text-rose-400 mono mt-0.5 glow-red';
                 }
+                const elLiveTradeNet = document.getElementById('pos-live-trade-net');
+                if (elLiveTradeNet) {
+                    elLiveTradeNet.innerText = `${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    elLiveTradeNet.className = netPnl >= 0 ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold';
+                }
+
+                const todayRealizedNet = Number(data.performance ? (data.performance.today_realized_net || 0) : 0);
+                const elTodayAlgoRealized = document.getElementById('pos-today-algo-realized');
+                if (elTodayAlgoRealized) {
+                    elTodayAlgoRealized.innerText = `${todayRealizedNet >= 0 ? '+' : ''}Rs ${todayRealizedNet.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    elTodayAlgoRealized.className = todayRealizedNet >= 0 ? 'text-slate-200' : 'text-rose-300';
+                }
+
+                const totalDayNet = Number(data.performance ? (data.performance.today_net_pnl || 0) : (netPnl + todayRealizedNet));
+                const elTodayAlgoTotalNet = document.getElementById('pos-today-algo-total-net');
+                if (elTodayAlgoTotalNet) {
+                    elTodayAlgoTotalNet.innerText = `${totalDayNet >= 0 ? '+' : ''}Rs ${totalDayNet.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    elTodayAlgoTotalNet.className = totalDayNet >= 0 ? 'text-cyan-300 font-bold' : 'text-rose-400 font-bold';
+                }
+
                 const breakdownEl = document.getElementById('pos-mtm-breakdown');
                 if (breakdownEl) {
                     breakdownEl.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)} (Taxes & Charges: -Rs ${charges.toFixed(2)})`;
@@ -2544,25 +2848,80 @@
                     }
                 }
 
-                // Bind 4-Card Target, Max Profit & Trailing HUD
+                // ==========================================
+                // Bind 4-Card Target, Max Profit & Risk HUD
+                // ==========================================
                 const maxCreditInr = pos.max_credit_inr || (pos.net_credit * (pos.lot_size || 65));
                 const tgtProfitInr = pos.target_profit_inr || (pos.net_credit * 0.40 * (pos.lot_size || 65));
                 const trailProfitInr = pos.trail_trigger_inr || (pos.net_credit * 0.25 * (pos.lot_size || 65));
                 const trailSpread = pos.trail_trigger_spread || (pos.net_credit * 0.75);
-                const maxRiskInr = pos.breakeven_active ? 0.0 : (pos.max_risk_inr || (pos.net_credit * 0.60 * (pos.lot_size || 65)));
+                const hardCapVal = pos.hard_sl_cap || (pos.lot_count ? pos.lot_count * 2800.0 : 2800.0);
 
+                // --- Card 1: 100% SPREAD POTENTIAL ---
                 const elMaxCredit = document.getElementById('pos-max-credit-inr');
                 if (elMaxCredit) elMaxCredit.innerText = `₹${maxCreditInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
                 const elMaxCreditPts = document.getElementById('pos-max-credit-pts');
                 if (elMaxCreditPts) elMaxCreditPts.innerText = `${Number(pos.net_credit).toFixed(2)} pts`;
 
+                const pocketedInr = (pos.max_credit_captured_inr !== undefined) ? Number(pos.max_credit_captured_inr) : brokerPnl;
+                const pocketedPct = (pos.max_credit_captured_pct !== undefined) ? Number(pos.max_credit_captured_pct) : (maxCreditInr > 0 ? Math.min(100, Math.max(0, (pocketedInr / maxCreditInr) * 100)) : 0);
+                const remPocketPct = (pos.max_credit_remaining_pct !== undefined) ? Number(pos.max_credit_remaining_pct) : Math.max(0, 100 - pocketedPct);
+
+                const elMaxPocketed = document.getElementById('pos-max-credit-pocketed');
+                if (elMaxPocketed) {
+                    elMaxPocketed.innerText = `Pocketed: ${pocketedInr >= 0 ? '+' : ''}₹${pocketedInr.toFixed(2)} (${pocketedPct.toFixed(1)}%)`;
+                }
+
+                const elMaxCreditBar = document.getElementById('pos-max-credit-bar');
+                if (elMaxCreditBar) {
+                    elMaxCreditBar.style.width = `${Math.min(100, Math.max(0, pocketedPct))}%`;
+                }
+
+                const elMaxCreditRemPct = document.getElementById('pos-max-credit-rem-pct');
+                if (elMaxCreditRemPct) {
+                    elMaxCreditRemPct.innerText = `${remPocketPct.toFixed(1)}% left`;
+                }
+
+                // --- Card 2: 40% TARGET EXIT ---
                 const elTgtProfit = document.getElementById('pos-target-profit-inr');
                 if (elTgtProfit) elTgtProfit.innerText = `+₹${tgtProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
                 const elTgtSpread = document.getElementById('pos-target-spread-val');
                 if (elTgtSpread) elTgtSpread.innerText = `₹${Number(pos.target_spread).toFixed(2)}`;
 
+                const decayPtsGained = (pos.decay_pts_gained !== undefined) ? Number(pos.decay_pts_gained) : Math.max(0, Number(pos.net_credit) - Number(pos.current_spread || pos.net_credit));
+                const tgtRemainingInr = (pos.target_profit_remaining_inr !== undefined) ? Number(pos.target_profit_remaining_inr) : Math.max(0, tgtProfitInr - brokerPnl);
+                const tgtProgressPct = (pos.target_progress_pct !== undefined) ? Number(pos.target_progress_pct) : Math.min(100, Math.max(0, (brokerPnl / (tgtProfitInr || 1)) * 100));
+                const tgtRemPct = (pos.target_remaining_pct !== undefined) ? Number(pos.target_remaining_pct) : Math.max(0, 100 - tgtProgressPct);
+
+                const elTgtPtsRem = document.getElementById('pos-target-pts-rem');
+                if (elTgtPtsRem) {
+                    const ptsLeft = (pos.target_pts_needed !== undefined) ? Number(pos.target_pts_needed) : Math.max(0, Number(pos.current_spread || pos.net_credit) - Number(pos.target_spread));
+                    elTgtPtsRem.innerText = `${ptsLeft.toFixed(2)} pts (₹${tgtRemainingInr.toFixed(0)}) to go`;
+                }
+
+                const elTgtBadge = document.getElementById('pos-target-progress-badge');
+                if (elTgtBadge) {
+                    elTgtBadge.innerText = `${tgtProgressPct.toFixed(0)}%`;
+                }
+
+                const elTgtBar = document.getElementById('pos-target-progress-bar');
+                if (elTgtBar) {
+                    elTgtBar.style.width = `${tgtProgressPct}%`;
+                }
+
+                const elTgtCapturedSub = document.getElementById('pos-target-captured-sub');
+                if (elTgtCapturedSub) {
+                    elTgtCapturedSub.innerText = `Decay: +${decayPtsGained.toFixed(2)} pts`;
+                }
+
+                const elTgtRemPct = document.getElementById('pos-target-remaining-pct');
+                if (elTgtRemPct) {
+                    elTgtRemPct.innerText = `${tgtRemPct.toFixed(1)}% to goal`;
+                }
+
+                // --- Card 3: 25% AUTO-TRAIL (0-RISK BREAKEVEN) ---
                 const elTrailProfit = document.getElementById('pos-trail-profit-inr');
                 if (elTrailProfit) elTrailProfit.innerText = `+₹${trailProfitInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
@@ -2571,25 +2930,33 @@
 
                 const elTrailBadge = document.getElementById('pos-trail-badge');
                 const elTrailCard = document.getElementById('pos-trail-card');
-                const elSlCard = document.getElementById('pos-sl-card');
-                const elSlStatus = document.getElementById('pos-sl-status');
+                const elTrailNeededText = document.getElementById('pos-trail-needed-text');
+                const elTrailProgBadge = document.getElementById('pos-trail-progress-badge');
+                const elTrailBar = document.getElementById('pos-trail-progress-bar');
+                const elTrailCapturedSub = document.getElementById('pos-trail-captured-sub');
+                const elTrailRemPct = document.getElementById('pos-trail-remaining-pct');
 
                 if (pos.breakeven_active) {
                     if (elTrailBadge) {
                         elTrailBadge.innerText = '💎 LOCKED';
-                        elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 glow-cyan';
+                        elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 glow-cyan animate-pulse';
                     }
                     if (elTrailCard) {
                         elTrailCard.className = 'p-3 bg-slate-900/80 border border-cyan-500/40 rounded-xl flex flex-col justify-between bg-cyan-500/10 transition';
                     }
-                    if (elSlCard) {
-                        elSlCard.className = 'p-3 bg-slate-900/80 border border-emerald-500/40 rounded-xl flex flex-col justify-between bg-emerald-500/10 transition';
+                    if (elTrailNeededText) elTrailNeededText.innerText = '💎 Breakeven Hit! Cost Protected';
+                    if (elTrailProgBadge) elTrailProgBadge.innerText = '100%';
+                    if (elTrailBar) {
+                        elTrailBar.style.width = '100%';
+                        elTrailBar.className = 'bg-cyan-400 h-1 rounded-full transition-all duration-500';
                     }
-                    if (elSlStatus) {
-                        elSlStatus.innerText = '💎 0 RISK';
-                        elSlStatus.className = 'text-[9px] font-bold text-cyan-300';
-                    }
+                    if (elTrailCapturedSub) elTrailCapturedSub.innerText = `Decay: +${decayPtsGained.toFixed(2)} pts (BE Hit!)`;
+                    if (elTrailRemPct) elTrailRemPct.innerText = `0.0% (LOCKED 💎)`;
                 } else {
+                    const trailRemainingInr = (pos.trail_profit_remaining_inr !== undefined) ? Number(pos.trail_profit_remaining_inr) : Math.max(0, trailProfitInr - brokerPnl);
+                    const trailProgressPct = (pos.trail_progress_pct !== undefined) ? Number(pos.trail_progress_pct) : Math.min(100, Math.max(0, (brokerPnl / (trailProfitInr || 1)) * 100));
+                    const trailRemPct = (pos.trail_remaining_pct !== undefined) ? Number(pos.trail_remaining_pct) : Math.max(0, 100 - trailProgressPct);
+
                     if (elTrailBadge) {
                         elTrailBadge.innerText = 'WAITING';
                         elTrailBadge.className = 'px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
@@ -2597,23 +2964,123 @@
                     if (elTrailCard) {
                         elTrailCard.className = 'p-3 bg-slate-900/80 border border-amber-500/30 rounded-xl flex flex-col justify-between bg-amber-500/5 transition';
                     }
+                    if (elTrailNeededText) elTrailNeededText.innerText = `Need +₹${trailRemainingInr.toFixed(0)} more`;
+                    if (elTrailProgBadge) elTrailProgBadge.innerText = `${trailProgressPct.toFixed(0)}%`;
+                    if (elTrailBar) {
+                        elTrailBar.style.width = `${trailProgressPct}%`;
+                        elTrailBar.className = 'bg-amber-400 h-1 rounded-full transition-all duration-500';
+                    }
+                    if (elTrailCapturedSub) elTrailCapturedSub.innerText = `Decay: +${decayPtsGained.toFixed(2)} pts`;
+                    if (elTrailRemPct) elTrailRemPct.innerText = `${trailRemPct.toFixed(1)}% to BE`;
+                }
+
+                // --- Card 4: Stop Loss & Max Risk (-₹2,800 CAP) ---
+                const elSlCard = document.getElementById('pos-sl-card');
+                const elSlTitle = document.getElementById('pos-sl-title');
+                const elSlIcon = document.getElementById('pos-sl-icon');
+                const elMaxRisk = document.getElementById('pos-max-risk-inr');
+                const elSlSpread = document.getElementById('pos-sl-spread-val');
+                const elSlStatus = document.getElementById('pos-sl-status');
+                const elSlBuffer = document.getElementById('pos-sl-buffer-val');
+                const elSlLockBadge = document.getElementById('pos-sl-lock-badge');
+                const elSlBufferBar = document.getElementById('pos-sl-buffer-bar');
+                const elSlRiskConsumedText = document.getElementById('pos-sl-risk-consumed-text');
+                const elSlBufferPctText = document.getElementById('pos-sl-buffer-pct-text');
+
+                if (pos.breakeven_active) {
+                    // WHEN 25% AUTO-TRAIL IS HIT: STOP LOSS IS CANCELLED & MOVED TO COST (0 RISK)!
+                    if (elSlCard) {
+                        elSlCard.className = 'p-3 bg-slate-900/80 border border-cyan-500/40 rounded-xl flex flex-col justify-between bg-cyan-500/10 transition';
+                    }
+                    if (elSlTitle) {
+                        elSlTitle.innerText = 'STOP LOSS (CANCELLED & COST LOCKED)';
+                        elSlTitle.className = 'text-cyan-300 font-bold';
+                    }
+                    if (elSlIcon) {
+                        elSlIcon.className = 'fa-solid fa-gem text-cyan-300';
+                    }
+                    if (elMaxRisk) {
+                        elMaxRisk.innerText = '💎 ₹0.00 (Zero Risk)';
+                        elMaxRisk.className = 'text-base font-extrabold text-cyan-300 mono glow-cyan';
+                    }
+                    if (elSlSpread) {
+                        elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)} (Entry Cost)`;
+                        elSlSpread.className = 'text-cyan-300 font-bold';
+                    }
+                    if (elSlStatus) {
+                        elSlStatus.innerText = '💎 0 RISK (SL @ Cost)';
+                        elSlStatus.className = 'text-[9px] font-extrabold text-cyan-300 px-1 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/40';
+                    }
+                    if (elSlBuffer) {
+                        elSlBuffer.innerText = '100% Capital Safe (Cost Locked)';
+                        elSlBuffer.className = 'text-cyan-300 font-bold';
+                    }
+                    if (elSlLockBadge) {
+                        elSlLockBadge.innerText = '💎 0-RISK LOCKED';
+                        elSlLockBadge.className = 'text-[8px] text-cyan-300 font-extrabold';
+                    }
+                    if (elSlBufferBar) {
+                        elSlBufferBar.style.width = '100%';
+                        elSlBufferBar.className = 'bg-cyan-400 h-1 rounded-full transition-all duration-500';
+                    }
+                    if (elSlRiskConsumedText) {
+                        elSlRiskConsumedText.innerText = 'Risk Used: 0.0% (SL Cancelled)';
+                        elSlRiskConsumedText.className = 'text-cyan-300 font-semibold';
+                    }
+                    if (elSlBufferPctText) {
+                        elSlBufferPctText.innerText = 'Safety: 100.0% (Cost Locked)';
+                        elSlBufferPctText.className = 'text-cyan-300 font-bold';
+                    }
+                } else {
+                    // INITIAL STOP LOSS ACTIVE (-₹2,800 CAP)
                     if (elSlCard) {
                         elSlCard.className = 'p-3 bg-slate-900/80 border border-rose-500/30 rounded-xl flex flex-col justify-between bg-rose-500/5 transition';
+                    }
+                    if (elSlTitle) {
+                        elSlTitle.innerText = 'STOP LOSS (-₹2,800 CAP)';
+                        elSlTitle.className = 'text-rose-400 font-semibold';
+                    }
+                    if (elSlIcon) {
+                        elSlIcon.className = 'fa-solid fa-hand text-rose-400';
+                    }
+                    if (elMaxRisk) {
+                        elMaxRisk.innerText = `-₹${Number(hardCapVal).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} CAP`;
+                        elMaxRisk.className = 'text-base font-extrabold text-rose-400 mono';
+                    }
+                    if (elSlSpread) {
+                        elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)}`;
+                        elSlSpread.className = 'text-rose-300';
                     }
                     if (elSlStatus) {
                         elSlStatus.innerText = 'ACTIVE';
                         elSlStatus.className = 'text-[9px] font-bold text-slate-400';
                     }
-                }
 
-                const elMaxRisk = document.getElementById('pos-max-risk-inr');
-                if (elMaxRisk) {
-                    elMaxRisk.innerText = pos.breakeven_active ? '₹0.00 (Zero Risk)' : `-₹${maxRiskInr.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                    elMaxRisk.className = pos.breakeven_active ? 'text-base font-extrabold text-cyan-300 mono' : 'text-base font-extrabold text-rose-400 mono';
-                }
+                    const slBufferInr = (pos.sl_buffer_inr !== undefined) ? Number(pos.sl_buffer_inr) : Math.max(0, hardCapVal + brokerPnl);
+                    const riskConsumedPct = (pos.sl_risk_consumed_pct !== undefined) ? Number(pos.sl_risk_consumed_pct) : (brokerPnl < 0 ? Math.min(100, (Math.abs(brokerPnl) / (hardCapVal || 1)) * 100) : 0);
+                    const slBufferPct = (pos.sl_buffer_pct !== undefined) ? Number(pos.sl_buffer_pct) : Math.max(0, 100 - riskConsumedPct);
 
-                const elSlSpread = document.getElementById('pos-sl-spread-val');
-                if (elSlSpread) elSlSpread.innerText = `₹${Number(pos.sl_spread).toFixed(2)}`;
+                    if (elSlBuffer) {
+                        elSlBuffer.innerText = `₹${slBufferInr.toFixed(0)} Buffer Left`;
+                        elSlBuffer.className = 'text-slate-300 font-semibold';
+                    }
+                    if (elSlLockBadge) {
+                        elSlLockBadge.innerText = 'CAP ACTIVE';
+                        elSlLockBadge.className = 'text-[8px] text-rose-400 font-bold';
+                    }
+                    if (elSlBufferBar) {
+                        elSlBufferBar.style.width = `${slBufferPct}%`;
+                        elSlBufferBar.className = slBufferPct > 50 ? 'bg-emerald-400 h-1 rounded-full transition-all duration-500' : (slBufferPct > 20 ? 'bg-amber-400 h-1 rounded-full transition-all duration-500' : 'bg-rose-500 h-1 rounded-full transition-all duration-500');
+                    }
+                    if (elSlRiskConsumedText) {
+                        elSlRiskConsumedText.innerText = `Risk Used: ${riskConsumedPct.toFixed(1)}%`;
+                        elSlRiskConsumedText.className = riskConsumedPct > 50 ? 'text-rose-400 font-semibold' : 'text-slate-400';
+                    }
+                    if (elSlBufferPctText) {
+                        elSlBufferPctText.innerText = `Buffer: ${slBufferPct.toFixed(1)}% Safe`;
+                        elSlBufferPctText.className = slBufferPct > 50 ? 'text-emerald-300 font-bold' : (slBufferPct > 20 ? 'text-amber-300 font-bold' : 'text-rose-400 font-bold');
+                    }
+                }
 
                 // Bind Sticky Cockpit Active Values
                 const cTitle = document.getElementById('cockpit-pos-title');
@@ -2642,7 +3109,8 @@
 
                 const cSub = document.getElementById('cockpit-pos-net-sub');
                 if (cSub) {
-                    cSub.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)}`;
+                    const tgtRemaining = Math.max(0, tgtProfitInr - brokerPnl);
+                    cSub.innerText = `Net: ${netPnl >= 0 ? '+' : ''}Rs ${netPnl.toFixed(2)} | 🎯 Tgt: +₹${tgtProfitInr.toFixed(0)} (₹${tgtRemaining.toFixed(0)} away)`;
                 }
 
                 if (cTimer) cTimer.innerText = pos.holding_time_str || '00:00:00';
@@ -2667,6 +3135,19 @@
                 if (cockpitIdle) cockpitIdle.classList.remove('hidden');
                 if (cockpitActive) cockpitActive.classList.add('hidden');
 
+                // Day PnL & CB Status in Cockpit (Always Updated)
+                const cDayPnl = document.getElementById('cockpit-day-pnl');
+                if (cDayPnl && data.performance) {
+                    const dPnl = Number(data.performance.today_net_pnl || 0);
+                    cDayPnl.innerText = `${dPnl >= 0 ? '+' : ''}Rs ${dPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    cDayPnl.className = dPnl >= 0 ? 'text-emerald-400 font-bold ml-1' : 'text-rose-400 font-bold ml-1';
+                }
+                const cCbStatus = document.getElementById('cockpit-cb-status');
+                if (cCbStatus && data.performance) {
+                    cCbStatus.innerText = `${data.performance.today_losses}/1 Loss`;
+                    cCbStatus.className = (data.performance.today_losses === 0) ? 'text-emerald-400 ml-1' : 'text-rose-400 ml-1 font-bold';
+                }
+
                 // Update Cockpit Idle State with Front-runner spread
                 if (data.strategy_matrix && data.strategy_matrix.bull_tracker && data.strategy_matrix.bear_tracker) {
                     const sm = data.strategy_matrix;
@@ -2675,8 +3156,6 @@
                     const cLeadSpread = document.getElementById('cockpit-lead-spread');
                     const cLeadBadge = document.getElementById('cockpit-lead-badge');
                     const cMissing = document.getElementById('cockpit-missing-reason');
-                    const cDayPnl = document.getElementById('cockpit-day-pnl');
-                    const cCbStatus = document.getElementById('cockpit-cb-status');
 
                     if (cLeadSpread) cLeadSpread.innerText = leader.name;
                     if (cLeadBadge) {
@@ -2686,16 +3165,75 @@
                             'px-2 py-0.5 rounded text-[10px] font-semibold mono uppercase bg-slate-800 text-slate-400 border border-slate-700';
                     }
                     if (cMissing) cMissing.innerText = leader.detail;
+                }
 
-                    if (cDayPnl && data.performance) {
-                        const dPnl = Number(data.performance.today_net_pnl || 0);
-                        cDayPnl.innerText = `${dPnl >= 0 ? '+' : ''}Rs ${dPnl.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                        cDayPnl.className = dPnl >= 0 ? 'text-emerald-400 font-bold ml-1' : 'text-rose-400 font-bold ml-1';
+                // Update empty-card elements with today's completed trade or live strategy
+                const emptyTradeTitle = document.getElementById('empty-trade-title');
+                const emptyTradeBadge = document.getElementById('empty-trade-badge');
+                const emptyTradeTime = document.getElementById('empty-trade-time');
+                const emptyTradeNext = document.getElementById('empty-trade-next-status');
+                const emptyTradeNet = document.getElementById('empty-trade-net-booked');
+
+                const elEmptyC1Val = document.getElementById('empty-card-1-val');
+                const elEmptyC1Sub = document.getElementById('empty-card-1-sub');
+                const elEmptyC2Val = document.getElementById('empty-card-2-val');
+                const elEmptyC2Sub = document.getElementById('empty-card-2-sub');
+                const elEmptyC3Val = document.getElementById('empty-card-3-val');
+                const elEmptyC3Sub = document.getElementById('empty-card-3-sub');
+                const elEmptyC4Val = document.getElementById('empty-card-4-val');
+                const elEmptyC4Sub = document.getElementById('empty-card-4-sub');
+
+                if (data.last_closed_trade) {
+                    const lt = data.last_closed_trade;
+                    const netP = Number(lt.net_pnl || 0);
+                    const netCredit = Number(lt.net_credit || 108.40);
+                    const lots = Number(lt.lots || 1);
+                    const qty = Number(lt.quantity || lots * 65);
+                    const maxCredInr = Math.round(netCredit * qty * 100) / 100;
+                    const tgtInr = Math.round(netCredit * 0.40 * qty * 100) / 100;
+                    const trailInr = Math.round(netCredit * 0.25 * qty * 100) / 100;
+                    const tgtSpread = Math.round(netCredit * 0.60 * 100) / 100;
+                    const trailSpread = Math.round(netCredit * 0.75 * 100) / 100;
+                    const cutSpread = Math.round(netCredit * 1.60 * 100) / 100;
+
+                    if (emptyTradeTitle) {
+                        emptyTradeTitle.innerText = `Today's Algo Trade 1 Booked: ${netP >= 0 ? '+' : ''}Rs ${netP.toFixed(2)} Net Realized`;
                     }
-                    if (cCbStatus && data.performance) {
-                        cCbStatus.innerText = `${data.performance.today_losses}/1 Loss`;
-                        cCbStatus.className = (data.performance.today_losses === 0) ? 'text-emerald-400 ml-1' : 'text-rose-400 ml-1 font-bold';
+                    if (emptyTradeBadge) {
+                        emptyTradeBadge.innerText = lt.result || 'WIN';
+                        emptyTradeBadge.className = (lt.result === 'WIN' || netP > 0) ?
+                            'px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                            'px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40';
                     }
+                    if (emptyTradeTime) {
+                        const timeStr = lt.entry_time ? (lt.entry_time.split(' ')[1] || lt.entry_time) : '09:53:35';
+                        emptyTradeTime.innerText = `${timeStr} &bull; ${lt.strikes || 'Sold 25500 PE / Bought 25150 PE'}`;
+                    }
+                    if (emptyTradeNext) {
+                        if (data.cooldown_remaining_sec > 0) {
+                            const m = Math.floor(data.cooldown_remaining_sec / 60);
+                            const s = data.cooldown_remaining_sec % 60;
+                            emptyTradeNext.innerHTML = `<i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i><strong>Cooldown:</strong> Mandatory break active (${m}m ${s}s left). Armed for Trade 2.`;
+                        } else {
+                            emptyTradeNext.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i><strong>Status:</strong> Radar Scanning Live Market &bull; Armed for Trade 2 when 6-Rule Gate aligns.`;
+                        }
+                    }
+                    if (emptyTradeNet) {
+                        emptyTradeNet.innerText = `Net Pocketed: ${netP >= 0 ? '+' : ''}Rs ${netP.toFixed(2)}`;
+                        emptyTradeNet.className = netP >= 0 ? 'text-emerald-400 font-bold mono' : 'text-rose-400 font-bold mono';
+                    }
+
+                    if (elEmptyC1Val) elEmptyC1Val.innerText = `₹${maxCredInr.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    if (elEmptyC1Sub) elEmptyC1Sub.innerText = `Spread: ${netCredit.toFixed(2)} pts &bull; Pocketed: ${netP >= 0 ? '+' : ''}₹${netP.toFixed(2)}`;
+
+                    if (elEmptyC2Val) elEmptyC2Val.innerText = `+₹${tgtInr.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    if (elEmptyC2Sub) elEmptyC2Sub.innerText = `Exit Spread: ₹${tgtSpread.toFixed(2)} (40% Decay Goal)`;
+
+                    if (elEmptyC3Val) elEmptyC3Val.innerText = `+₹${trailInr.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    if (elEmptyC3Sub) elEmptyC3Sub.innerText = `Trigger: ₹${trailSpread.toFixed(2)} (25% Auto-Trail)`;
+
+                    if (elEmptyC4Val) elEmptyC4Val.innerText = `-₹${(lots * 2800).toLocaleString('en-IN', {minimumFractionDigits: 2})} CAP`;
+                    if (elEmptyC4Sub) elEmptyC4Sub.innerText = `Cut Spread: ₹${cutSpread.toFixed(2)} (Capital Protected)`;
                 }
             }
 
