@@ -1708,7 +1708,8 @@
         }
 
         async function changeReplayDate() {
-            const date = document.getElementById('replay-date-select').value;
+            const el = document.getElementById('replay-date-select');
+            const date = el ? el.value : '';
             await fetch('/api/replay/control', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -2829,14 +2830,16 @@
                 }
 
                 const bePill = document.getElementById('pos-breakeven-pill');
-                if (pos.breakeven_active) {
-                    bePill.classList.remove('hidden');
-                    bePill.className = 'px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-lg shadow-emerald-500/30 animate-pulse glow-green';
-                    bePill.innerHTML = '<i class="fa-solid fa-gem mr-1 text-cyan-300"></i>💎 TRAILING BE LOCKED (0 RISK)';
-                } else {
-                    bePill.classList.remove('hidden');
-                    bePill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700';
-                    bePill.innerHTML = '<i class="fa-solid fa-shield-halved mr-1 text-rose-400"></i>INITIAL SL ACTIVE (-Rs 2800 CAP)';
+                if (bePill) {
+                    if (pos.breakeven_active) {
+                        bePill.classList.remove('hidden');
+                        bePill.className = 'px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-lg shadow-emerald-500/30 animate-pulse glow-green';
+                        bePill.innerHTML = '<i class="fa-solid fa-gem mr-1 text-cyan-300"></i>💎 TRAILING BE LOCKED (0 RISK)';
+                    } else {
+                        bePill.classList.remove('hidden');
+                        bePill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700';
+                        bePill.innerHTML = '<i class="fa-solid fa-shield-halved mr-1 text-rose-400"></i>INITIAL SL ACTIVE (-Rs 2800 CAP)';
+                    }
                 }
 
                 const cTrailingBadge = document.getElementById('cockpit-trailing-be-badge');
