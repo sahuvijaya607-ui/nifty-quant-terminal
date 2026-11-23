@@ -215,12 +215,12 @@ class MasterQuantEngine:
 
         # Latest Market Pulse
         self.pulse = {
-            "spot": 25044.65,
-            "prev_close": 24986.40,
-            "daily_ema20": 23677.11,
-            "ema9": 25007.35,
-            "ema20": 24988.33,
-            "ema50": 24952.39,
+            "spot": 25585.00,
+            "prev_close": 25800.60,
+            "daily_ema20": 24722.08,
+            "ema9": 25607.06,
+            "ema20": 25640.22,
+            "ema50": 25662.26,
             "pcr": 0.68,
             "pcr_oi_change": 1.0,
             "pcr_core_atm": 1.0,
@@ -689,13 +689,17 @@ class MasterQuantEngine:
                     c = json.load(f)
                     today_str = get_ist_now().strftime("%Y-%m-%d")
                     # Fix 6: Never let stale historical cache from an earlier date overwrite today's live organic EMAs!
-                    if (fallback_only or (hasattr(self, "base_ema9") and getattr(self, "base_ema9", 0) > 0)) and c.get("date") != today_str:
-                        logger.info(f"[EMA_CACHE_GUARD] Retaining live organic EMAs. Stale cache date: {c.get('date')} vs today: {today_str}")
+                    if c.get("date") != today_str:
+                        logger.warning(f"[EMA_CACHE_GUARD] Discarding stale cache from earlier date: {c.get('date')} vs today: {today_str}")
                         return False
-                    self.base_ema9 = float(c.get("ema9", getattr(self, "base_ema9", 25499.15)))
-                    self.base_ema20 = float(c.get("ema20", getattr(self, "base_ema20", 25479.22)))
-                    self.base_ema50 = float(c.get("ema50", getattr(self, "base_ema50", 25430.58)))
-                    self.base_daily20 = float(c.get("daily_ema20", getattr(self, "base_daily20", 24483.43)))
+                    self.base_ema9 = float(c.get("ema9", getattr(self, "base_ema9", 25607.06)))
+                    self.base_ema20 = float(c.get("ema20", getattr(self, "base_ema20", 25640.22)))
+                    self.base_ema50 = float(c.get("ema50", getattr(self, "base_ema50", 25662.26)))
+                    self.base_daily20 = float(c.get("daily_ema20", getattr(self, "base_daily20", 24722.08)))
+                    self.pulse["ema9"] = self.base_ema9
+                    self.pulse["ema20"] = self.base_ema20
+                    self.pulse["ema50"] = self.base_ema50
+                    self.pulse["daily_ema20"] = self.base_daily20
                     return True
         except Exception as e:
             logger.warning(f"[EMA_LOAD_ERR] Failed to load cached EMAs: {e}")
@@ -708,11 +712,11 @@ class MasterQuantEngine:
             os.makedirs(os.path.dirname(cache_file), exist_ok=True)
             data = {
                 "date": get_ist_now().strftime("%Y-%m-%d"),
-                "ema9": getattr(self, "base_ema9", 25311.88),
-                "ema20": getattr(self, "base_ema20", 25267.0),
-                "ema50": getattr(self, "base_ema50", 25245.26),
-                "daily_ema20": getattr(self, "base_daily20", 24483.43),
-                "last_spot": float(self.pulse.get("spot", 25514.3) or 25514.3),
+                "ema9": getattr(self, "base_ema9", 25607.06),
+                "ema20": getattr(self, "base_ema20", 25640.22),
+                "ema50": getattr(self, "base_ema50", 25662.26),
+                "daily_ema20": getattr(self, "base_daily20", 24722.08),
+                "last_spot": float(self.pulse.get("spot", 25585.0) or 25585.0),
                 "updated_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S")
             }
             with open(cache_file, "w") as f:
@@ -737,20 +741,20 @@ class MasterQuantEngine:
         if now < getattr(self, "ema_backoff_until", 0):
             self.load_cached_emas(fallback_only=True)
             return
-        if now - getattr(self, "last_ema_calc_time", 0) < 300:
+        if now - getattr(self, "last_ema_calc_time", 0) < 180:
             return
         self.last_ema_calc_time = now
         try:
             today_dt = now_dt.date()
             today_str = today_dt.strftime("%Y-%m-%d")
-            start_5m = (today_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+            start_5m = (today_dt - timedelta(days=5)).strftime("%Y-%m-%d")
             res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
             if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
                 self.ema_backoff_until = now + 60
                 self.load_cached_emas(fallback_only=True)
                 return
             candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
-            if candles_5m and len(candles_5m) >= 50:
+            if candles_5m and len(candles_5m) >= 20:
                 closes = [float(c[4]) for c in candles_5m]
                 s_close = pd.Series(closes)
                 self.base_ema9 = round(float(s_close.ewm(span=9, adjust=False).mean().iloc[-1]), 2)
@@ -798,7 +802,10 @@ class MasterQuantEngine:
                 except Exception as seed_err:
                     logger.warning(f"[CANDLE_SEED_ERR] Could not parse latest 5m candle: {seed_err}")
 
-            start_d = (today_dt - timedelta(days=60)).strftime("%Y-%m-%d")
+            # Safe spacing to prevent Kotak 429 rate limit between 5m and Daily historical calls
+            time.sleep(2.5)
+
+            start_d = (today_dt - timedelta(days=120)).strftime("%Y-%m-%d")
             res_d = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="D", from_date=start_d, to_date=today_str)
             candles_d = res_d.get("data", {}).get("candles", []) if isinstance(res_d, dict) else []
             if candles_d and len(candles_d) >= 20:
@@ -809,10 +816,11 @@ class MasterQuantEngine:
 
             self.emas_seeded_for_today = True
             self.save_cached_emas()
+            logger.info(f"[EMA_SEED_OK] Seeded live EMAs: E9={self.pulse['ema9']}, E20={self.pulse['ema20']}, E50={self.pulse['ema50']}, Daily20={self.pulse['daily_ema20']}")
         except Exception as e:
             logger.warning(f"[EMA_CALC_ERR] Error fetching historical candles: {e}")
             if "429" in str(e) or "rate" in str(e).lower():
-                self.ema_backoff_until = now + 300
+                self.ema_backoff_until = now + 120
             self.load_cached_emas(fallback_only=True)
 
     def _watchdog_loop(self):
@@ -1094,10 +1102,10 @@ class MasterQuantEngine:
             # Dynamic Real-Time EMA Calculations based on live Spot movement & real candles
             self.update_real_emas_from_candles()
 
-            base_e9 = getattr(self, "base_ema9", 25499.15)
-            base_e20 = getattr(self, "base_ema20", 25479.22)
-            base_e50 = getattr(self, "base_ema50", 25430.58)
-            base_daily = getattr(self, "base_daily20", 24483.43)
+            base_e9 = getattr(self, "base_ema9", 25607.06)
+            base_e20 = getattr(self, "base_ema20", 25640.22)
+            base_e50 = getattr(self, "base_ema50", 25662.26)
+            base_daily = getattr(self, "base_daily20", 24722.08)
 
             # Fix 3: Strict Backtest Purity - EMAs are derived strictly from finalized 5m candle closes (Zero tick noise)
             self.pulse["ema9"] = base_e9
@@ -3527,7 +3535,7 @@ def get_status():
         c1_rule = "Spot < Daily 20 EMA (Bearish Macro Filter)"
         c1_metric = f"Spot: {spot:,.2f} < EMA: {d_ema:,.2f}"
         c2_rule = "5m EMA 9 < 20 < 50 & Red Candle"
-        c2_metric = f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f} | Red: {is_red}"
+        c2_metric = f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f} | Red: {is_red}" if (e9 < e20 < e50) else f"E9: {e9:.1f}, E20: {e20:.1f}, E50: {e50:.1f} (Not 9<20<50) | Red: {is_red}"
         c3_rule = "Weekly PCR <= 0.85 (Call Writers Dominant / Bearish)"
         c3_metric = bear_pcr_desc
     else:
@@ -3537,7 +3545,7 @@ def get_status():
         c1_rule = "Spot > Daily 20 EMA (Bullish Macro Filter)"
         c1_metric = f"Spot: {spot:,.2f} > EMA: {d_ema:,.2f}"
         c2_rule = "5m EMA 9 > 20 > 50 & Green Candle"
-        c2_metric = f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f} | Green: {is_green}"
+        c2_metric = f"E9: {e9:.1f} > E20: {e20:.1f} > E50: {e50:.1f} | Green: {is_green}" if (e9 > e20 > e50) else f"E9: {e9:.1f} < E20: {e20:.1f} < E50: {e50:.1f} (Bearish Alignment) | Green: {is_green}"
         c3_rule = "Weekly PCR >= 1.05 (Put Writers Dominant / Bullish)"
         c3_metric = bull_pcr_desc
 
