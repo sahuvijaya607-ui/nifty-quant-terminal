@@ -996,7 +996,7 @@ class MasterQuantEngine:
         is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= t_now < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
         # Pre-Market Warmup (09:00-09:15): poll every 15s to keep session, option chain & PCR warm!
-        # In market hours (09:15-15:30): poll every 2s.
+        # In market hours (09:15-15:30): poll every 1s.
         # Off-market: poll every 60s (or instant if force=True or initial boot).
         if is_mkt_open:
             min_poll_interval = 1
@@ -1008,12 +1008,33 @@ class MasterQuantEngine:
         if not force and (now - self.last_api_poll < min_poll_interval):
             return
 
+        if not hasattr(self, "poll_lock"):
+            self.poll_lock = threading.Lock()
+        if not self.poll_lock.acquire(blocking=False):
+            return
+
         self.feeder_mode = "LIVE" if is_mkt_open else "CLOSED"
 
         try:
-            chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
-            self.pulse["option_chain"] = chain
-            self.pulse["chain_updated_at"] = now_dt.strftime("%H:%M:%S IST")
+            # Query active rolled weekly expiry directly to avoid redundant double API calls!
+            target_exp = self.pulse.get("next_expiry")
+            if target_exp:
+                try:
+                    chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY", expiry=target_exp)
+                except Exception:
+                    chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
+            else:
+                chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
+
+            if not is_kotak_ok(chain) or not isinstance(chain, dict):
+                logger.warning(f"[POLL_REJECT] Kotak option chain returned non-OK. Preserving existing live market data.")
+                return
+
+            calls = chain.get("call", [])
+            puts = chain.get("put", [])
+            if not calls and not puts and "spot" not in chain:
+                logger.warning("[POLL_EMPTY] Kotak option chain empty. Preserving existing live market data.")
+                return
 
             if "spot" in chain and "ltp" in chain["spot"]:
                 self.pulse["spot"] = float(chain["spot"]["ltp"])
@@ -1030,9 +1051,6 @@ class MasterQuantEngine:
                     exp_dt = datetime.strptime(raw_exp, "%Y-%m-%d").date()
                     today_dt = get_ist_now().date()
                     if exp_dt <= today_dt:
-                        # Expiry Day! Roll to next weekly expiry strictly > today_dt
-                        # For Monday (2026-11-23), next Tuesday expiry is +8 days (2026-12-01)
-                        # For Tuesday, next Tuesday expiry is +7 days
                         if exp_dt.weekday() == 0:  # Monday expiry (Holiday shift)
                             rolled_exp = exp_dt + timedelta(days=8)
                         else:
@@ -1040,32 +1058,31 @@ class MasterQuantEngine:
                             rolled_exp = exp_dt + timedelta(days=days_to_tue if days_to_tue > 0 else 7)
 
                         target_exp_str = rolled_exp.strftime("%Y-%m-%d")
-                        self.pulse["next_expiry"] = target_exp_str
-                        self.pulse["is_expiry_rolled"] = True
+                        if self.pulse.get("next_expiry") != target_exp_str:
+                            self.pulse["next_expiry"] = target_exp_str
+                            self.pulse["is_expiry_rolled"] = True
+                            try:
+                                rolled_chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY", expiry=target_exp_str)
+                                if is_kotak_ok(rolled_chain) and (rolled_chain.get("call") or rolled_chain.get("put")):
+                                    chain = rolled_chain
+                                    calls = chain.get("call", [])
+                                    puts = chain.get("put", [])
+                            except Exception as e_rc:
+                                logger.warning(f"[EXPIRY_CHAIN] Rolled chain fetch failed: {e_rc}")
 
-                        # Fetch rolled option chain for next expiry from Kotak Neo
-                        try:
-                            rolled_chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY", expiry=target_exp_str)
-                            if rolled_chain and rolled_chain.get("common_data", {}).get("expiryDt"):
-                                chain = rolled_chain
-                        except Exception as e_rc:
-                            logger.warning(f"[EXPIRY_CHAIN] Rolled chain fetch failed for {target_exp_str}: {e_rc}")
-
-                        logger.info(f"[EXPIRY_ROLL] Today is Expiry Day ({today_dt})! Rolling from 0-DTE ({exp_dt}) to Next Weekly Expiry: {self.pulse['next_expiry']}")
+                            logger.info(f"[EXPIRY_ROLL] Today is Expiry Day ({today_dt})! Rolling from 0-DTE ({exp_dt}) to Next Weekly Expiry: {self.pulse['next_expiry']}")
                     else:
                         self.pulse["next_expiry"] = raw_exp
                         self.pulse["is_expiry_rolled"] = False
                 except Exception:
                     self.pulse["next_expiry"] = raw_exp
 
+            self.pulse["option_chain"] = chain
+            self.pulse["chain_updated_at"] = now_dt.strftime("%H:%M:%S IST")
             spot = self.pulse["spot"]
 
             # Dynamic Real-Time EMA Calculations based on live Spot movement & real candles
             self.update_real_emas_from_candles()
-
-            a9 = 2.0 / 10.0
-            a20 = 2.0 / 21.0
-            a50 = 2.0 / 51.0
 
             base_e9 = getattr(self, "base_ema9", 25499.15)
             base_e20 = getattr(self, "base_ema20", 25479.22)
@@ -1079,36 +1096,39 @@ class MasterQuantEngine:
             self.pulse["daily_ema20"] = base_daily
 
             # Live Option Chain OI & High-Precision PCR (Sanitized & Bounded)
-            total_call_oi = sum(int(c.get("oi", {}).get("cur") or 0) for c in chain.get("call", []))
-            total_put_oi = sum(int(p.get("oi", {}).get("cur") or 0) for p in chain.get("put", []))
-            self.pulse["total_call_oi"] = total_call_oi
-            self.pulse["total_put_oi"] = total_put_oi
-            if total_call_oi > 0:
-                raw_pcr = round(total_put_oi / total_call_oi, 3)
-                self.pulse["pcr"] = min(max(raw_pcr, 0.20), 4.00)
-            else:
-                self.pulse["pcr"] = 1.05
+            if calls or puts:
+                total_call_oi = sum(int(c.get("oi", {}).get("cur") or 0) for c in calls)
+                total_put_oi = sum(int(p.get("oi", {}).get("cur") or 0) for p in puts)
+                if total_call_oi > 0:
+                    self.pulse["total_call_oi"] = total_call_oi
+                    self.pulse["total_put_oi"] = total_put_oi
+                    raw_pcr = round(total_put_oi / total_call_oi, 3)
+                    new_pcr = min(max(raw_pcr, 0.20), 4.00)
+                    self.pulse["pcr"] = new_pcr
+                    self.last_valid_pcr = new_pcr
+                # GLITCH FIX: If total_call_oi <= 0, RETAIN existing self.pulse["pcr"]! NEVER default to 1.05!
 
-            # Intraday Fresh Change in OI PCR (Today's live build-up)
-            call_oi_chg = sum(int(c.get("oi", {}).get("cur") or 0) - int(c.get("oi", {}).get("prev") or 0) for c in chain.get("call", []))
-            put_oi_chg = sum(int(p.get("oi", {}).get("cur") or 0) - int(p.get("oi", {}).get("prev") or 0) for p in chain.get("put", []))
-            self.pulse["call_oi_chg"] = call_oi_chg
-            self.pulse["put_oi_chg"] = put_oi_chg
-            if call_oi_chg > 0 and put_oi_chg > 0:
-                raw_oi_pcr = round(put_oi_chg / call_oi_chg, 2)
-                self.pulse["pcr_oi_change"] = min(max(raw_oi_pcr, 0.10), 10.0)
-            elif put_oi_chg > 0:
-                self.pulse["pcr_oi_change"] = 3.0
-            else:
-                self.pulse["pcr_oi_change"] = 1.0
+                # Intraday Fresh Change in OI PCR (Today's live build-up)
+                call_oi_chg = sum(int(c.get("oi", {}).get("cur") or 0) - int(c.get("oi", {}).get("prev") or 0) for c in calls)
+                put_oi_chg = sum(int(p.get("oi", {}).get("cur") or 0) - int(p.get("oi", {}).get("prev") or 0) for p in puts)
+                if call_oi_chg != 0 or put_oi_chg != 0:
+                    self.pulse["call_oi_chg"] = call_oi_chg
+                    self.pulse["put_oi_chg"] = put_oi_chg
+                    if call_oi_chg > 0 and put_oi_chg > 0:
+                        raw_oi_pcr = round(put_oi_chg / call_oi_chg, 2)
+                        self.pulse["pcr_oi_change"] = min(max(raw_oi_pcr, 0.10), 10.0)
+                    elif put_oi_chg > 0:
+                        self.pulse["pcr_oi_change"] = 3.0
+                    elif call_oi_chg > 0:
+                        self.pulse["pcr_oi_change"] = 0.10
 
-            # Active Core Strikes PCR (ATM +/- 500 pts)
-            atm = int(round(spot / 50.0) * 50)
-            c_oi_core = sum(int(c.get("oi", {}).get("cur", 0)) for c in chain.get("call", []) if abs(float(c.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
-            p_oi_core = sum(int(p.get("oi", {}).get("cur", 0)) for p in chain.get("put", []) if abs(float(p.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
-            if c_oi_core > 0:
-                raw_core_pcr = round(p_oi_core / c_oi_core, 3)
-                self.pulse["pcr_core_atm"] = min(max(raw_core_pcr, 0.05), 5.0)
+                # Active Core Strikes PCR (ATM +/- 500 pts)
+                atm = int(round(spot / 50.0) * 50)
+                c_oi_core = sum(int(c.get("oi", {}).get("cur", 0)) for c in calls if abs(float(c.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
+                p_oi_core = sum(int(p.get("oi", {}).get("cur", 0)) for p in puts if abs(float(p.get("inst", {}).get("strkPrc", 0)) - atm) <= 500)
+                if c_oi_core > 0:
+                    raw_core_pcr = round(p_oi_core / c_oi_core, 3)
+                    self.pulse["pcr_core_atm"] = min(max(raw_core_pcr, 0.05), 5.0)
             else:
                 self.pulse["pcr_core_atm"] = 1.0
 
@@ -1763,6 +1783,12 @@ class MasterQuantEngine:
                 self.authenticate()
             else:
                 logger.warning(f"[POLL_EXCEPTION] Kotak polling exception: {e}")
+        finally:
+            if hasattr(self, "poll_lock") and self.poll_lock.locked():
+                try:
+                    self.poll_lock.release()
+                except Exception:
+                    pass
 
     def _live_engine_loop(self):
         """
@@ -3281,21 +3307,12 @@ def index():
 
 @app.route("/api/status")
 def get_status():
-    now_dt = get_ist_now()
-    now_t = now_dt.time()
-    is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
-
-    # 1-Second Fast Kotak Neo Fresh Poll Gate
-    if is_mkt_open and (time.time() - getattr(engine, "last_api_poll", 0) >= 1.0):
-        try:
-            engine.poll_kotak_neo(force=False)
-        except Exception:
-            pass
-
     try:
         engine.update_position_dynamics()
     except Exception as e:
         logger.warning(f"Engine dynamics error: {e}")
+
+    now_dt = get_ist_now()
     now_t = now_dt.time()
     today_ist = now_dt.strftime("%Y-%m-%d")
 
