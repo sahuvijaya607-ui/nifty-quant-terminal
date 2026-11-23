@@ -143,7 +143,15 @@ def is_kotak_ok(res):
         return False
     stat = str(res.get("stat", "")).strip().lower()
     st_code = str(res.get("stCode", ""))
-    return stat == "ok" or st_code in ["200", "0"] or "nOrdNo" in res or "data" in res
+    return (
+        stat == "ok"
+        or st_code in ["200", "0"]
+        or "nOrdNo" in res
+        or "data" in res
+        or "call" in res
+        or "common_data" in res
+        or "spot" in res
+    )
 
 
 class MasterQuantEngine:
@@ -1016,8 +1024,8 @@ class MasterQuantEngine:
         self.feeder_mode = "LIVE" if is_mkt_open else "CLOSED"
 
         try:
-            # Query active rolled weekly expiry directly to avoid redundant double API calls!
-            target_exp = self.pulse.get("next_expiry")
+            # Query active rolled weekly expiry directly once determined to avoid redundant double API calls!
+            target_exp = self.pulse.get("next_expiry") if self.pulse.get("is_expiry_rolled") else None
             if target_exp:
                 try:
                     chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY", expiry=target_exp)
