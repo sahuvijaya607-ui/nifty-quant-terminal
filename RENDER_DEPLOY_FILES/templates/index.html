@@ -3889,7 +3889,7 @@
         fetchOrders();
         setInterval(fetchStatus, 1500); // 1.5s real-time cockpit sync (clean & jitter-free)
         setInterval(fetchTrades, 5000);
-        setInterval(fetchOrders, 3000);
+        setInterval(fetchOrders, 10000);
         setInterval(loadChartCandles, 30000); // 30s background candle sync
     </script>
 </body>

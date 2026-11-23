@@ -1071,8 +1071,9 @@ class MasterQuantEngine:
             self.pulse["chain_updated_at"] = now_dt.strftime("%H:%M:%S IST")
             spot = self.pulse["spot"]
 
-            # Dynamic Real-Time EMA Calculations based on live Spot movement & real candles
-            self.update_real_emas_from_candles()
+            # Dynamic Real-Time EMA Calculations: Seed once on boot, then evolve organically on 5m close
+            if not getattr(self, "emas_seeded_for_today", False):
+                self.update_real_emas_from_candles()
 
             base_e9 = getattr(self, "base_ema9", 25607.06)
             base_e20 = getattr(self, "base_ema20", 25640.22)
@@ -1122,8 +1123,8 @@ class MasterQuantEngine:
             else:
                 self.pulse["pcr_core_atm"] = 1.0
 
-            # Real-time position reconciliation with Kotak Neo broker
-            if self.execution_mode == "LIVE" and self.authenticated and self.client:
+            # Real-time position reconciliation with Kotak Neo broker (Only when active position is open to prevent 429 rate limit)
+            if self.execution_mode == "LIVE" and self.authenticated and self.client and self.state.get("active_position"):
                 try:
                     real_pos = self.client.positions()
                     # Check if response is OK or is Kotak Neo's standard "Empty / 0 Positions" response (stCode 5203 / "No Data")
