@@ -1767,8 +1767,8 @@ class MasterQuantEngine:
         except Exception as e:
             err_str = str(e).lower()
             if "429" in err_str or "rate" in err_str or "too many" in err_str:
-                logger.warning(f"[RATE_LIMIT] Kotak API 429 detected in polling: {e}. Backing off for 60s.")
-                self.kotak_rate_limit_backoff_until = now + 60
+                logger.warning(f"[RATE_LIMIT] Kotak API 429 detected in polling: {e}. Backing off for 2.5s.")
+                self.kotak_rate_limit_backoff_until = now + 2.5
             elif "401" in err_str or "token" in err_str or "session" in err_str or "unauth" in err_str:
                 self.authenticate()
             else:
@@ -3928,8 +3928,9 @@ def get_orders():
     """Fetches real order book directly from Kotak Neo API, or fallback to saved today's orders."""
     now = time.time()
     
-    # 1. Return normalized cache if queried within last 3 seconds
-    if hasattr(engine, "last_formatted_orders_cache") and engine.last_formatted_orders_cache and (now - getattr(engine, "last_orders_cache_time", 0) < 3.0):
+    # 1. Return normalized cache if queried within TTL (5s during active trade, 20s during idle scanning)
+    orders_cache_ttl = 5.0 if engine.state.get("active_position") else 20.0
+    if hasattr(engine, "last_formatted_orders_cache") and engine.last_formatted_orders_cache and (now - getattr(engine, "last_orders_cache_time", 0) < orders_cache_ttl):
         return jsonify(engine.last_formatted_orders_cache)
 
     raw_orders = []
