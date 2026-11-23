@@ -996,10 +996,10 @@ class MasterQuantEngine:
         is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= t_now < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
         # Pre-Market Warmup (09:00-09:15): poll every 15s to keep session, option chain & PCR warm!
-        # In market hours (09:15-15:30): poll every 1s.
+        # In market hours (09:15-15:30): poll every 2.5s (strictly complies with Kotak Neo option-chain rate limits).
         # Off-market: poll every 60s (or instant if force=True or initial boot).
         if is_mkt_open:
-            min_poll_interval = 1
+            min_poll_interval = 2.5
         elif is_pre_mkt:
             min_poll_interval = 15
         else:
@@ -1026,8 +1026,10 @@ class MasterQuantEngine:
             else:
                 chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
 
-            if not is_kotak_ok(chain) or not isinstance(chain, dict):
-                logger.warning(f"[POLL_REJECT] Kotak option chain returned non-OK. Preserving existing live market data.")
+            if not is_kotak_ok(chain) or not isinstance(chain, dict) or (isinstance(chain, dict) and chain.get("code") == 429):
+                err_msg = chain.get("message") or chain.get("error") if isinstance(chain, dict) else "Non-OK"
+                logger.warning(f"[POLL_REJECT] Kotak option chain {err_msg}. Retaining live PCR {self.pulse.get('pcr')}.")
+                self.last_api_poll = now + 2.0
                 return
 
             calls = chain.get("call", [])
@@ -1829,7 +1831,7 @@ class MasterQuantEngine:
                         self.get_broker_cash_margin()
                         self.has_open_broker_positions()
                         self.last_bg_margin_check = now
-                    sleep_sec = 1.0
+                    sleep_sec = 2.0 if getattr(self, "proximity_polling", False) else 2.5
                 else:
                     # Off-market: poll at most once every 5 minutes to avoid night maintenance socket hangs
                     if now - getattr(self, "last_api_poll", 0) > 300:
