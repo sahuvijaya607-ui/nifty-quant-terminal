@@ -2012,6 +2012,10 @@ class MasterQuantEngine:
                 "is_bought_leg": is_bought_leg,
                 "sold_type": sold_type if is_sold_leg else None,
                 "bought_type": bought_type if is_bought_leg else None,
+                "call_inst": c_data.get("inst", {}),
+                "put_inst": p_data.get("inst", {}),
+                "call_trd_sym": c_data.get("inst", {}).get("trdSym"),
+                "put_trd_sym": p_data.get("inst", {}).get("trdSym"),
                 "call_ltp": c_ltp,
                 "call_chg": c_net_chg,
                 "call_oi": f"{c_oi:,}",
@@ -2380,15 +2384,30 @@ class MasterQuantEngine:
         exec_sell = round_to_tick(min(sell_bid - 0.60, sell_ltp * 0.985)) if sell_bid > 0 else round_to_tick(sell_ltp * 0.985)
         net_credit = round(exec_sell - exec_buy, 2)
 
-        # Symbol generation for Kotak Neo F&O
+        # Symbol generation for Kotak Neo F&O (Direct from Option Chain Instrument Master)
         exp_str = self.pulse.get("next_expiry", "2026-11-23")
         try:
             exp_dt = datetime.strptime(str(exp_str)[:10], "%Y-%m-%d")
             exp_code = exp_dt.strftime("%y%b").upper()
         except Exception:
             exp_code = "26NOV"
-        buy_symbol = buy_row.get("inst", {}).get("trdSym") or buy_row.get("trdSym") or f"NIFTY{exp_code}{buy_strike}{opt_type}"
-        sell_symbol = sell_row.get("inst", {}).get("trdSym") or sell_row.get("trdSym") or f"NIFTY{exp_code}{sell_strike}{opt_type}"
+
+        sym_key = "put_trd_sym" if opt_type == "PE" else "call_trd_sym"
+        inst_key = "put_inst" if opt_type == "PE" else "call_inst"
+        buy_symbol = (
+            buy_row.get(sym_key)
+            or buy_row.get(inst_key, {}).get("trdSym")
+            or buy_row.get("inst", {}).get("trdSym")
+            or buy_row.get("trdSym")
+            or f"NIFTY{exp_code}{buy_strike}{opt_type}"
+        )
+        sell_symbol = (
+            sell_row.get(sym_key)
+            or sell_row.get(inst_key, {}).get("trdSym")
+            or sell_row.get("inst", {}).get("trdSym")
+            or sell_row.get("trdSym")
+            or f"NIFTY{exp_code}{sell_strike}{opt_type}"
+        )
 
         # Real execution via Kotak Neo API if in LIVE mode
         order_status = "KOTAK_API_PENDING"
@@ -2419,13 +2438,13 @@ class MasterQuantEngine:
                 if buy_ord_no:
                     self.terminal_order_ids.add(str(buy_ord_no))
                 
-                # Active Verification: Wait up to 1.4s for BUY order to reach 'complete' / 'traded' status
+                # Active Verification: Wait up to 3.0s for BUY order to reach 'complete' / 'traded' status
                 buy_filled = False
                 buy_rejected = False
                 buy_fill_reason = ""
                 if buy_ord_no:
-                    for _ in range(7):
-                        time.sleep(0.2)
+                    for _ in range(12):
+                        time.sleep(0.25)
                         try:
                             rep = self.client.order_report()
                             if is_kotak_ok(rep) and rep.get("data"):
@@ -3168,6 +3187,10 @@ class MasterQuantEngine:
             self.square_off_position("TARGET_HIT (+40% DECAY)")
         elif current_spread >= sl_spread:
             self.square_off_position("BREAKEVEN_SL" if pos.get("breakeven_active") else "STOP_LOSS")
+        elif not pos.get("breakeven_active") and broker_unrealised <= -hard_cap:
+            self.square_off_position(f"HARD_SL_CAP_HIT (-Rs {int(hard_cap)})")
+        elif pos.get("breakeven_active") and broker_unrealised < -50.0:
+            self.square_off_position("BREAKEVEN_SL (Cost Protection)")
         else:
             # Time Exit at 15:15 PM IST (Zero Overnight Risk)
             now_t = get_ist_now().time()
