@@ -1021,13 +1021,22 @@ class MasterQuantEngine:
         else:
             min_poll_interval = 60
 
-        if not force and (now - self.last_api_poll < min_poll_interval):
+        if not force and (now - self.last_api_poll < min_poll_interval - 0.2):
             return
 
         if not hasattr(self, "poll_lock"):
             self.poll_lock = threading.Lock()
-        if not self.poll_lock.acquire(blocking=False):
-            return
+            self.poll_lock_time = 0.0
+
+        acquired = self.poll_lock.acquire(blocking=False)
+        if not acquired:
+            if now - getattr(self, "poll_lock_time", 0.0) > 15.0:
+                logger.warning("[POLL_LOCK_HEAL] Poller lock held > 15s. Recreating lock.")
+                self.poll_lock = threading.Lock()
+                acquired = self.poll_lock.acquire(blocking=False)
+            if not acquired:
+                return
+        self.poll_lock_time = now
 
         self.feeder_mode = "LIVE" if is_mkt_open else "CLOSED"
 
@@ -1802,6 +1811,7 @@ class MasterQuantEngine:
             else:
                 logger.warning(f"[POLL_EXCEPTION] Kotak polling exception: {e}")
         finally:
+            self.last_api_poll = now
             if hasattr(self, "poll_lock") and self.poll_lock.locked():
                 try:
                     self.poll_lock.release()
