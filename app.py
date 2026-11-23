@@ -1012,16 +1012,16 @@ class MasterQuantEngine:
         is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= t_now < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
         # Pre-Market Warmup (09:00-09:15): poll every 15s to keep session, option chain & PCR warm!
-        # In market hours (09:15-15:30): poll every 2.5s (strictly complies with Kotak Neo option-chain rate limits).
+        # In market hours (09:15-15:30): poll every 2.0s (strictly complies with Kotak Neo option-chain rate limits).
         # Off-market: poll every 60s (or instant if force=True or initial boot).
         if is_mkt_open:
-            min_poll_interval = 2.5
+            min_poll_interval = 1.8
         elif is_pre_mkt:
             min_poll_interval = 15
         else:
             min_poll_interval = 60
 
-        if not force and (now - self.last_api_poll < min_poll_interval - 0.2):
+        if not force and (now - self.last_api_poll < min_poll_interval):
             return
 
         if not hasattr(self, "poll_lock"):
@@ -1041,15 +1041,8 @@ class MasterQuantEngine:
         self.feeder_mode = "LIVE" if is_mkt_open else "CLOSED"
 
         try:
-            # Query active rolled weekly expiry directly once determined to avoid redundant double API calls!
-            target_exp = self.pulse.get("next_expiry") if self.pulse.get("is_expiry_rolled") else None
-            if target_exp:
-                try:
-                    chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY", expiry=target_exp)
-                except Exception:
-                    chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
-            else:
-                chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
+            # Query active weekly option chain directly from Kotak Neo (Matches Kotak mobile app 100%!)
+            chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
 
             if not is_kotak_ok(chain) or not isinstance(chain, dict) or (isinstance(chain, dict) and chain.get("code") == 429):
                 err_msg = chain.get("message") or chain.get("error") if isinstance(chain, dict) else "Non-OK"
@@ -1071,38 +1064,8 @@ class MasterQuantEngine:
                 raw_exp = chain["common_data"].get("expiryDt", "2026-11-23")
                 self.pulse["mkt_lot"] = int(chain["common_data"].get("mktLot", 65))
                 self.lot_size = self.pulse["mkt_lot"]
-
-                # Expiry Rule (Golden Rule): On Expiry Day (exp_dt <= today_dt),
-                # NEVER trade high-gamma 0-DTE same-day contracts. ALWAYS roll to NEXT weekly expiry!
-                try:
-                    exp_dt = datetime.strptime(raw_exp, "%Y-%m-%d").date()
-                    today_dt = get_ist_now().date()
-                    if exp_dt <= today_dt:
-                        if exp_dt.weekday() == 0:  # Monday expiry (Holiday shift)
-                            rolled_exp = exp_dt + timedelta(days=8)
-                        else:
-                            days_to_tue = (1 - exp_dt.weekday()) % 7
-                            rolled_exp = exp_dt + timedelta(days=days_to_tue if days_to_tue > 0 else 7)
-
-                        target_exp_str = rolled_exp.strftime("%Y-%m-%d")
-                        if self.pulse.get("next_expiry") != target_exp_str:
-                            self.pulse["next_expiry"] = target_exp_str
-                            self.pulse["is_expiry_rolled"] = True
-                            try:
-                                rolled_chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY", expiry=target_exp_str)
-                                if is_kotak_ok(rolled_chain) and (rolled_chain.get("call") or rolled_chain.get("put")):
-                                    chain = rolled_chain
-                                    calls = chain.get("call", [])
-                                    puts = chain.get("put", [])
-                            except Exception as e_rc:
-                                logger.warning(f"[EXPIRY_CHAIN] Rolled chain fetch failed: {e_rc}")
-
-                            logger.info(f"[EXPIRY_ROLL] Today is Expiry Day ({today_dt})! Rolling from 0-DTE ({exp_dt}) to Next Weekly Expiry: {self.pulse['next_expiry']}")
-                    else:
-                        self.pulse["next_expiry"] = raw_exp
-                        self.pulse["is_expiry_rolled"] = False
-                except Exception:
-                    self.pulse["next_expiry"] = raw_exp
+                self.pulse["next_expiry"] = raw_exp
+                self.pulse["is_expiry_rolled"] = False
 
             self.pulse["option_chain"] = chain
             self.pulse["chain_updated_at"] = now_dt.strftime("%H:%M:%S IST")
@@ -1857,7 +1820,7 @@ class MasterQuantEngine:
                         self.get_broker_cash_margin()
                         self.has_open_broker_positions()
                         self.last_bg_margin_check = now
-                    sleep_sec = 2.0 if getattr(self, "proximity_polling", False) else 2.5
+                    sleep_sec = 2.0
                 else:
                     # Off-market: poll at most once every 5 minutes to avoid night maintenance socket hangs
                     if now - getattr(self, "last_api_poll", 0) > 300:
