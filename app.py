@@ -213,7 +213,7 @@ class MasterQuantEngine:
             "ema9": 25007.35,
             "ema20": 24988.33,
             "ema50": 24952.39,
-            "pcr": None,
+            "pcr": 0.68,
             "pcr_oi_change": 1.0,
             "pcr_core_atm": 1.0,
             "india_vix": 16.11,
@@ -3461,6 +3461,7 @@ def get_status():
         verdict_text = "ENTRY TRIGGERED: BEAR CALL SPREAD"
     else:
         active_spread = "NEUTRAL"
+        pcr_disp = f"{pcr:.3f}" if (pcr is not None and isinstance(pcr, (int, float))) else "Loading..."
         if bull_score >= bear_score:
             lead_spread = "BULL_PUT_SPREAD"
             missing_bull = []
@@ -3470,7 +3471,7 @@ def get_status():
                     missing_bull.append("5m Momentum (9>20>50)")
                 if not is_green:
                     missing_bull.append("5m Green Candle (Close >= Open)")
-            if not bull_c3: missing_bull.append(f"Weekly PCR >= 1.05 (Currently {pcr:.3f})")
+            if not bull_c3: missing_bull.append(f"Weekly PCR >= 1.05 (Currently {pcr_disp})")
             if not is_time_window: missing_bull.append("Time 09:30-14:30 IST")
             if not cond_circuit_breaker: missing_bull.append("0 Loss Circuit Breaker")
             if not cond_margin_safety:
@@ -3494,7 +3495,7 @@ def get_status():
                     missing_bear.append("5m Momentum (9<20<50)")
                 if not is_red:
                     missing_bear.append("5m Red Candle (Close <= Open)")
-            if not bear_c3: missing_bear.append(f"Weekly PCR <= 0.85 (Currently {pcr:.3f})")
+            if not bear_c3: missing_bear.append(f"Weekly PCR <= 0.85 (Currently {pcr_disp})")
             if not is_time_window: missing_bear.append("Time 09:30-14:30 IST")
             if not cond_circuit_breaker: missing_bear.append("0 Loss Circuit Breaker")
             if not cond_margin_safety:
