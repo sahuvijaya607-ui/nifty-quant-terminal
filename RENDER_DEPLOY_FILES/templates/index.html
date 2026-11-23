@@ -3844,9 +3844,9 @@
         fetchStatus();
         fetchTrades();
         fetchOrders();
-        setInterval(fetchStatus, 2000);
+        setInterval(fetchStatus, 1000); // 1-second ultra-fast real-time status & price refresh
         setInterval(fetchTrades, 5000);
-        setInterval(fetchOrders, 3000);
+        setInterval(fetchOrders, 2000);
         setInterval(loadChartCandles, 30000); // 30s background candle sync
     </script>
 </body>

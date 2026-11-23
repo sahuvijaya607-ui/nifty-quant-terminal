@@ -999,7 +999,7 @@ class MasterQuantEngine:
         # In market hours (09:15-15:30): poll every 2s.
         # Off-market: poll every 60s (or instant if force=True or initial boot).
         if is_mkt_open:
-            min_poll_interval = 2
+            min_poll_interval = 1
         elif is_pre_mkt:
             min_poll_interval = 15
         else:
@@ -1803,7 +1803,7 @@ class MasterQuantEngine:
                         self.get_broker_cash_margin()
                         self.has_open_broker_positions()
                         self.last_bg_margin_check = now
-                    sleep_sec = 1.0 if getattr(self, "proximity_polling", False) else 2.0
+                    sleep_sec = 1.0
                 else:
                     # Off-market: poll at most once every 5 minutes to avoid night maintenance socket hangs
                     if now - getattr(self, "last_api_poll", 0) > 300:
@@ -3281,12 +3281,21 @@ def index():
 
 @app.route("/api/status")
 def get_status():
+    now_dt = get_ist_now()
+    now_t = now_dt.time()
+    is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+
+    # 1-Second Fast Kotak Neo Fresh Poll Gate
+    if is_mkt_open and (time.time() - getattr(engine, "last_api_poll", 0) >= 1.0):
+        try:
+            engine.poll_kotak_neo(force=False)
+        except Exception:
+            pass
+
     try:
         engine.update_position_dynamics()
     except Exception as e:
         logger.warning(f"Engine dynamics error: {e}")
-
-    now_dt = get_ist_now()
     now_t = now_dt.time()
     today_ist = now_dt.strftime("%Y-%m-%d")
 
