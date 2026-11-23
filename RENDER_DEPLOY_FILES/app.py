@@ -3373,11 +3373,16 @@ def get_status():
             df_trades = pd.read_csv(TRADES_FILE)
             if not df_trades.empty:
                 today_trades_df = df_trades[df_trades["date"] == today_ist]
-                target_row = today_trades_df.iloc[-1] if not today_trades_df.empty else df_trades.iloc[-1]
-                last_closed_trade = target_row.to_dict()
-                for k, v in list(last_closed_trade.items()):
-                    if pd.isna(v):
-                        last_closed_trade[k] = None
+                if not today_trades_df.empty:
+                    target_row = today_trades_df.iloc[-1]
+                    last_closed_trade = target_row.to_dict()
+                    for k, v in list(last_closed_trade.items()):
+                        if pd.isna(v):
+                            last_closed_trade[k] = None
+                    last_closed_trade["is_today"] = True
+                else:
+                    # Today has 0 closed trades - do NOT show Friday's trade as today's Trade 1!
+                    last_closed_trade = None
     except Exception as e:
         logger.warning(f"Error reading last_closed_trade: {e}")
 

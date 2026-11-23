@@ -1082,18 +1082,18 @@
 
                 <div id="position-empty-card" class="py-4 space-y-4">
                     <!-- Status Header -->
-                    <div id="empty-card-trade-summary" class="p-4 bg-slate-900/90 border border-emerald-500/30 rounded-xl space-y-2">
+                    <div id="empty-card-trade-summary" class="p-4 bg-slate-900/90 border border-blue-500/30 rounded-xl space-y-2">
                         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
                             <div class="flex items-center gap-2">
-                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                <strong class="text-sm font-bold text-white" id="empty-trade-title">Today's Algo Trade 1 Booked: +Rs 172.95 Net Realized</strong>
-                                <span id="empty-trade-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">WIN</span>
+                                <span class="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse"></span>
+                                <strong class="text-sm font-bold text-white" id="empty-trade-title">RADAR ARMED • SCANNING FOR TODAY'S TRADE 1</strong>
+                                <span id="empty-trade-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/40">ARMED (0/2 TRADES)</span>
                             </div>
-                            <div class="text-xs text-slate-300 mono" id="empty-trade-time">09:53:35 • Sold 25500 PE / Bought 25150 PE</div>
+                            <div class="text-xs text-slate-300 mono" id="empty-trade-time">Live Market Radar • Watching ATM ± 350 Wings</div>
                         </div>
                         <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                            <span id="empty-trade-next-status"><i class="fa-solid fa-hourglass-half text-amber-400 mr-1"></i><strong>Status:</strong> Trade 1 Completed • Cooldown / Radar Scanning for Trade 2</span>
-                            <span class="text-emerald-400 font-bold mono" id="empty-trade-net-booked">Net Pocketed: +Rs 172.95</span>
+                            <span id="empty-trade-next-status"><i class="fa-solid fa-radar text-emerald-400 mr-1 animate-spin"></i><strong>Status:</strong> Radar Scanning Live Market • Armed for Trade 1 when 6-Rule Gate aligns.</span>
+                            <span class="text-slate-400 font-bold mono" id="empty-trade-net-booked">Today Realized: ₹0.00</span>
                         </div>
                     </div>
 
@@ -3186,7 +3186,7 @@
                 const elEmptyC4Val = document.getElementById('empty-card-4-val');
                 const elEmptyC4Sub = document.getElementById('empty-card-4-sub');
 
-                if (data.last_closed_trade) {
+                if (data.last_closed_trade && data.last_closed_trade.is_today) {
                     const lt = data.last_closed_trade;
                     const netP = Number(lt.net_pnl || 0);
                     const netCredit = Number(lt.net_credit || 108.40);
@@ -3209,8 +3209,8 @@
                             'px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40';
                     }
                     if (emptyTradeTime) {
-                        const timeStr = lt.entry_time ? (lt.entry_time.split(' ')[1] || lt.entry_time) : '09:53:35';
-                        emptyTradeTime.innerText = `${timeStr} • ${lt.strikes || 'Sold 25500 PE / Bought 25150 PE'}`;
+                        const timeStr = lt.entry_time ? (lt.entry_time.split(' ')[1] || lt.entry_time) : '--:--:--';
+                        emptyTradeTime.innerText = `${timeStr} • ${lt.strikes || 'Sold ATM / Bought Wing'}`;
                     }
                     if (emptyTradeNext) {
                         if (data.cooldown_remaining_sec > 0) {
@@ -3238,6 +3238,49 @@
 
                     if (elEmptyC4Val) elEmptyC4Val.innerText = `-₹${(lots * 2800).toLocaleString('en-IN', {minimumFractionDigits: 2})} CAP`;
                     if (elEmptyC4Sub) elEmptyC4Sub.innerText = `Cut Spread: ₹${cutSpread.toFixed(2)} • Capital Protected`;
+                } else {
+                    // IDLE / RADAR SCANNING STATE (0 Real Trades Executed Today)
+                    const lots = Number(data.active_lots || 1);
+                    const qty = lots * 65;
+                    const estCredit = 108.0;
+                    const estMax = Math.round(estCredit * qty);
+                    const estTgt = Math.round(estCredit * 0.40 * qty);
+                    const estTrail = Math.round(estCredit * 0.25 * qty);
+                    const estCutSpread = Math.round(estCredit * 1.60 * 100) / 100;
+
+                    if (emptyTradeTitle) {
+                        emptyTradeTitle.innerText = "RADAR ARMED • SCANNING FOR TODAY'S TRADE 1";
+                    }
+                    if (emptyTradeBadge) {
+                        emptyTradeBadge.innerText = "ARMED (0/2)";
+                        emptyTradeBadge.className = "px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/40";
+                    }
+                    if (emptyTradeTime) {
+                        const spotLtp = data.spot ? (data.spot.ltp || 25570) : 25570;
+                        const atmStrk = Math.round(spotLtp / 50) * 50;
+                        const leadSpread = data.strategy_matrix ? data.strategy_matrix.lead_spread : 'NEUTRAL';
+                        const spreadName = leadSpread === 'BEAR_CALL_SPREAD' ? `Bear Call (Sell ${atmStrk}CE / Buy ${atmStrk+350}CE)` : `Bull Put (Sell ${atmStrk}PE / Buy ${atmStrk-350}PE)`;
+                        emptyTradeTime.innerText = `Radar Target: ${spreadName}`;
+                    }
+                    if (emptyTradeNext) {
+                        emptyTradeNext.innerHTML = `<i class="fa-solid fa-radar text-emerald-400 mr-1 animate-spin"></i><strong>Status:</strong> Radar Scanning Live Market • Armed for Trade 1 when 6-Rule Gate aligns.`;
+                    }
+                    if (emptyTradeNet) {
+                        emptyTradeNet.innerText = "Today Realized: ₹0.00 (0 / 2 Trades)";
+                        emptyTradeNet.className = "text-slate-400 font-bold mono";
+                    }
+
+                    if (elEmptyC1Val) elEmptyC1Val.innerText = `~₹${estMax.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    if (elEmptyC1Sub) elEmptyC1Sub.innerText = `Est. Spread: ~${estCredit.toFixed(1)} pts • 100% Net Credit`;
+
+                    if (elEmptyC2Val) elEmptyC2Val.innerText = `+₹${estTgt.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    if (elEmptyC2Sub) elEmptyC2Sub.innerText = `Exit Spread: ~₹${(estCredit * 0.60).toFixed(2)} • 40% Decay Goal`;
+
+                    if (elEmptyC3Val) elEmptyC3Val.innerText = `+₹${estTrail.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    if (elEmptyC3Sub) elEmptyC3Sub.innerText = `Trigger: ~₹${(estCredit * 0.75).toFixed(2)} • 25% Auto-Trail (0-Risk)`;
+
+                    if (elEmptyC4Val) elEmptyC4Val.innerText = `-₹${(lots * 2800).toLocaleString('en-IN', {minimumFractionDigits: 2})} CAP`;
+                    if (elEmptyC4Sub) elEmptyC4Sub.innerText = `Hard Cut: ~₹${estCutSpread.toFixed(2)} • Capital Protected`;
                 }
             }
 
