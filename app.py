@@ -1116,11 +1116,20 @@ class MasterQuantEngine:
             if self.execution_mode == "LIVE" and self.authenticated and self.client:
                 try:
                     real_pos = self.client.positions()
-                    if is_kotak_ok(real_pos):
+                    # Check if response is OK or is Kotak Neo's standard "Empty / 0 Positions" response (stCode 5203 / "No Data")
+                    is_empty_broker_pos = False
+                    if isinstance(real_pos, dict):
+                        st_c = str(real_pos.get("stCode", ""))
+                        err_m = str(real_pos.get("errMsg", "")).lower()
+                        desc_m = str(real_pos.get("desc", "")).lower()
+                        if st_c in ["5203", "5204"] or "no data" in err_m or "data not found" in desc_m:
+                            is_empty_broker_pos = True
+
+                    if is_kotak_ok(real_pos) or is_empty_broker_pos:
                         has_real_pos = False
                         short_leg = None
                         long_leg = None
-                        pos_list = real_pos.get("data", []) or []
+                        pos_list = (real_pos.get("data", []) or []) if not is_empty_broker_pos else []
 
                         for p in pos_list:
                             # CRITICAL SAFETY FILTER: Only process NIFTY F&O Options! Ignore Equity shares/ETFs (like ITBEES)!
