@@ -13,4 +13,4 @@ scipy>=1.10.0
 pyarrow>=14.0.0
 
 # Kotak Neo API Client
-neo-api-client>=3.0.0
+kotakneoapi>=3.0.0
