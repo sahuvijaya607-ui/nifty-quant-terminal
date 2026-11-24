@@ -58,6 +58,27 @@ def send_telegram_alert(message):
     except Exception:
         return False
 
+def get_process_memory_mb():
+    """Returns current process Resident Set Size (RSS) in MB with zero-dependency fallback."""
+    try:
+        with open("/proc/self/status", "r") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return round(int(line.split()[1]) / 1024.0, 1)
+    except Exception:
+        pass
+    try:
+        import resource
+        return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0, 1)
+    except Exception:
+        pass
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().rss / (1024.0 * 1024.0), 1)
+    except Exception:
+        pass
+    return 0.0
+
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
@@ -3242,12 +3263,7 @@ def api_ping():
     """Ultra-lightweight keep-alive heartbeat endpoint for Render Anti-Sleep daemon."""
     now_ts = time.time()
     now_dt = get_ist_now()
-    mem_mb = 0.0
-    try:
-        import psutil
-        mem_mb = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
-    except Exception:
-        pass
+    mem_mb = get_process_memory_mb()
     return jsonify({
         "status": "ok",
         "app": "Nifty Quant Terminal",
@@ -3274,15 +3290,8 @@ def health():
     worker_alive = bool(hasattr(engine, "live_daemon_thread") and engine.live_daemon_thread.is_alive())
     watchdog_alive = bool(hasattr(engine, "watchdog_thread") and engine.watchdog_thread.is_alive())
 
-    mem_mb = 0.0
-    mem_pct = 0.0
-    try:
-        import psutil
-        mem_info = psutil.Process().memory_info()
-        mem_mb = round(mem_info.rss / (1024 * 1024), 1)
-        mem_pct = round((mem_mb / 512.0) * 100.0, 1)
-    except Exception:
-        pass
+    mem_mb = get_process_memory_mb()
+    mem_pct = round((mem_mb / 512.0) * 100.0, 1)
 
     return jsonify({
         "status": "HEALTHY",

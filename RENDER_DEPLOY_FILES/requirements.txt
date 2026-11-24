@@ -4,6 +4,7 @@ gunicorn>=21.2.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 pyotp>=2.9.0
+psutil>=5.9.0
 
 # Data & Mathematical Engine (Black-Scholes Greeks & Strategy)
 pandas>=2.0.0
@@ -11,5 +12,5 @@ numpy>=1.24.0
 scipy>=1.10.0
 pyarrow>=14.0.0
 
-# Kotak Neo API
-kotakneoapi>=3.0.0
+# Kotak Neo API Client
+neo-api-client>=3.0.0
