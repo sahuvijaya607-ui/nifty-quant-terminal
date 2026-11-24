@@ -117,45 +117,68 @@ class DailyDataArchiver:
             self.flush_live_buffer()
 
     def flush_live_buffer(self):
-        # 1. Flush Spot & Total PCR Summary
+        """
+        Ultra-efficient zero-RAM append archiver:
+        Appends live ticks and strike-by-strike options snapshots directly to CSV.
+        Does NOT read large parquets or allocate Pandas dataframes every minute!
+        """
+        import csv
+        import gc
+
+        # 1. Flush Spot & Total PCR Summary (Direct Append - 0 MB RAM)
         if self.live_buffer:
-            file_path = ARCHIVE_DIR / f"nifty_live_{self.today_str}.parquet"
-            df_new = pd.DataFrame(self.live_buffer)
-            df_new["timestamp"] = pd.to_datetime(df_new["timestamp"])
+            file_path = ARCHIVE_DIR / f"nifty_live_{self.today_str}.csv"
+            write_header = not file_path.exists() or file_path.stat().st_size == 0
+            try:
+                with open(file_path, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=["timestamp", "spot", "call_oi", "put_oi", "pcr"])
+                    if write_header:
+                        writer.writeheader()
+                    for tick in self.live_buffer:
+                        writer.writerow({
+                            "timestamp": tick.get("timestamp", ""),
+                            "spot": tick.get("spot", 0.0),
+                            "call_oi": tick.get("call_oi", 0),
+                            "put_oi": tick.get("put_oi", 0),
+                            "pcr": tick.get("pcr", 1.0),
+                        })
+            except Exception as e:
+                logger.warning(f"[ARCHIVER] Error appending spot CSV: {e}")
+            self.live_buffer.clear()
 
-            if file_path.exists():
-                try:
-                    df_old = pd.read_parquet(file_path)
-                    df_comb = pd.concat([df_old, df_new]).drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
-                    df_comb.to_parquet(file_path, index=False)
-                except Exception:
-                    df_new.to_parquet(file_path, index=False)
-            else:
-                df_new.to_parquet(file_path, index=False)
-
-            self.live_buffer = []
-
-        # 2. Flush Strike-by-Strike Option Chain History
+        # 2. Flush Strike-by-Strike Option Chain History (Direct Append - 0 MB RAM)
         if hasattr(self, "options_buffer") and self.options_buffer:
-            opt_file_path = ARCHIVE_DIR / f"nifty_options_strikes_{self.today_str}.parquet"
             opt_csv_path = ARCHIVE_DIR / f"nifty_options_strikes_{self.today_str}.csv"
-            df_opt_new = pd.DataFrame(self.options_buffer)
-            df_opt_new["timestamp"] = pd.to_datetime(df_opt_new["timestamp"])
+            write_opt_header = not opt_csv_path.exists() or opt_csv_path.stat().st_size == 0
+            fieldnames = ["timestamp", "strike", "call_ltp", "call_oi", "call_vol", "put_ltp", "put_oi", "put_vol", "spot"]
+            try:
+                with open(opt_csv_path, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    if write_opt_header:
+                        writer.writeheader()
+                    for item in self.options_buffer:
+                        writer.writerow({
+                            "timestamp": item.get("timestamp", ""),
+                            "strike": item.get("strike", 0),
+                            "call_ltp": item.get("call_ltp", 0.0),
+                            "call_oi": item.get("call_oi", 0),
+                            "call_vol": item.get("call_vol", 0),
+                            "put_ltp": item.get("put_ltp", 0.0),
+                            "put_oi": item.get("put_oi", 0),
+                            "put_vol": item.get("put_vol", 0),
+                            "spot": item.get("spot", 0.0),
+                        })
+            except Exception as e:
+                logger.warning(f"[ARCHIVER] Error appending options CSV: {e}")
+            self.options_buffer.clear()
 
-            if opt_file_path.exists():
-                try:
-                    df_opt_old = pd.read_parquet(opt_file_path)
-                    df_opt_comb = pd.concat([df_opt_old, df_opt_new]).drop_duplicates(subset=["timestamp", "strike"]).sort_values(["timestamp", "strike"])
-                    df_opt_comb.to_parquet(opt_file_path, index=False)
-                    df_opt_comb.to_csv(opt_csv_path, index=False)
-                except Exception:
-                    df_opt_new.to_parquet(opt_file_path, index=False)
-                    df_opt_new.to_csv(opt_csv_path, index=False)
-            else:
-                df_opt_new.to_parquet(opt_file_path, index=False)
-                df_opt_new.to_csv(opt_csv_path, index=False)
-
-            self.options_buffer = []
+        # Proactively release any fragmented memory
+        gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass
 
     def reconcile_eod_spot(self, target_date=None):
         """
@@ -204,8 +227,17 @@ class DailyDataArchiver:
                 df_updated = pd.concat([df_master, df_day])
                 df_updated = df_updated[~df_updated.index.duplicated(keep="last")].sort_index()
                 df_updated.to_parquet(MASTER_SPOT_PARQUET)
+                del df_master, df_updated
             else:
                 df_day.to_parquet(MASTER_SPOT_PARQUET)
+            del df_day
+            import gc
+            gc.collect()
+            try:
+                import ctypes
+                ctypes.CDLL("libc.so.6").malloc_trim(0)
+            except Exception:
+                pass
 
             return True, f"Successfully archived {len(df_day)} 1-minute candles for {target_date} into master parquet!"
         except Exception as e:

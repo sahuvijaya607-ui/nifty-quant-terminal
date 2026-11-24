@@ -14,6 +14,10 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: MALLOC_TRIM_THRESHOLD_
+        value: "131072"
       - key: KOTAK_CONSUMER_KEY
         sync: false
       - key: KOTAK_ACCESS_TOKEN

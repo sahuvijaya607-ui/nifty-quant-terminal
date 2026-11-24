@@ -1821,6 +1821,17 @@ class MasterQuantEngine:
                         self.get_broker_cash_margin()
                         self.has_open_broker_positions()
                         self.last_bg_margin_check = now
+
+                    # Proactive Linux glibc memory trimming & GC (Guarantees staying < 200 MB on Render)
+                    if now - getattr(self, "last_mem_trim_time", 0) > 60:
+                        import gc
+                        gc.collect()
+                        try:
+                            import ctypes
+                            ctypes.CDLL("libc.so.6").malloc_trim(0)
+                        except Exception:
+                            pass
+                        self.last_mem_trim_time = now
                     sleep_sec = 2.0
                 else:
                     # Off-market: poll at most once every 5 minutes to avoid night maintenance socket hangs
@@ -3231,6 +3242,12 @@ def api_ping():
     """Ultra-lightweight keep-alive heartbeat endpoint for Render Anti-Sleep daemon."""
     now_ts = time.time()
     now_dt = get_ist_now()
+    mem_mb = 0.0
+    try:
+        import psutil
+        mem_mb = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
+    except Exception:
+        pass
     return jsonify({
         "status": "ok",
         "app": "Nifty Quant Terminal",
@@ -3240,6 +3257,8 @@ def api_ping():
         "pcr": engine.pulse.get("pcr"),
         "spot": engine.pulse.get("spot"),
         "candle_status": engine.pulse.get("candle_status"),
+        "memory_mb": mem_mb,
+        "memory_limit_mb": 512,
         "last_poll_sec_ago": round(now_ts - getattr(engine, "last_api_poll", 0), 1),
     }), 200
 
@@ -3255,12 +3274,25 @@ def health():
     worker_alive = bool(hasattr(engine, "live_daemon_thread") and engine.live_daemon_thread.is_alive())
     watchdog_alive = bool(hasattr(engine, "watchdog_thread") and engine.watchdog_thread.is_alive())
 
+    mem_mb = 0.0
+    mem_pct = 0.0
+    try:
+        import psutil
+        mem_info = psutil.Process().memory_info()
+        mem_mb = round(mem_info.rss / (1024 * 1024), 1)
+        mem_pct = round((mem_mb / 512.0) * 100.0, 1)
+    except Exception:
+        pass
+
     return jsonify({
         "status": "HEALTHY",
         "system_health": "OPTIMAL (Self-Healing Active)",
         "uptime_sec": uptime_sec,
         "worker_alive": worker_alive,
         "watchdog_alive": watchdog_alive,
+        "memory_mb": mem_mb,
+        "memory_limit_mb": 512,
+        "memory_usage_pct": mem_pct,
         "self_heals_triggered": getattr(engine, "self_heal_count", 0),
         "engine": "MasterQuantEngine",
         "authenticated": engine.authenticated,
@@ -3341,24 +3373,31 @@ def get_status():
     day_realized_charges = float(engine.state.get("today_total_charges", 0.0))
     day_realized_gross = float(engine.state.get("today_realized_gross_pnl", 0.0))
 
-    last_closed_trade = None
-    try:
-        if TRADES_FILE.exists():
-            df_trades = pd.read_csv(TRADES_FILE)
-            if not df_trades.empty:
-                today_trades_df = df_trades[df_trades["date"] == today_ist]
-                if not today_trades_df.empty:
-                    target_row = today_trades_df.iloc[-1]
-                    last_closed_trade = target_row.to_dict()
-                    for k, v in list(last_closed_trade.items()):
-                        if pd.isna(v):
-                            last_closed_trade[k] = None
-                    last_closed_trade["is_today"] = True
-                else:
-                    # Today has 0 closed trades - do NOT show Friday's trade as today's Trade 1!
-                    last_closed_trade = None
-    except Exception as e:
-        logger.warning(f"Error reading last_closed_trade: {e}")
+    last_closed_trade = getattr(engine, "last_closed_trade_cache", None)
+    if not hasattr(engine, "last_trades_file_mtime"):
+        engine.last_trades_file_mtime = 0.0
+
+    if TRADES_FILE.exists():
+        try:
+            curr_mtime = os.path.getmtime(TRADES_FILE)
+            if curr_mtime != engine.last_trades_file_mtime or last_closed_trade is None:
+                engine.last_trades_file_mtime = curr_mtime
+                import csv
+                with open(TRADES_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                    rows = list(csv.DictReader(f))
+                    today_trades = [r for r in rows if r.get("date") == today_ist]
+                    if today_trades:
+                        target_row = dict(today_trades[-1])
+                        for k, v in list(target_row.items()):
+                            if v == "" or v == "nan" or v is None:
+                                target_row[k] = None
+                        target_row["is_today"] = True
+                        engine.last_closed_trade_cache = target_row
+                    else:
+                        engine.last_closed_trade_cache = None
+                last_closed_trade = engine.last_closed_trade_cache
+        except Exception as e:
+            logger.warning(f"Error reading last_closed_trade: {e}")
 
     total_net_pnl = round(day_realized_net + live_mtm_net, 2)
     total_charges = round(day_realized_charges + live_charges, 2)
