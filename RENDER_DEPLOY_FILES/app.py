@@ -1144,8 +1144,8 @@ class MasterQuantEngine:
             else:
                 self.pulse["pcr_core_atm"] = 1.0
 
-            # Real-time position reconciliation with Kotak Neo broker (Only when active position is open to prevent 429 rate limit)
-            if self.execution_mode == "LIVE" and self.authenticated and self.client and self.state.get("active_position"):
+            # Real-time position reconciliation with Kotak Neo broker (On startup when PENDING_RECONCILIATION, or whenever active position is open)
+            if self.execution_mode == "LIVE" and self.authenticated and self.client and (self.state.get("active_position") or getattr(self, "broker_sync_status", "") == "PENDING_RECONCILIATION"):
                 try:
                     real_pos = self.client.positions()
                     # Check if response is OK or is Kotak Neo's standard "Empty / 0 Positions" response (stCode 5203 / "No Data")
@@ -1666,8 +1666,8 @@ class MasterQuantEngine:
                     "last_tick_age": round(tick_age, 2),
                     "finalized_at": now_dt,
                     "data_lag": round(data_lag, 2),
-                    "is_green": bool(final_close >= prev_bar["open"]),
-                    "is_red": bool(final_close <= prev_bar["open"]),
+                    "is_green": bool(final_close > prev_bar["open"]),
+                    "is_red": bool(final_close < prev_bar["open"]),
                     "is_valid": is_candle_valid
                 }
 
@@ -1719,8 +1719,8 @@ class MasterQuantEngine:
                 b = self.running_5m_bar
                 self.pulse["candle_5m_open"] = round(b["open"], 2)
                 self.pulse["candle_5m_close"] = round(b["close"], 2)
-                self.pulse["is_green_candle"] = bool(b["close"] >= b["open"])
-                self.pulse["is_red_candle"] = bool(b["close"] <= b["open"])
+                self.pulse["is_green_candle"] = bool(b["close"] > b["open"])
+                self.pulse["is_red_candle"] = bool(b["close"] < b["open"])
                 self.pulse["candle_status"] = "ACCUMULATING_RUNNING_BAR"
                 self.pulse["candle_bar_time"] = b["bar_start"].strftime("%H:%M")
                 self.pulse["candle_data_lag"] = 0.0
@@ -2052,6 +2052,10 @@ class MasterQuantEngine:
             is_bought_leg = (pos is not None and s == bought_strike)
             is_max_call_oi = (s == max_c_strike)
             is_max_put_oi = (s == max_p_strike)
+
+            # Strict Strike-Scoped Instrument Data (Prevents last-item strike leakage)
+            c_data = call_map.get(s, {})
+            p_data = put_map.get(s, {})
 
             table_rows.append({
                 "strike": s,
@@ -3860,6 +3864,57 @@ def api_reset_circuit_breaker():
         engine.save_state()
     engine.status_message = "Circuit Breaker & Daily Quota Reset (0 / 2 Trades Done)."
     return jsonify({"success": True, "message": "Circuit Breaker & Daily Quota Reset."})
+
+
+@app.route("/api/reconcile_broker", methods=["POST"])
+def api_reconcile_broker():
+    """Manual or frontend-triggered position reconciliation with Kotak Neo broker."""
+    try:
+        if not engine.authenticated or not engine.client:
+            engine.authenticate()
+        if not engine.client:
+            return jsonify({"success": False, "message": "Broker not connected"}), 400
+
+        real_pos = engine.client.positions()
+        is_empty_broker_pos = False
+        if isinstance(real_pos, dict):
+            st_c = str(real_pos.get("stCode", ""))
+            err_m = str(real_pos.get("errMsg", "")).lower()
+            desc_m = str(real_pos.get("desc", "")).lower()
+            if st_c in ["5203", "5204"] or "no data" in err_m or "data not found" in desc_m:
+                is_empty_broker_pos = True
+
+        has_real_pos = False
+        pos_list = (real_pos.get("data", []) or []) if not is_empty_broker_pos else []
+        for p in pos_list:
+            ex_seg = str(p.get("exSeg", "")).lower()
+            sym = str(p.get("sym", "")).upper()
+            trd_sym = str(p.get("trdSym", "")).upper()
+            stk_prc = float(p.get("stkPrc", 0.0) or 0.0)
+            if ex_seg != "nse_fo" or not (sym == "NIFTY" or trd_sym.startswith("NIFTY")) or stk_prc <= 0:
+                continue
+            buy_q = int(float(p.get("flBuyQty", 0)))
+            sell_q = int(float(p.get("flSellQty", 0)))
+            if abs(buy_q - sell_q) > 0:
+                has_real_pos = True
+                break
+
+        if not has_real_pos and not engine.state.get("active_position"):
+            engine.broker_sync_status = "SYNCED"
+            engine.reconciliation_blocked = False
+            engine.reconciliation_reason = ""
+            engine.reconciliation_alert = False
+            return jsonify({"success": True, "status": "SYNCED", "message": "Broker reconciled: 0 positions on broker, 0 in terminal. Ready to trade."})
+        elif has_real_pos and engine.state.get("active_position"):
+            engine.broker_sync_status = "SYNCED"
+            engine.reconciliation_blocked = False
+            engine.reconciliation_reason = ""
+            engine.reconciliation_alert = False
+            return jsonify({"success": True, "status": "SYNCED", "message": "Broker reconciled: Active position confirmed on broker."})
+        else:
+            return jsonify({"success": False, "status": engine.broker_sync_status, "message": f"Broker position discrepancy (Broker has pos: {has_real_pos}, Terminal has pos: {bool(engine.state.get('active_position'))})"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/reconnect", methods=["POST"])
