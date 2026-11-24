@@ -2337,7 +2337,21 @@
             }
 
             // Spot & Indicators
-            document.getElementById('spot-price').innerText = Number(data.spot.ltp).toLocaleString('en-IN', {minimumFractionDigits: 2});
+            const spotEl = document.getElementById('spot-price');
+            const prevSpotVal = spotEl ? spotEl.getAttribute('data-prev-spot') : null;
+            const currentSpotVal = data.spot.ltp;
+            if (spotEl) {
+                spotEl.innerText = Number(currentSpotVal).toLocaleString('en-IN', {minimumFractionDigits: 2});
+                if (prevSpotVal && Number(prevSpotVal) !== Number(currentSpotVal)) {
+                    spotEl.classList.remove('text-emerald-400', 'text-rose-400', 'text-white');
+                    spotEl.classList.add(Number(currentSpotVal) > Number(prevSpotVal) ? 'text-emerald-400' : 'text-rose-400');
+                    setTimeout(() => {
+                        spotEl.classList.remove('text-emerald-400', 'text-rose-400');
+                        spotEl.classList.add('text-white');
+                    }, 400);
+                }
+                spotEl.setAttribute('data-prev-spot', currentSpotVal);
+            }
             const chgEl = document.getElementById('spot-change');
             const sign = data.spot.change >= 0 ? '+' : '';
             chgEl.innerText = `${sign}${data.spot.change} (${sign}${data.spot.pct_change}%)`;
@@ -3887,7 +3901,7 @@
         fetchStatus();
         fetchTrades();
         fetchOrders();
-        setInterval(fetchStatus, 1500); // 1.5s real-time cockpit sync (clean & jitter-free)
+        setInterval(fetchStatus, 1000); // 1.0s high-frequency real-time cockpit sync
         setInterval(fetchTrades, 5000);
         setInterval(fetchOrders, 10000);
         setInterval(loadChartCandles, 30000); // 30s background candle sync

@@ -1033,10 +1033,10 @@ class MasterQuantEngine:
         is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= t_now < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
         # Pre-Market Warmup (09:00-09:15): poll every 15s to keep session, option chain & PCR warm!
-        # In market hours (09:15-15:30): poll every 2.0s (strictly complies with Kotak Neo option-chain rate limits).
+        # In market hours (09:15-15:30): poll every 1.0s (strictly complies with Kotak Neo option-chain rate limits).
         # Off-market: poll every 60s (or instant if force=True or initial boot).
         if is_mkt_open:
-            min_poll_interval = 1.8
+            min_poll_interval = 0.9
         elif is_pre_mkt:
             min_poll_interval = 15
         else:
@@ -1853,7 +1853,7 @@ class MasterQuantEngine:
                         except Exception:
                             pass
                         self.last_mem_trim_time = now
-                    sleep_sec = 2.0
+                    sleep_sec = 1.0
                 else:
                     # Off-market: poll at most once every 5 minutes to avoid night maintenance socket hangs
                     if now - getattr(self, "last_api_poll", 0) > 300:
@@ -3362,6 +3362,14 @@ def get_status():
         engine.save_state()
 
     is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+
+    # High-Frequency 1-Second Live Refresh: Ensure fresh Kotak Neo tick on user poll
+    now_ts = time.time()
+    if is_mkt_open and (now_ts - getattr(engine, "last_api_poll", 0) >= 1.0):
+        try:
+            engine.poll_kotak_neo(force=False)
+        except Exception as poll_e:
+            pass
 
     spot = float(engine.pulse.get("spot") or 25300.0)
     prev = float(engine.pulse.get("prev_close") or 25200.0)
