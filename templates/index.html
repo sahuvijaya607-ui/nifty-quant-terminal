@@ -2176,10 +2176,25 @@
             const feederDot = document.getElementById('feeder-dot');
 
             if (feederText) {
-                feederText.innerText = data.is_market_open ? 'LIVE MARKET' : 'KOTAK LIVE FEED';
+                if (data.is_market_open) {
+                    feederText.innerText = 'LIVE MARKET';
+                    feederText.className = 'text-xs font-semibold uppercase tracking-wider text-emerald-400';
+                } else if (data.is_pre_market) {
+                    feederText.innerText = data.market_status_text || 'PRE-MARKET WARMUP';
+                    feederText.className = 'text-xs font-semibold uppercase tracking-wider text-amber-400 animate-pulse';
+                } else {
+                    feederText.innerText = 'OFF-MARKET STANDBY';
+                    feederText.className = 'text-xs font-semibold uppercase tracking-wider text-slate-400';
+                }
             }
             if (feederDot) {
-                feederDot.className = data.is_market_open ? 'w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot' : 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+                if (data.is_market_open) {
+                    feederDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot';
+                } else if (data.is_pre_market) {
+                    feederDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 pulse-dot';
+                } else {
+                    feederDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
+                }
             }
 
             // Wallet & Charges Bar (100% Dynamic Live Tracking)

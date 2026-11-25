@@ -346,6 +346,7 @@ class MasterQuantEngine:
 
             if res2.get("data", {}).get("status") == "success":
                 self.authenticated = True
+                self.last_auth_timestamp = time.time()
                 self.greeting = res2.get("data", {}).get("greetingName", "RAHUL")
                 self.status_message = f"Kotak Neo Connected ({self.greeting})"
 
@@ -867,12 +868,13 @@ class MasterQuantEngine:
                     self.authenticate()
                     self.poll_kotak_neo(force=True)
 
-                # Pre-Market Proactive Re-authentication Handshake (09:05 - 09:14 IST)
+                # Pre-Market Proactive Re-authentication Handshake (08:50 - 09:14 IST)
                 # Guarantees a fresh session token before market opens at 09:15 sharp!
-                if datetime.strptime("09:05", "%H:%M").time() <= now_dt.time() <= datetime.strptime("09:14", "%H:%M").time() and (now_dt.weekday() < 5):
+                if datetime.strptime("08:50", "%H:%M").time() <= now_dt.time() <= datetime.strptime("09:14", "%H:%M").time() and (now_dt.weekday() < 5):
                     if not getattr(self, "pre_market_reauth_done", False):
-                        logger.info("[WATCHDOG] Performing Pre-Market Proactive Authentication Handshake (09:10 IST)...")
+                        logger.info("[WATCHDOG] Performing Pre-Market Proactive Authentication Handshake (08:50 IST)...")
                         self.authenticate()
+                        self.poll_kotak_neo(force=True)
                         self.pre_market_reauth_done = True
                 elif now_dt.time() > datetime.strptime("09:15", "%H:%M").time():
                     self.pre_market_reauth_done = False
@@ -1026,19 +1028,24 @@ class MasterQuantEngine:
         if not force and now < getattr(self, "kotak_rate_limit_backoff_until", 0):
             return
 
-        # Check market & pre-market hours in IST (09:00-09:15 Pre-market warmup; 09:15-15:30 Live trading)
+        # Check market & pre-market hours in IST (08:50-09:15 Pre-market warmup; 09:15-15:30 Live trading)
         now_dt = get_ist_now()
         t_now = now_dt.time()
         is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= t_now <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
-        is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= t_now < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
+        is_pre_mkt = (datetime.strptime("08:50", "%H:%M").time() <= t_now < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
-        # Pre-Market Warmup (09:00-09:15): poll every 15s to keep session, option chain & PCR warm!
+        # Proactive Daily Token Expiry Guard: If token is > 12 hours old, force refresh
+        if getattr(self, "last_auth_timestamp", 0) > 0 and (now - self.last_auth_timestamp > 12 * 3600):
+            logger.info("[AUTO_TOKEN_EXPIRY] Kotak Neo token older than 12 hours. Performing proactive daily refresh...")
+            self.authenticate()
+
+        # Pre-Market Warmup (08:50-09:15): poll every 2.0s to keep session, option chain & PCR warm!
         # In market hours (09:15-15:30): poll every 1.0s (strictly complies with Kotak Neo option-chain rate limits).
         # Off-market: poll every 60s (or instant if force=True or initial boot).
         if is_mkt_open:
             min_poll_interval = 0.9
         elif is_pre_mkt:
-            min_poll_interval = 15
+            min_poll_interval = 2.0
         else:
             min_poll_interval = 60
 
@@ -1837,7 +1844,7 @@ class MasterQuantEngine:
                     self.emas_seeded_for_today = False
 
                 is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
-                is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= now_dt.time() < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
+                is_pre_mkt = (datetime.strptime("08:50", "%H:%M").time() <= now_dt.time() < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
                 now = time.time()
 
                 if is_mkt_open:
@@ -3380,7 +3387,7 @@ def get_status():
         engine.save_state()
 
     is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
-    is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= now_t < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
+    is_pre_mkt = (datetime.strptime("08:50", "%H:%M").time() <= now_t < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
     # High-Frequency Live / Pre-Market Refresh: Ensure fresh Kotak Neo tick on user poll
     now_ts = time.time()
@@ -3661,7 +3668,7 @@ def get_status():
         "execution_mode": engine.execution_mode,
         "is_market_open": is_mkt_open,
         "is_pre_market": is_pre_mkt,
-        "market_status_text": "LIVE MARKET STREAM" if is_mkt_open else ("PRE-MARKET WARMUP (Live F&O Opens 09:15 AM)" if is_pre_mkt else "OFF-MARKET REPLAY MODE"),
+        "market_status_text": "LIVE MARKET STREAM" if is_mkt_open else ("PRE-MARKET WARMUP (Live F&O Opens 09:15 AM)" if is_pre_mkt else "OFF-MARKET STANDBY"),
         "account_greeting": engine.greeting,
         "is_authenticated": engine.authenticated,
         "status_message": engine.status_message,
