@@ -1059,14 +1059,18 @@ class MasterQuantEngine:
                 return
         self.poll_lock_time = now
 
-        self.feeder_mode = "LIVE" if is_mkt_open else "CLOSED"
+        self.feeder_mode = "LIVE" if (is_mkt_open or is_pre_mkt) else "CLOSED"
 
         try:
             # Query active weekly option chain directly from Kotak Neo (Matches Kotak mobile app 100%!)
             chain = self.client.option_chain(exchange="nse_fo", underlying="NIFTY")
 
             if not is_kotak_ok(chain) or not isinstance(chain, dict) or (isinstance(chain, dict) and chain.get("code") == 429):
-                err_msg = chain.get("message") or chain.get("error") if isinstance(chain, dict) else "Non-OK"
+                err_msg = str(chain.get("message") or chain.get("error") or chain.get("fault") or "Non-OK")
+                err_lower = err_msg.lower()
+                if "401" in err_lower or "token" in err_lower or "session" in err_lower or "unauth" in err_lower or "expired" in err_lower or "invalid" in err_lower:
+                    logger.warning(f"[POLL_REJECT_AUTH] Kotak session expired ({err_msg}). Re-authenticating...")
+                    self.authenticate()
                 logger.warning(f"[POLL_REJECT] Kotak option chain {err_msg}. Retaining live PCR {self.pulse.get('pcr')}.")
                 self.last_api_poll = now + 2.0
                 return
@@ -1833,6 +1837,7 @@ class MasterQuantEngine:
                     self.emas_seeded_for_today = False
 
                 is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_dt.time() <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+                is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= now_dt.time() < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
                 now = time.time()
 
                 if is_mkt_open:
@@ -1854,7 +1859,16 @@ class MasterQuantEngine:
                             pass
                         self.last_mem_trim_time = now
                     sleep_sec = 1.0
+                elif is_pre_mkt:
+                    # Pre-market warmup: proactive auto-authentication and periodic polling
+                    if not getattr(self, "pre_market_reauth_done", False):
+                        logger.info("[PRE_MKT] Performing Daily Pre-Market Authentication Handshake...")
+                        self.authenticate()
+                        self.pre_market_reauth_done = True
+                    self.poll_kotak_neo(force=False)
+                    sleep_sec = 2.0
                 else:
+                    self.pre_market_reauth_done = False
                     # Off-market: poll at most once every 5 minutes to avoid night maintenance socket hangs
                     if now - getattr(self, "last_api_poll", 0) > 300:
                         self.poll_kotak_neo(force=False)
@@ -3366,10 +3380,11 @@ def get_status():
         engine.save_state()
 
     is_mkt_open = (datetime.strptime("09:15", "%H:%M").time() <= now_t <= datetime.strptime("15:30", "%H:%M").time()) and (now_dt.weekday() < 5)
+    is_pre_mkt = (datetime.strptime("09:00", "%H:%M").time() <= now_t < datetime.strptime("09:15", "%H:%M").time()) and (now_dt.weekday() < 5)
 
-    # High-Frequency 1-Second Live Refresh: Ensure fresh Kotak Neo tick on user poll
+    # High-Frequency Live / Pre-Market Refresh: Ensure fresh Kotak Neo tick on user poll
     now_ts = time.time()
-    if is_mkt_open and (now_ts - getattr(engine, "last_api_poll", 0) >= 1.0):
+    if (is_mkt_open or is_pre_mkt) and (now_ts - getattr(engine, "last_api_poll", 0) >= (1.0 if is_mkt_open else 2.0)):
         try:
             engine.poll_kotak_neo(force=False)
         except Exception as poll_e:
@@ -3645,7 +3660,8 @@ def get_status():
         "feeder_mode": engine.feeder_mode,
         "execution_mode": engine.execution_mode,
         "is_market_open": is_mkt_open,
-        "market_status_text": "LIVE MARKET STREAM" if is_mkt_open else "OFF-MARKET REPLAY MODE",
+        "is_pre_market": is_pre_mkt,
+        "market_status_text": "LIVE MARKET STREAM" if is_mkt_open else ("PRE-MARKET WARMUP (Live F&O Opens 09:15 AM)" if is_pre_mkt else "OFF-MARKET REPLAY MODE"),
         "account_greeting": engine.greeting,
         "is_authenticated": engine.authenticated,
         "status_message": engine.status_message,
@@ -3922,6 +3938,11 @@ def api_reconnect():
     """Force triggers Kotak Neo re-authentication with fresh dynamic TOTP and MPIN."""
     try:
         success = engine.authenticate()
+        if success:
+            try:
+                engine.poll_kotak_neo(force=True)
+            except Exception:
+                pass
         return jsonify({
             "success": bool(success),
             "authenticated": engine.authenticated,
