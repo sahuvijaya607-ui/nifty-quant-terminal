@@ -1969,6 +1969,9 @@ class MasterQuantEngine:
                         self.get_broker_cash_margin()
                         self.has_open_broker_positions()
                         self.last_bg_margin_check = now
+                    if now - getattr(self, "last_funds_refresh_time", 0) >= 300:
+                        self.get_broker_cash_margin(force=True)
+                        self.last_funds_refresh_time = now
 
                     # Proactive Linux glibc memory trimming & GC (Guarantees staying < 200 MB on Render)
                     if now - getattr(self, "last_mem_trim_time", 0) > 60:
@@ -2324,24 +2327,33 @@ class MasterQuantEngine:
             logger.warning(f"Error checking broker positions: {e}")
             return getattr(self, "cached_has_open_positions", False)
 
-    def get_broker_cash_margin(self):
-        """Fetches live free cash margin from Kotak Neo with 30s cooldown."""
+    def get_broker_cash_margin(self, force=False):
+        """Fetches live free cash margin, collateral & used margin from Kotak Neo with 30s cooldown (or 5m forced refresh)."""
         if not self.client or not self.authenticated or self.execution_mode != "LIVE":
             return float(getattr(self, "account_free_cash", 50000.0) or 50000.0)
         now = time.time()
-        # Cooldown: only query Kotak limits every 30 seconds to prevent thread starvation
-        if now - getattr(self, "last_limits_check_time", 0) < 30.0 and hasattr(self, "account_free_cash"):
+        # Cooldown: only query Kotak limits every 30 seconds unless forced (e.g. 5-min funds sync)
+        if not force and now - getattr(self, "last_limits_check_time", 0) < 30.0 and hasattr(self, "account_free_cash"):
             return float(self.account_free_cash)
         self.last_limits_check_time = now
         try:
             lims = self.client.limits()
             if isinstance(lims, dict):
-                # Kotak Neo API returns live available margin directly at root key 'Net' or 'cashAvailable'
                 lim_data = lims.get("data", {}) if isinstance(lims.get("data"), dict) else {}
-                cash = float(lims.get("Net") or lim_data.get("cashAvailable") or lim_data.get("availableMargin") or getattr(self, "account_free_cash", 0.0) or 0.0)
-                if cash > 0:
-                    self.account_free_cash = cash
-                    return cash
+                net_val = float(lims.get("Net") or lim_data.get("cashAvailable") or lim_data.get("availableMargin") or 0.0)
+                col_val = float(lims.get("Collateral") or lim_data.get("collateral") or 0.0)
+                m_used = float(lims.get("MarginUsed") or lim_data.get("marginUsed") or 0.0)
+                if net_val >= 1000.0:
+                    self.real_balance = round(net_val, 2)
+                    self.real_margin_used = round(m_used, 2)
+                    if col_val >= 1000.0:
+                        self.real_collateral = round(col_val, 2)
+                    self.initial_capital = self.real_balance
+                    self.account_free_cash = self.real_balance
+                    return self.account_free_cash
+                elif net_val > 0:
+                    self.account_free_cash = round(net_val, 2)
+                    return self.account_free_cash
         except Exception as e:
             logger.warning(f"Failed to fetch live broker cash: {e}")
         return float(getattr(self, "account_free_cash", 50000.0) or 50000.0)
