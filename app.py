@@ -278,6 +278,10 @@ class MasterQuantEngine:
         self.last_evaluated_bar = self.state.get("last_evaluated_candle_bar", None)
         self.active_lots = int(self.state.get("user_configured_lots", 1))
         self.lot_size = self.active_lots * int(self.pulse.get("mkt_lot", 65))
+        self.base_ema9 = float(self.pulse["ema9"])
+        self.base_ema20 = float(self.pulse["ema20"])
+        self.base_ema50 = float(self.pulse["ema50"])
+        self.base_daily20 = float(self.pulse["daily_ema20"])
         self.load_cached_emas()
         self.authenticate()
         try:
@@ -769,76 +773,177 @@ class MasterQuantEngine:
         try:
             today_dt = now_dt.date()
             today_str = today_dt.strftime("%Y-%m-%d")
-            start_5m = (today_dt - timedelta(days=5)).strftime("%Y-%m-%d")
-            res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
-            if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
-                self.ema_backoff_until = now + 60
-                self.load_cached_emas(fallback_only=True)
-                return
-            candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
-            if candles_5m and len(candles_5m) >= 20:
-                closes = [float(c[4]) for c in candles_5m]
-                s_close = pd.Series(closes)
-                self.base_ema9 = round(float(s_close.ewm(span=9, adjust=False).mean().iloc[-1]), 2)
-                self.base_ema20 = round(float(s_close.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
-                self.base_ema50 = round(float(s_close.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
-                self.pulse["ema9"] = self.base_ema9
-                self.pulse["ema20"] = self.base_ema20
-                self.pulse["ema50"] = self.base_ema50
+            seeded_5m = False
+            seeded_daily = False
 
-                # Direct Seeding of latest completed 5-minute candle from Kotak Neo API (Strict 5m Close Confirmation)
+            start_5m = (today_dt - timedelta(days=5)).strftime("%Y-%m-%d")
+            try:
+                res_5m = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="5min", from_date=start_5m, to_date=today_str)
+                if isinstance(res_5m, dict) and ("429" in str(res_5m) or "rate" in str(res_5m).lower()):
+                    self.ema_backoff_until = now + 60
+                else:
+                    candles_5m = res_5m.get("data", {}).get("candles", []) if isinstance(res_5m, dict) else []
+                    if candles_5m and len(candles_5m) >= 20:
+                        closes = [float(c[4]) for c in candles_5m]
+                        s_close = pd.Series(closes)
+                        self.base_ema9 = round(float(s_close.ewm(span=9, adjust=False).mean().iloc[-1]), 2)
+                        self.base_ema20 = round(float(s_close.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+                        self.base_ema50 = round(float(s_close.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
+                        self.pulse["ema9"] = self.base_ema9
+                        self.pulse["ema20"] = self.base_ema20
+                        self.pulse["ema50"] = self.base_ema50
+                        seeded_5m = True
+
+                        # Direct Seeding of latest completed 5-minute candle from Kotak Neo API (Strict 5m Close Confirmation)
+                        try:
+                            latest_c = candles_5m[-1]
+                            c_ts = pd.to_datetime(latest_c[0])
+                            c_open = float(latest_c[1])
+                            c_high = float(latest_c[2])
+                            c_low = float(latest_c[3])
+                            c_close = float(latest_c[4])
+                            self.finalized_5m_candle = {
+                                "bar_start": c_ts,
+                                "bar_close": c_ts + timedelta(minutes=5),
+                                "open": c_open,
+                                "high": c_high,
+                                "low": c_low,
+                                "close": c_close,
+                                "tick_count": 60,
+                                "last_tick_time": c_ts + timedelta(minutes=5),
+                                "last_tick_age": 1.0,
+                                "finalized_at": now_dt,
+                                "data_lag": 1.0,
+                                "is_green": bool(c_close >= c_open),
+                                "is_red": bool(c_close <= c_open),
+                                "is_valid": True,
+                                "source": "KOTAK_HISTORICAL_API"
+                            }
+                            self.pulse["candle_5m_open"] = c_open
+                            self.pulse["candle_5m_close"] = c_close
+                            self.pulse["candle_5m_high"] = c_high
+                            self.pulse["candle_5m_low"] = c_low
+                            self.pulse["is_green_candle"] = bool(c_close >= c_open)
+                            self.pulse["is_red_candle"] = bool(c_close <= c_open)
+                            self.pulse["candle_status"] = "CONFIRMED_CLOSED"
+                            self.pulse["candle_bar_time"] = c_ts.strftime("%H:%M")
+                            self.pulse["candle_data_lag"] = 1.0
+                            logger.info(f"[CANDLE_SEED] Confirmed closed 5m candle seeded from Kotak Neo API: {c_ts.strftime('%H:%M')} Open={c_open}, Close={c_close}, Color={'GREEN' if c_close>=c_open else 'RED'}")
+                        except Exception as seed_err:
+                            logger.warning(f"[CANDLE_SEED_ERR] Could not parse latest 5m candle: {seed_err}")
+            except Exception as k5_err:
+                logger.warning(f"[EMA_KOTAK_5M_WARN] Kotak 5m historical failed ({k5_err}), using fallback.")
+
+            # Fallback for 5m EMAs if Kotak historical API failed or returned empty/429
+            if not seeded_5m:
                 try:
-                    latest_c = candles_5m[-1]
-                    c_ts = pd.to_datetime(latest_c[0])
-                    c_open = float(latest_c[1])
-                    c_high = float(latest_c[2])
-                    c_low = float(latest_c[3])
-                    c_close = float(latest_c[4])
-                    self.finalized_5m_candle = {
-                        "bar_start": c_ts,
-                        "bar_close": c_ts + timedelta(minutes=5),
-                        "open": c_open,
-                        "high": c_high,
-                        "low": c_low,
-                        "close": c_close,
-                        "tick_count": 60,
-                        "last_tick_time": c_ts + timedelta(minutes=5),
-                        "last_tick_age": 1.0,
-                        "finalized_at": now_dt,
-                        "data_lag": 1.0,
-                        "is_green": bool(c_close >= c_open),
-                        "is_red": bool(c_close <= c_open),
-                        "is_valid": True,
-                        "source": "KOTAK_HISTORICAL_API"
-                    }
-                    self.pulse["candle_5m_open"] = c_open
-                    self.pulse["candle_5m_close"] = c_close
-                    self.pulse["candle_5m_high"] = c_high
-                    self.pulse["candle_5m_low"] = c_low
-                    self.pulse["is_green_candle"] = bool(c_close >= c_open)
-                    self.pulse["is_red_candle"] = bool(c_close <= c_open)
-                    self.pulse["candle_status"] = "CONFIRMED_CLOSED"
-                    self.pulse["candle_bar_time"] = c_ts.strftime("%H:%M")
-                    self.pulse["candle_data_lag"] = 1.0
-                    logger.info(f"[CANDLE_SEED] Confirmed closed 5m candle seeded from Kotak Neo API: {c_ts.strftime('%H:%M')} Open={c_open}, Close={c_close}, Color={'GREEN' if c_close>=c_open else 'RED'}")
-                except Exception as seed_err:
-                    logger.warning(f"[CANDLE_SEED_ERR] Could not parse latest 5m candle: {seed_err}")
+                    yf_5m = requests.get(
+                        "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=5m&range=5d",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=8,
+                    ).json()
+                    res_y = yf_5m.get("chart", {}).get("result", [{}])[0]
+                    ts_list = res_y.get("timestamp", []) or []
+                    q_list = res_y.get("indicators", {}).get("quote", [{}])[0]
+                    opens_y = q_list.get("open", []) or []
+                    highs_y = q_list.get("high", []) or []
+                    lows_y = q_list.get("low", []) or []
+                    closes_y = q_list.get("close", []) or []
+                    cur_bucket = now_dt.replace(minute=(now_dt.minute // 5) * 5, second=0, microsecond=0)
+                    closed_bars = []
+                    for idx_y, (ts_u, c_val) in enumerate(zip(ts_list, closes_y)):
+                        if c_val is None:
+                            continue
+                        bar_dt = datetime.utcfromtimestamp(ts_u) + timedelta(hours=5, minutes=30)
+                        if bar_dt >= cur_bucket:
+                            continue  # Never use incomplete forming 5m bar
+                        closed_bars.append((
+                            bar_dt,
+                            float(opens_y[idx_y] if idx_y < len(opens_y) and opens_y[idx_y] is not None else c_val),
+                            float(highs_y[idx_y] if idx_y < len(highs_y) and highs_y[idx_y] is not None else c_val),
+                            float(lows_y[idx_y] if idx_y < len(lows_y) and lows_y[idx_y] is not None else c_val),
+                            float(c_val),
+                        ))
+                    if len(closed_bars) >= 20:
+                        s_close = pd.Series([b[4] for b in closed_bars])
+                        self.base_ema9 = round(float(s_close.ewm(span=9, adjust=False).mean().iloc[-1]), 2)
+                        self.base_ema20 = round(float(s_close.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+                        self.base_ema50 = round(float(s_close.ewm(span=50, adjust=False).mean().iloc[-1]), 2)
+                        self.pulse["ema9"] = self.base_ema9
+                        self.pulse["ema20"] = self.base_ema20
+                        self.pulse["ema50"] = self.base_ema50
+                        seeded_5m = True
+                        if getattr(self, "finalized_5m_candle", None) is None:
+                            lb = closed_bars[-1]
+                            self.finalized_5m_candle = {
+                                "bar_start": lb[0],
+                                "bar_close": lb[0] + timedelta(minutes=5),
+                                "open": round(lb[1], 2),
+                                "high": round(lb[2], 2),
+                                "low": round(lb[3], 2),
+                                "close": round(lb[4], 2),
+                                "tick_count": 60,
+                                "last_tick_time": lb[0] + timedelta(minutes=5),
+                                "last_tick_age": 1.0,
+                                "finalized_at": now_dt,
+                                "data_lag": 1.0,
+                                "is_green": bool(lb[4] >= lb[1]),
+                                "is_red": bool(lb[4] <= lb[1]),
+                                "is_valid": True,
+                                "source": "YF_FALLBACK_5M",
+                            }
+                        logger.info(f"[EMA_FALLBACK_5M] Seeded real 5m EMAs via ^NSEI ({len(closed_bars)} closed bars): E9={self.base_ema9}, E20={self.base_ema20}, E50={self.base_ema50}")
+                except Exception as yf5_err:
+                    logger.warning(f"[EMA_FALLBACK_5M_ERR] {yf5_err}")
 
             # Safe spacing to prevent Kotak 429 rate limit between 5m and Daily historical calls
-            time.sleep(2.5)
+            time.sleep(1.0)
 
             start_d = (today_dt - timedelta(days=120)).strftime("%Y-%m-%d")
-            res_d = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="D", from_date=start_d, to_date=today_str)
-            candles_d = res_d.get("data", {}).get("candles", []) if isinstance(res_d, dict) else []
-            if candles_d and len(candles_d) >= 20:
-                d_closes = [float(c[4]) for c in candles_d]
-                s_d = pd.Series(d_closes)
-                self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
-                self.pulse["daily_ema20"] = self.base_daily20
+            try:
+                res_d = self.client.historical_data(neosymbol="nse_cm|Nifty 50", interval="D", from_date=start_d, to_date=today_str)
+                candles_d = res_d.get("data", {}).get("candles", []) if isinstance(res_d, dict) else []
+                if candles_d and len(candles_d) >= 20:
+                    d_closes = [float(c[4]) for c in candles_d]
+                    s_d = pd.Series(d_closes)
+                    self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+                    self.pulse["daily_ema20"] = self.base_daily20
+                    seeded_daily = True
+            except Exception as kd_err:
+                logger.warning(f"[EMA_KOTAK_DAILY_WARN] {kd_err}")
 
-            self.emas_seeded_for_today = True
+            # Fallback for Daily 20 EMA (strictly excluding today's incomplete daily candle before 15:30 IST)
+            if not seeded_daily:
+                try:
+                    yf_d = requests.get(
+                        "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=6mo",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=8,
+                    ).json()
+                    res_yd = yf_d.get("chart", {}).get("result", [{}])[0]
+                    ts_d = res_yd.get("timestamp", []) or []
+                    closes_yd = res_yd.get("indicators", {}).get("quote", [{}])[0].get("close", []) or []
+                    d_closes = []
+                    for ts_u, c_val in zip(ts_d, closes_yd):
+                        if c_val is None:
+                            continue
+                        d_dt = datetime.utcfromtimestamp(ts_u) + timedelta(hours=5, minutes=30)
+                        if d_dt.date() == today_dt and now_dt.time() < datetime.strptime("15:30", "%H:%M").time():
+                            continue  # Never use incomplete daily candle
+                        d_closes.append(float(c_val))
+                    if len(d_closes) >= 20:
+                        s_d = pd.Series(d_closes)
+                        self.base_daily20 = round(float(s_d.ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+                        self.pulse["daily_ema20"] = self.base_daily20
+                        seeded_daily = True
+                        logger.info(f"[EMA_FALLBACK_DAILY] Seeded Daily 20 EMA via ^NSEI ({len(d_closes)} closed days): {self.base_daily20}")
+                except Exception as yfd_err:
+                    logger.warning(f"[EMA_FALLBACK_DAILY_ERR] {yfd_err}")
+
+            if seeded_5m and seeded_daily:
+                self.emas_seeded_for_today = True
             self.save_cached_emas()
-            logger.info(f"[EMA_SEED_OK] Seeded live EMAs: E9={self.pulse['ema9']}, E20={self.pulse['ema20']}, E50={self.pulse['ema50']}, Daily20={self.pulse['daily_ema20']}")
+            logger.info(f"[EMA_SEED_OK] Seeded live EMAs: E9={self.pulse['ema9']}, E20={self.pulse['ema20']}, E50={self.pulse['ema50']}, Daily20={self.pulse['daily_ema20']} (5m={seeded_5m}, Daily={seeded_daily})")
         except Exception as e:
             logger.warning(f"[EMA_CALC_ERR] Error fetching historical candles: {e}")
             if "429" in str(e) or "rate" in str(e).lower():
@@ -1107,15 +1212,22 @@ class MasterQuantEngine:
             if not getattr(self, "emas_seeded_for_today", False):
                 self.update_real_emas_from_candles()
 
-            base_e9 = getattr(self, "base_ema9", 25607.06)
-            base_e20 = getattr(self, "base_ema20", 25640.22)
-            base_e50 = getattr(self, "base_ema50", 25662.26)
-            base_daily = getattr(self, "base_daily20", 24722.08)
+            base_e9 = getattr(self, "base_ema9", self.pulse["ema9"])
+            base_e20 = getattr(self, "base_ema20", self.pulse["ema20"])
+            base_e50 = getattr(self, "base_ema50", self.pulse["ema50"])
+            base_daily = getattr(self, "base_daily20", self.pulse["daily_ema20"])
 
-            # Fix 3: Strict Backtest Purity - EMAs are derived strictly from finalized 5m candle closes (Zero tick noise)
-            self.pulse["ema9"] = base_e9
-            self.pulse["ema20"] = base_e20
-            self.pulse["ema50"] = base_e50
+            # Live 1-Second Dynamic EMA Preview for HUD (uses current spot as running 5m bar close, TradingView style)
+            # Note: Strategy execution (can_evaluate_signal) still strictly evaluates finalized base_ema9/20/50 on 5m close!
+            a9, a20, a50 = 2.0 / 10.0, 2.0 / 21.0, 2.0 / 51.0
+            if spot and float(spot) > 0:
+                self.pulse["ema9"] = round(float(spot) * a9 + base_e9 * (1.0 - a9), 2)
+                self.pulse["ema20"] = round(float(spot) * a20 + base_e20 * (1.0 - a20), 2)
+                self.pulse["ema50"] = round(float(spot) * a50 + base_e50 * (1.0 - a50), 2)
+            else:
+                self.pulse["ema9"] = base_e9
+                self.pulse["ema20"] = base_e20
+                self.pulse["ema50"] = base_e50
             self.pulse["daily_ema20"] = base_daily
 
             # Live Option Chain OI & High-Precision PCR (Sanitized & Bounded)
@@ -1618,10 +1730,10 @@ class MasterQuantEngine:
             self.pulse["calls_count"] = len(chain.get("call", []))
             self.pulse["puts_count"] = len(chain.get("put", []))
 
-            d_ema = self.pulse["daily_ema20"]
-            e9 = self.pulse["ema9"]
-            e20 = self.pulse["ema20"]
-            e50 = self.pulse["ema50"]
+            d_ema = getattr(self, "base_daily20", self.pulse["daily_ema20"])
+            e9 = getattr(self, "base_ema9", self.pulse["ema9"])
+            e20 = getattr(self, "base_ema20", self.pulse["ema20"])
+            e50 = getattr(self, "base_ema50", self.pulse["ema50"])
 
             # -------------------------------------------------------------------------
             # 5-MINUTE CANDLE CLOSE CONFIRMATION LATCH (Backtest Convention 1:1)
@@ -1686,12 +1798,15 @@ class MasterQuantEngine:
                 a9 = 2.0 / 10.0
                 a20 = 2.0 / 21.0
                 a50 = 2.0 / 51.0
-                self.base_ema9 = round(final_close * a9 + self.base_ema9 * (1.0 - a9), 2)
-                self.base_ema20 = round(final_close * a20 + self.base_ema20 * (1.0 - a20), 2)
-                self.base_ema50 = round(final_close * a50 + self.base_ema50 * (1.0 - a50), 2)
-                self.pulse["ema9"] = self.base_ema9
-                self.pulse["ema20"] = self.base_ema20
-                self.pulse["ema50"] = self.base_ema50
+                prev_e9 = getattr(self, "base_ema9", self.pulse["ema9"])
+                prev_e20 = getattr(self, "base_ema20", self.pulse["ema20"])
+                prev_e50 = getattr(self, "base_ema50", self.pulse["ema50"])
+                self.base_ema9 = round(final_close * a9 + prev_e9 * (1.0 - a9), 2)
+                self.base_ema20 = round(final_close * a20 + prev_e20 * (1.0 - a20), 2)
+                self.base_ema50 = round(final_close * a50 + prev_e50 * (1.0 - a50), 2)
+                self.pulse["ema9"] = round(float(spot) * a9 + self.base_ema9 * (1.0 - a9), 2) if spot else self.base_ema9
+                self.pulse["ema20"] = round(float(spot) * a20 + self.base_ema20 * (1.0 - a20), 2) if spot else self.base_ema20
+                self.pulse["ema50"] = round(float(spot) * a50 + self.base_ema50 * (1.0 - a50), 2) if spot else self.base_ema50
                 self.save_cached_emas()
 
                 # Start new running bar for current bucket
